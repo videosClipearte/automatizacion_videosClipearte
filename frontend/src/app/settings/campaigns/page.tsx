@@ -52,9 +52,11 @@ export default function CampaignsPage() {
       tasa_pago_por_mil_vistas: parseFloat(newRate) || 0,
       hashtags_base: newHashtags.trim(),
       prompt_reglas_ia: newPrompt.trim(),
+      reglas_por_red: { tiktok: '', instagram: '', facebook: '', youtube: '' },
       activo: true,
       cuentas_ids: newSelectedAccounts,
     };
+
 
     addCampaign(newCamp);
     setNewName('');
