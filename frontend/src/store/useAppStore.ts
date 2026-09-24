@@ -189,9 +189,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         db.from('publicaciones').select('*').order('programado_para', { ascending: true }),
       ]);
 
+      // ❗ Verificar errores de Supabase (antes se ignoraban silenciosamente)
+      if (accRes.error) {
+        console.error('[Supabase] Error en cuentas:', accRes.error);
+        throw new Error(`cuentas: ${accRes.error.message}`);
+      }
+      if (campRes.error) {
+        console.error('[Supabase] Error en campanas:', campRes.error);
+        throw new Error(`campanas: ${campRes.error.message}`);
+      }
+      if (vidRes.error) {
+        console.error('[Supabase] Error en publicaciones:', vidRes.error);
+        throw new Error(`publicaciones: ${vidRes.error.message}`);
+      }
+
       const accounts = (accRes.data ?? []).map(mapAccount);
       const campaigns = (campRes.data ?? []).map(mapCampaign);
       const videos = (vidRes.data ?? []).map(mapVideo);
+
+      console.log(`[Supabase] Cargado: ${accounts.length} cuentas, ${campaigns.length} campañas, ${videos.length} publicaciones`);
 
       set({
         accounts,
@@ -201,9 +217,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         isLoading: false,
       });
     } catch (err: any) {
-      set({ isLoading: false, loadError: err?.message ?? 'Error al cargar datos de Supabase' });
+      const msg = err?.message ?? 'Error al cargar datos de Supabase';
+      console.error('[Supabase] initializeStore falló:', msg);
+      set({ isLoading: false, loadError: msg });
     }
   },
+
 
   setCalendarView: (view) => set({ calendarView: view }),
   setSelectedAccountId: (id) => set({ selectedAccountId: id }),
