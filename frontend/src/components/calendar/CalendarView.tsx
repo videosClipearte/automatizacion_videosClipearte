@@ -18,7 +18,7 @@ import { es } from 'date-fns/locale';
 import { useAppStore } from '@/store/useAppStore';
 import { MetricPill } from '@/components/ui/MetricPill';
 import { cn, getStatusClass } from '@/lib/utils';
-import type { Video } from '@/lib/mock-data';
+import type { Video } from '@/store/useAppStore';
 
 type ViewMode = 'month' | 'week' | 'day';
 

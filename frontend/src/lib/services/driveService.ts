@@ -18,11 +18,11 @@ export function getStoredDriveConfig(): DriveConfig {
       try {
         const parsed = JSON.parse(raw);
         return {
-          clientId: parsed.clientId || '109827364512-apps.googleusercontent.com',
-          clientSecret: parsed.clientSecret || 'GOCSPX-mockDriveSecret9812',
-          folderId: parsed.folderId || '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs',
+          clientId: parsed.clientId || '',
+          clientSecret: parsed.clientSecret || '',
+          folderId: parsed.folderId || '',
           autoDownload: parsed.autoDownload ?? true,
-          autoDeleteAfterVerify: parsed.autoDeleteAfterVerify ?? true,
+          autoDeleteAfterVerify: parsed.autoDeleteAfterVerify ?? false,
           retentionHours: parsed.retentionHours ?? 24,
         };
       } catch (e) {
@@ -31,11 +31,11 @@ export function getStoredDriveConfig(): DriveConfig {
     }
   }
   return {
-    clientId: '109827364512-apps.googleusercontent.com',
-    clientSecret: 'GOCSPX-mockDriveSecret9812',
-    folderId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs',
+    clientId: '',
+    clientSecret: '',
+    folderId: '',
     autoDownload: true,
-    autoDeleteAfterVerify: true,
+    autoDeleteAfterVerify: false,
     retentionHours: 24,
   };
 }

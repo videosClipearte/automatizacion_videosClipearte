@@ -7,7 +7,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { formatViews, calcGanancias, getPlatformColor } from '@/lib/utils';
-import type { Platform } from '@/lib/mock-data';
+import type { Platform } from '@/store/useAppStore';
 
 const STATUS_COLORS: Record<string, string> = {
   PROGRAMADO: '#a78bfa',

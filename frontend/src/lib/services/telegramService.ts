@@ -20,9 +20,9 @@ export function getStoredTelegramConfig(): TelegramConfig {
     }
   }
   return {
-    botToken: '718294819:AAHk_mockTelegramBotToken91823',
-    groupId: '-1001928471928',
-    adminChatId: '98172645',
+    botToken: '',
+    groupId: '',
+    adminChatId: '',
   };
 }
 

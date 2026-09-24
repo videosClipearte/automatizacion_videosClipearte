@@ -13,7 +13,7 @@ import { getPlatformColor } from '@/lib/utils';
 import {
   getStoredTelegramConfig, sendDailyQuotaAlert
 } from '@/lib/services/telegramService';
-import type { Account, Platform } from '@/lib/mock-data';
+import type { Account, Platform } from '@/store/useAppStore';
 
 const PLATFORM_ICONS: Record<string, React.ElementType> = {
   instagram: Globe,

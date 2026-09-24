@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
-import type { Campaign } from '@/lib/mock-data';
+import type { Campaign } from '@/store/useAppStore';
 
 export default function CampaignsPage() {
   const { campaigns, accounts, addCampaign, updateCampaign, deleteCampaign } = useAppStore();

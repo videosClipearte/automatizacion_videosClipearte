@@ -2,7 +2,7 @@
 // src/components/calendar/VideoCard.tsx
 import { motion } from 'framer-motion';
 import { cn, getPlatformColor } from '@/lib/utils';
-import type { Video, Account } from '@/lib/mock-data';
+import type { Video, Account } from '@/store/useAppStore';
 
 interface VideoCardProps {
   video: Video;

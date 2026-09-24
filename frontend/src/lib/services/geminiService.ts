@@ -21,7 +21,7 @@ export function getStoredGeminiConfig(): GeminiConfig {
     }
   }
   return {
-    apiKey: 'AIzaSyD-mockKey98172948271',
+    apiKey: '',
     model: 'gemini-1.5-flash',
     systemPrompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas, juveniles y llamativas con hashtags de tendencia.',
     temperature: 0.7,
