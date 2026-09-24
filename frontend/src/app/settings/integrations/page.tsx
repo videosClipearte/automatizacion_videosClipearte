@@ -8,22 +8,16 @@ import {
   Copy, Check, RefreshCw, Trash2, Clock
 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
-import {
-  getStoredTelegramConfig, saveStoredTelegramConfig,
-  sendTelegramMessage, type TelegramConfig
-} from '@/lib/services/telegramService';
-import {
-  getStoredGeminiConfig, saveStoredGeminiConfig,
-  generateWithGemini, type GeminiConfig
-} from '@/lib/services/geminiService';
-import {
-  getStoredDriveConfig, saveStoredDriveConfig,
-  verifyDriveFolderAccess, type DriveConfig
-} from '@/lib/services/driveService';
+import { sendTelegramMessage } from '@/lib/services/telegramService';
+import { generateWithGemini } from '@/lib/services/geminiService';
+import { verifyDriveFolderAccess } from '@/lib/services/driveService';
 import {
   getStoredSupabaseConfig, saveStoredSupabaseConfig,
   testSupabaseConnection
 } from '@/lib/supabase';
+import {
+  loadAppConfig, saveAppConfig, clearConfigCache
+} from '@/lib/services/appConfigService';
 
 export default function IntegrationsPage() {
   // Telegram Bot state
@@ -73,63 +67,60 @@ export default function IntegrationsPage() {
   // Global notification
   const [globalSaved, setGlobalSaved] = useState(false);
 
-  // Load stored configs on mount
+  // Cargar configs desde Supabase al montar
   useEffect(() => {
-    const tele = getStoredTelegramConfig();
-    setTelegramToken(tele.botToken);
-    setTelegramGroupId(tele.groupId);
-    setTelegramAdminChatId(tele.adminChatId);
-
-    const gemini = getStoredGeminiConfig();
-    setGeminiApiKey(gemini.apiKey);
-    setGeminiModel(gemini.model);
-    setGeminiPrompt(gemini.systemPrompt);
-    setGeminiTemperature(gemini.temperature);
-
-    const drive = getStoredDriveConfig();
-    setDriveClientId(drive.clientId);
-    setDriveClientSecret(drive.clientSecret);
-    setDriveFolderId(drive.folderId);
-    setDriveAutoDownload(drive.autoDownload);
-    setDriveAutoDelete(drive.autoDeleteAfterVerify ?? true);
-    setDriveRetentionHours(drive.retentionHours ?? 24);
-
+    // Supabase URL/Key viene de localStorage (se necesita para conectar)
     const supa = getStoredSupabaseConfig();
     setSupabaseUrl(supa.url);
     setSupabaseKey(supa.anonKey);
-    if (supa.url && !supa.url.includes('xyzcompany')) {
+    if (supa.url && !supa.url.includes('xyzcompany') && !supa.url.includes('fallback')) {
       setSupabaseConnected(true);
     }
+
+    // Resto de claves API vienen de Supabase
+    loadAppConfig().then((cfg) => {
+      setTelegramToken(cfg.telegram_bot_token);
+      setTelegramGroupId(cfg.telegram_group_id);
+      setTelegramAdminChatId(cfg.telegram_admin_chat_id);
+
+      setGeminiApiKey(cfg.gemini_api_key);
+      setGeminiModel(cfg.gemini_model);
+      setGeminiPrompt(cfg.gemini_system_prompt);
+      setGeminiTemperature(cfg.gemini_temperature);
+
+      setDriveClientId(cfg.drive_client_id);
+      setDriveClientSecret(cfg.drive_client_secret);
+      setDriveFolderId(cfg.drive_folder_id);
+      setDriveAutoDownload(cfg.drive_auto_download);
+      setDriveAutoDelete(cfg.drive_auto_delete_after_verify);
+      setDriveRetentionHours(cfg.drive_retention_hours);
+    });
   }, []);
 
   // ── Telegram Handlers ──
-  const handleSaveTelegram = () => {
+  const handleSaveTelegram = async () => {
     setSavingTelegram(true);
-    saveStoredTelegramConfig({
-      botToken: telegramToken,
-      groupId: telegramGroupId,
-      adminChatId: telegramAdminChatId,
+    const result = await saveAppConfig({
+      telegram_bot_token: telegramToken,
+      telegram_group_id: telegramGroupId,
+      telegram_admin_chat_id: telegramAdminChatId,
     });
-    setTimeout(() => {
-      setSavingTelegram(false);
-      setTelegramFeedback({
-        success: true,
-        msg: '✅ Credenciales y grupo de Telegram actualizados y guardados permanentemente.'
-      });
-      setTimeout(() => setTelegramFeedback(null), 4000);
-    }, 400);
+    setSavingTelegram(false);
+    setTelegramFeedback({
+      success: result.success,
+      msg: result.success
+        ? '✅ Credenciales de Telegram guardadas en Supabase correctamente.'
+        : `⚠️ Error al guardar: ${result.error}`,
+    });
+    setTimeout(() => setTelegramFeedback(null), 4000);
   };
 
   const handleTestTelegram = async () => {
     setTestingTelegram(true);
     setTelegramFeedback(null);
 
-    // Save first to ensure persistence
-    saveStoredTelegramConfig({
-      botToken: telegramToken,
-      groupId: telegramGroupId,
-      adminChatId: telegramAdminChatId,
-    });
+    // Guardar primero
+    await handleSaveTelegram();
 
     const targetChat = telegramGroupId.trim() || telegramAdminChatId.trim();
     if (!targetChat) {
@@ -141,48 +132,42 @@ export default function IntegrationsPage() {
       return;
     }
 
-    const testMsg = `🚀 <b>Prueba de Conexión AutoPublish</b>\n━━━━━━━━━━━━━━━━━━━━\n✅ El Bot de Telegram se ha enlazado y comunicado correctamente con el sistema de automatización.\n🕒 <b>Hora:</b> ${new Date().toLocaleTimeString()}`;
+    const testMsg = `🚀 <b>Prueba de Conexión AutoPublish</b>\n━━━━━━━━━━━━━━━━━━━━\n✅ Bot enlazado correctamente desde Vercel/Supabase.\n🕒 <b>Hora:</b> ${new Date().toLocaleTimeString()}`;
     const res = await sendTelegramMessage(telegramToken, targetChat, testMsg);
 
     setTestingTelegram(false);
     if (res.success) {
       setTelegramConnected(true);
-      setTelegramFeedback({
-        success: true,
-        msg: `🎉 ${res.message}`
-      });
+      setTelegramFeedback({ success: true, msg: `🎉 ${res.message}` });
     } else {
       setTelegramConnected(false);
-      setTelegramFeedback({
-        success: false,
-        msg: `⚠️ ${res.message}`
-      });
+      setTelegramFeedback({ success: false, msg: `⚠️ ${res.message}` });
     }
   };
 
   // ── Gemini Handlers ──
-  const handleSaveGemini = () => {
+  const handleSaveGemini = async () => {
     setSavingGemini(true);
-    saveStoredGeminiConfig({
-      apiKey: geminiApiKey,
-      model: geminiModel,
-      systemPrompt: geminiPrompt,
-      temperature: geminiTemperature,
+    const result = await saveAppConfig({
+      gemini_api_key: geminiApiKey,
+      gemini_model: geminiModel,
+      gemini_system_prompt: geminiPrompt,
+      gemini_temperature: geminiTemperature,
     });
-    setTimeout(() => {
-      setSavingGemini(false);
-      setGeminiFeedback({
-        success: true,
-        msg: '✅ Configuración y clave de Gemini AI guardadas correctamente.'
-      });
-      setTimeout(() => setGeminiFeedback(null), 4000);
-    }, 400);
+    setSavingGemini(false);
+    setGeminiFeedback({
+      success: result.success,
+      msg: result.success
+        ? '✅ Clave y configuración de Gemini AI guardadas en Supabase.'
+        : `⚠️ Error al guardar: ${result.error}`,
+    });
+    setTimeout(() => setGeminiFeedback(null), 4000);
   };
 
   const handleTestGemini = async () => {
     setTestingGemini(true);
     setGeminiFeedback(null);
-    handleSaveGemini();
+    await handleSaveGemini();
 
     const res = await generateWithGemini(
       geminiApiKey,
@@ -195,51 +180,42 @@ export default function IntegrationsPage() {
     setTestingGemini(false);
     if (res.success) {
       setGeminiConnected(true);
-      setGeminiFeedback({
-        success: true,
-        msg: `✨ Respuesta en vivo de Gemini: "${res.text}"`
-      });
+      setGeminiFeedback({ success: true, msg: `✨ Respuesta de Gemini: "${res.text}"` });
     } else {
-      setGeminiFeedback({
-        success: false,
-        msg: res.error || 'Fallo de prueba de Gemini.'
-      });
+      setGeminiFeedback({ success: false, msg: res.error || 'Fallo de prueba de Gemini.' });
     }
   };
 
   // ── Drive Handlers ──
-  const handleSaveDrive = () => {
+  const handleSaveDrive = async () => {
     setSavingDrive(true);
-    saveStoredDriveConfig({
-      clientId: driveClientId,
-      clientSecret: driveClientSecret,
-      folderId: driveFolderId,
-      autoDownload: driveAutoDownload,
-      autoDeleteAfterVerify: driveAutoDelete,
-      retentionHours: Number(driveRetentionHours),
+    const result = await saveAppConfig({
+      drive_client_id: driveClientId,
+      drive_client_secret: driveClientSecret,
+      drive_folder_id: driveFolderId,
+      drive_auto_download: driveAutoDownload,
+      drive_auto_delete_after_verify: driveAutoDelete,
+      drive_retention_hours: Number(driveRetentionHours),
     });
-    setTimeout(() => {
-      setSavingDrive(false);
-      setDriveFeedback({
-        success: true,
-        msg: '✅ Configuración y política de retención en Google Drive guardadas correctamente.'
-      });
-      setTimeout(() => setDriveFeedback(null), 4000);
-    }, 400);
+    setSavingDrive(false);
+    setDriveFeedback({
+      success: result.success,
+      msg: result.success
+        ? '✅ Configuración de Google Drive guardada en Supabase.'
+        : `⚠️ Error al guardar: ${result.error}`,
+    });
+    setTimeout(() => setDriveFeedback(null), 4000);
   };
 
   const handleTestDrive = async () => {
     setTestingDrive(true);
     setDriveFeedback(null);
-    handleSaveDrive();
+    await handleSaveDrive();
 
     const res = await verifyDriveFolderAccess(driveFolderId, driveClientId);
     setTestingDrive(false);
     setDriveConnected(res.success);
-    setDriveFeedback({
-      success: res.success,
-      msg: res.message
-    });
+    setDriveFeedback({ success: res.success, msg: res.message });
   };
 
   // ── Supabase Handlers ──
