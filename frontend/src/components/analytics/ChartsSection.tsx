@@ -60,7 +60,7 @@ export function ChartsSection() {
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
             <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} interval={2} />
             <YAxis tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => formatViews(v)} />
-            <Tooltip {...TOOLTIP_STYLE} formatter={(v: number) => [formatViews(v), 'Vistas']} />
+            <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [formatViews(Number(v) || 0), 'Vistas']} />
             <Area
               type="monotone"
               dataKey="Vistas"
