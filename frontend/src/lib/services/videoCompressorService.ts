@@ -19,8 +19,8 @@ export interface VideoAnalysisPayload {
  */
 export async function extractVideoStoryboard(
   file: File,
-  maxFrames: number = 7,
-  maxDimension: number = 512
+  maxFrames: number = 5,
+  maxDimension: number = 384
 ): Promise<VideoAnalysisPayload> {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined') {
@@ -72,7 +72,6 @@ export async function extractVideoStoryboard(
         }
 
         // Determinar marcas de tiempo clave (distribuidas a lo largo del video)
-        // Ejemplo: 5%, 20%, 35%, 50%, 65%, 80%, 95%
         const timestamps: number[] = [];
         for (let i = 0; i < maxFrames; i++) {
           const ratio = (i + 0.5) / maxFrames;
@@ -86,8 +85,8 @@ export async function extractVideoStoryboard(
         for (const time of timestamps) {
           await seekToTime(video, time);
           ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
-          // Calidad 0.70 JPEG para mantener nitidez de texto y detalles visuales con peso mínimo
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          // Calidad 0.65 JPEG para un peso ultraligero (~15-20 KB por frame)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
           const cleanBase64 = dataUrl.replace(/^data:image\/jpeg;base64,/, '');
           framesBase64.push(cleanBase64);
           totalBytes += cleanBase64.length;
