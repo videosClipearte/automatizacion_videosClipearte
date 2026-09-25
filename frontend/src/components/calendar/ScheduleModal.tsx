@@ -238,14 +238,11 @@ export function ScheduleModal() {
 
     const hashtags = selectedCampaign?.hashtags_base || '#viral #trending';
 
-    // Cargar credenciales frescas de Gemini desde Supabase
-    let cfg = getCachedConfig();
-    if (!cfg.gemini_api_key) {
-      cfg = await loadAppConfig();
-    }
+    // Cargar credenciales y modelo configurado en tiempo real desde Supabase
+    const cfg = await loadAppConfig();
 
     const apiKey = cfg.gemini_api_key;
-    const model = (cfg.gemini_model && cfg.gemini_model !== 'gemini-1.5-flash') ? cfg.gemini_model : 'gemini-2.0-flash';
+    const model = cfg.gemini_model || 'gemini-2.0-flash';
     const systemPrompt = `${cfg.gemini_system_prompt || 'Actúa como un experto en copywriting para redes sociales.'}\nRed Social Objetivo: ${platform.toUpperCase()}.\nDirectrices de la plataforma: ${targetRule}`;
     const userPrompt = `Genera la descripción para un video titulado "${videoTitle}".\n${campaignRules}\nHashtags obligatorios a incluir: ${hashtags}.\nDevuelve SOLAMENTE el texto final listo para publicar sin comillas ni encabezados.`;
 
@@ -271,7 +268,7 @@ export function ScheduleModal() {
       let res;
       // Si tenemos fotogramas comprimidos extraídos en el navegador, usar análisis multimodal con Gemini
       if (compressedVideo && compressedVideo.frames.length > 0) {
-        setAiFeedback('🤖 Analizando fotogramas visuales del video con Gemini 1.5 Flash...');
+        setAiFeedback(`🤖 Analizando video con ${model}...`);
         res = await generateDescriptionFromVideo(
           apiKey,
           model,
@@ -285,6 +282,7 @@ export function ScheduleModal() {
         );
       } else {
         // Fallback a generación textual estándar
+        setAiFeedback(`🤖 Generando copy con ${model}...`);
         res = await generateWithGemini(
           apiKey,
           model,
@@ -296,10 +294,11 @@ export function ScheduleModal() {
 
       if (res.success && res.text) {
         setValue('descripcion', res.text);
+        const usedName = res.usedModel || model;
         if (compressedVideo) {
-          setAiFeedback('✨ ¡Video analizado visualmente con Gemini IA! Copy redactado según las acciones del video y las reglas de campaña.');
+          setAiFeedback(`✨ ¡Video analizado con éxito usando ${usedName}! Copy redactado según el contenido real y las reglas.`);
         } else {
-          setAiFeedback('✨ Descripción generada con Gemini IA respetando las reglas de la campaña.');
+          setAiFeedback(`✨ Descripción generada con éxito usando ${usedName}.`);
         }
       } else {
         setAiFeedback(`⚠️ ${res.error || 'No se pudo generar con Gemini'}`);

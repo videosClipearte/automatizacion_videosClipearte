@@ -173,10 +173,7 @@ export function VideoDetailModal() {
 
     const hashtags = selectedCampaign?.hashtags_base || '#viral #trending';
 
-    let cfg = getCachedConfig();
-    if (!cfg.gemini_api_key) {
-      cfg = await loadAppConfig();
-    }
+    const cfg = await loadAppConfig();
 
     if (!cfg.gemini_api_key) {
       setEditFeedback({
@@ -189,7 +186,7 @@ export function VideoDetailModal() {
 
     try {
       let res;
-      const targetModel = (cfg.gemini_model && cfg.gemini_model !== 'gemini-1.5-flash') ? cfg.gemini_model : 'gemini-2.0-flash';
+      const targetModel = cfg.gemini_model || 'gemini-2.0-flash';
       if (compressedReplacement && compressedReplacement.frames.length > 0) {
         res = await generateDescriptionFromVideo(
           cfg.gemini_api_key,
