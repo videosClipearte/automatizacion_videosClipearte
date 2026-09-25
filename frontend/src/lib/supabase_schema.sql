@@ -149,6 +149,22 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
 );
 
 -- ==============================================================================
+-- 7. notificaciones
+-- Registro de avisos, advertencias del sistema y estado de publicaciones
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.notificaciones (
+    id TEXT PRIMARY KEY,
+    tipo TEXT NOT NULL CHECK (tipo IN ('warning', 'info', 'success', 'error')),
+    titulo TEXT NOT NULL,
+    mensaje TEXT NOT NULL,
+    leido BOOLEAN DEFAULT FALSE,
+    video_id TEXT,
+    cuenta_id TEXT,
+    origen TEXT DEFAULT 'sistema',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ==============================================================================
 -- INDICES DE RENDIMIENTO
 -- ==============================================================================
 CREATE INDEX IF NOT EXISTS idx_pub_cuenta_id ON public.publicaciones(cuenta_id);
@@ -159,6 +175,9 @@ CREATE INDEX IF NOT EXISTS idx_pub_created_at ON public.publicaciones(created_at
 CREATE INDEX IF NOT EXISTS idx_metricas_pub_id ON public.metricas_extraidas_scraper(publicacion_id);
 CREATE INDEX IF NOT EXISTS idx_logs_tipo ON public.logs_alertas_telegram(tipo_alerta);
 CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.logs_alertas_telegram(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notif_created_at ON public.notificaciones(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notif_leido ON public.notificaciones(leido);
+CREATE INDEX IF NOT EXISTS idx_notif_video_id ON public.notificaciones(video_id);
 
 -- ==============================================================================
 -- ROW LEVEL SECURITY (RLS)
@@ -170,6 +189,7 @@ ALTER TABLE public.campanas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.publicaciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.metricas_extraidas_scraper ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.logs_alertas_telegram ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notificaciones ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "anon_full_access" ON public.configuracion_app FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "anon_full_access" ON public.cuentas FOR ALL USING (true) WITH CHECK (true);
@@ -177,6 +197,7 @@ CREATE POLICY "anon_full_access" ON public.campanas FOR ALL USING (true) WITH CH
 CREATE POLICY "anon_full_access" ON public.publicaciones FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "anon_full_access" ON public.metricas_extraidas_scraper FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "anon_full_access" ON public.logs_alertas_telegram FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "anon_full_access" ON public.notificaciones FOR ALL USING (true) WITH CHECK (true);
 
 -- ==============================================================================
 -- FUNCION: Actualizar updated_at automaticamente en cada UPDATE

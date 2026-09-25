@@ -34,6 +34,7 @@ import {
   requestGoogleDriveOAuthToken,
   uploadVideoToGoogleDrive,
 } from '@/lib/services/driveService';
+import { createNotification } from '@/lib/services/notificationService';
 
 const schema = z.object({
   cuenta_id: z.string().min(1, 'Selecciona una cuenta de publicación'),
@@ -306,6 +307,13 @@ export function ScheduleModal() {
           setDriveError(
             `❌ Error al subir a Google Drive: ${uploadRes.error || 'Fallo desconocido'}. El video NO fue subido a tu carpeta de Drive.`
           );
+          createNotification({
+            tipo: 'error',
+            titulo: 'Fallo al subir video a Google Drive',
+            mensaje: `El video "${cleanTitle}" no se pudo subir a Drive: ${uploadRes.error || 'Error desconocido'}.`,
+            cuenta_id: data.cuenta_id,
+            origen: 'drive',
+          });
           // DETENER: No cerrar el modal ni engañar diciendo que se subió
           return;
         }
@@ -326,6 +334,14 @@ export function ScheduleModal() {
       ganancias_estimadas: 0,
       auto_reprogramacion: data.auto_reprogramacion,
       reintentos_alerta: 0,
+    });
+
+    createNotification({
+      tipo: driveFileUrl && driveFileUrl !== '#' ? 'success' : 'info',
+      titulo: 'Nuevo video programado',
+      mensaje: `"${cleanTitle}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
+      cuenta_id: data.cuenta_id,
+      origen: 'sistema',
     });
 
     closeScheduleModal();

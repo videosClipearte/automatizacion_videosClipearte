@@ -476,6 +476,17 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
   chat_id TEXT NOT NULL,
   enviado_exitoso BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS public.notificaciones (
+  id TEXT PRIMARY KEY,
+  tipo TEXT NOT NULL,
+  titulo TEXT NOT NULL,
+  mensaje TEXT NOT NULL,
+  leido BOOLEAN DEFAULT FALSE,
+  video_id TEXT,
+  cuenta_id TEXT,
+  origen TEXT DEFAULT 'sistema',
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );`;
 
     navigator.clipboard.writeText(sqlScript);

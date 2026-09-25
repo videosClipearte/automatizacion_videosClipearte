@@ -10,6 +10,7 @@ import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService'
 import { sendPublicationAlert, sendTelegramMessage } from '@/lib/services/telegramService';
 import { handleTelegramUpdate } from '@/lib/services/telegramBotHandler';
 import { getStoredSupabaseConfig } from '@/lib/supabase';
+import { createNotification } from '@/lib/services/notificationService';
 import { format, isToday } from 'date-fns';
 
 export function PublicationScheduler() {
@@ -19,6 +20,7 @@ export function PublicationScheduler() {
   const lastTelegramUpdateIdRef = useRef<number>(0);
   const webhookActiveRef = useRef<boolean>(false);
   const isPollingCommandsRef = useRef<boolean>(false);
+  const alertedDelaysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const checkScheduledPublications = async () => {
@@ -70,15 +72,39 @@ export function PublicationScheduler() {
               console.log(
                 `[PublicationScheduler] ✅ Alerta de publicación enviada a Telegram para "${video.titulo}".`
               );
+              await createNotification({
+                tipo: 'success',
+                titulo: 'Publicación programada ejecutada',
+                mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'red').toUpperCase()}) despachado a Telegram y marcado como PUBLICADO.`,
+                video_id: video.id,
+                cuenta_id: video.cuenta_id,
+                origen: 'programador',
+              });
             } else {
               console.warn(
                 `[PublicationScheduler] ⚠️ Fallo al enviar a Telegram: ${sendRes.message}`
               );
+              await createNotification({
+                tipo: 'error',
+                titulo: 'Fallo al despachar video a Telegram',
+                mensaje: `No se pudo enviar el aviso de "${video.titulo}" al grupo de Telegram: ${sendRes.message}`,
+                video_id: video.id,
+                cuenta_id: video.cuenta_id,
+                origen: 'telegram',
+              });
             }
           } else {
             console.warn(
               '[PublicationScheduler] Telegram Bot Token o Chat ID no configurados en Settings → Integraciones.'
             );
+            await createNotification({
+              tipo: 'warning',
+              titulo: 'Telegram no configurado',
+              mensaje: `Llegó la hora de publicar "${video.titulo}", pero no se encontró el Bot Token o Chat ID en Settings → Integraciones.`,
+              video_id: video.id,
+              cuenta_id: video.cuenta_id,
+              origen: 'sistema',
+            });
           }
 
           // Marcar como PUBLICADO en Supabase y store
@@ -87,8 +113,16 @@ export function PublicationScheduler() {
             enviado_en: new Date(),
             publicado_en: new Date(),
           });
-        } catch (err) {
+        } catch (err: any) {
           console.error(`[PublicationScheduler] Error procesando video ${video.id}:`, err);
+          await createNotification({
+            tipo: 'error',
+            titulo: 'Error crítico en publicación',
+            mensaje: `Fallo inesperado al procesar video "${video.titulo}": ${err?.message || 'Error desconocido'}`,
+            video_id: video.id,
+            cuenta_id: video.cuenta_id,
+            origen: 'sistema',
+          });
           // Si falló de manera crítica, retirar de bloqueados para reintentar más adelante
           processingRef.current.delete(video.id);
         }
@@ -161,10 +195,43 @@ export function PublicationScheduler() {
             console.log(
               `[PublicationScheduler] 📢 Reporte automático de metas diarias despachado a Telegram (${targetChat}).`
             );
+            await createNotification({
+              tipo: 'info',
+              titulo: 'Reporte diario de metas despachado',
+              mensaje: `Reporte de cuotas despachado a Telegram. Progreso: ${totalPublished}/${totalTarget} videos (${Math.round((totalPublished / (totalTarget || 1)) * 100)}%).`,
+              origen: 'telegram',
+            });
           }
         }
       } catch (e) {
         console.error('[PublicationScheduler] Error en checkDailyQuotaAlert:', e);
+      }
+    };
+
+    // Comprobador de tolerancia y advertencia de retrasos en el Centro de Avisos
+    const checkToleranceAlerts = async () => {
+      const now = new Date();
+      const overdueVideos = videos.filter((v) => {
+        if (v.estado !== 'PROGRAMADO') return false;
+        const progTime = new Date(v.programado_para).getTime();
+        // Más de 20 minutos de retraso
+        return now.getTime() - progTime > 20 * 60 * 1000;
+      });
+
+      for (const ov of overdueVideos) {
+        if (!alertedDelaysRef.current.has(ov.id)) {
+          alertedDelaysRef.current.add(ov.id);
+          const diffMins = Math.round((now.getTime() - new Date(ov.programado_para).getTime()) / 60000);
+          const acc = accounts.find((a) => a.id === ov.cuenta_id);
+          await createNotification({
+            tipo: 'warning',
+            titulo: 'Tolerancia de tiempo excedida',
+            mensaje: `El video "${ov.titulo}" para @${acc?.username || 'cuenta'} programado para las ${format(new Date(ov.programado_para), 'HH:mm')} lleva ${diffMins} min de retraso.`,
+            video_id: ov.id,
+            cuenta_id: ov.cuenta_id,
+            origen: 'scraper',
+          });
+        }
       }
     };
 
@@ -215,11 +282,13 @@ export function PublicationScheduler() {
     // Comprobar publicaciones cada 15 segundos
     checkScheduledPublications();
     checkDailyQuotaAlert();
+    checkToleranceAlerts();
     checkTelegramCommands();
 
     const interval = setInterval(() => {
       checkScheduledPublications();
       checkDailyQuotaAlert();
+      checkToleranceAlerts();
     }, 15000);
 
     // Escuchar comandos de Telegram cada 4 segundos

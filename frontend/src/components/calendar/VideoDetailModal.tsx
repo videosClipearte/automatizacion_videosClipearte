@@ -36,6 +36,7 @@ import {
 } from '@/lib/services/driveService';
 import { generateWithGemini } from '@/lib/services/geminiService';
 import { format } from 'date-fns';
+import { createNotification } from '@/lib/services/notificationService';
 
 export function VideoDetailModal() {
   const {
@@ -197,6 +198,18 @@ export function VideoDetailModal() {
         );
         if (uploadRes.success && uploadRes.fileUrl) {
           finalDriveUrl = uploadRes.fileUrl;
+        } else {
+          setSavingEdit(false);
+          setEditFeedback({ success: false, msg: `❌ Error al subir a Drive: ${uploadRes.error}` });
+          createNotification({
+            tipo: 'error',
+            titulo: 'Fallo al actualizar video en Drive',
+            mensaje: `El video "${video.titulo}" no se pudo subir a Drive: ${uploadRes.error}.`,
+            cuenta_id: editCuentaId,
+            video_id: video.id,
+            origen: 'drive',
+          });
+          return;
         }
       }
     }
@@ -263,10 +276,26 @@ export function VideoDetailModal() {
           success: true,
           msg: '🎉 Publicación enviada con éxito a Telegram y marcada como PUBLICADO.'
         });
+        createNotification({
+          tipo: 'success',
+          titulo: 'Publicación enviada a Telegram',
+          mensaje: `Video "${video.titulo}" despachado manualmente a Telegram para @${account?.username || 'cuenta'}.`,
+          video_id: video.id,
+          cuenta_id: video.cuenta_id,
+          origen: 'telegram'
+        });
       } else {
         setTelegramFeedback({
           success: false,
           msg: `⚠️ Error al enviar a Telegram: ${res.message}`
+        });
+        createNotification({
+          tipo: 'error',
+          titulo: 'Fallo al enviar a Telegram',
+          mensaje: `Error al despachar "${video.titulo}" a Telegram: ${res.message}`,
+          video_id: video.id,
+          cuenta_id: video.cuenta_id,
+          origen: 'telegram'
         });
       }
     } catch (e: any) {

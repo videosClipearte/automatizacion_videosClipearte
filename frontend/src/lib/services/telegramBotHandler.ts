@@ -5,6 +5,7 @@ import { getSupabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/services/telegramService';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 import { format, isToday } from 'date-fns';
+import { createNotification } from '@/lib/services/notificationService';
 
 function escapeHtml(text: string): string {
   if (!text) return '';
@@ -126,6 +127,14 @@ Muestra esta lista de comandos.
       // Comando desconocido, no responder para no hacer spam en grupos
       return { handled: false, command, message: `Comando desconocido: ${command}` };
   }
+
+  // Notificar al Centro de Avisos
+  await createNotification({
+    tipo: 'info',
+    titulo: `Comando ${command} ejecutado`,
+    mensaje: `Bot de Telegram respondió comando en chat ${chatId}.`,
+    origen: 'telegram',
+  });
 }
 
 /**
