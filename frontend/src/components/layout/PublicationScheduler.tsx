@@ -9,6 +9,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import { sendPublicationAlert, sendTelegramMessage } from '@/lib/services/telegramService';
 import { handleTelegramUpdate } from '@/lib/services/telegramBotHandler';
+import { getStoredSupabaseConfig } from '@/lib/supabase';
 import { format, isToday } from 'date-fns';
 
 export function PublicationScheduler() {
@@ -167,7 +168,7 @@ export function PublicationScheduler() {
       }
     };
 
-    // Comprobador de comandos del Bot de Telegram (Polling local cuando Webhook no está activo)
+    // Comprobador de comandos del Bot de Telegram (Polling mediante el proxy de servidor sin CORS)
     const checkTelegramCommands = async () => {
       if (typeof window === 'undefined' || webhookActiveRef.current || isPollingCommandsRef.current) return;
       isPollingCommandsRef.current = true;
@@ -183,22 +184,22 @@ export function PublicationScheduler() {
           return;
         }
 
-        const offsetParam =
-          lastTelegramUpdateIdRef.current > 0
-            ? `?offset=${lastTelegramUpdateIdRef.current + 1}&limit=100&timeout=0`
-            : '?limit=100&timeout=0';
+        const { url: supabaseUrl, anonKey: supabaseKey } = getStoredSupabaseConfig();
 
-        const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates${offsetParam}`);
+        const res = await fetch('/api/telegram/poll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            botToken,
+            supabaseUrl,
+            supabaseKey,
+          }),
+        });
+
         const data = await res.json();
 
-        if (data.ok && Array.isArray(data.result)) {
-          for (const update of data.result) {
-            lastTelegramUpdateIdRef.current = Math.max(
-              lastTelegramUpdateIdRef.current,
-              update.update_id
-            );
-            await handleTelegramUpdate(update, botToken);
-          }
+        if (data.ok && data.processed > 0) {
+          console.log(`[PublicationScheduler] ✅ ${data.processed} comando(s) de Telegram procesado(s).`);
         } else if (data.error_code === 409) {
           // Webhook activo en producción
           webhookActiveRef.current = true;

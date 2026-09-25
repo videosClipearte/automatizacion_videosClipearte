@@ -58,6 +58,21 @@ export async function sendTelegramMessage(
       return { success: false, message: 'El Token y el ID de Chat son obligatorios.' };
     }
 
+    // Si estamos en el navegador, usar el proxy interno para garantizar cero problemas de CORS
+    if (typeof window !== 'undefined') {
+      try {
+        const proxyRes = await fetch('/api/telegram/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: cleanToken, chatId: cleanChatId, text, parseMode, extra }),
+        });
+        const proxyData = await proxyRes.json();
+        return proxyData;
+      } catch (proxyErr) {
+        console.warn('[TelegramService] Fallback a llamada directa por error en proxy:', proxyErr);
+      }
+    }
+
     const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
     const payload: any = {
       chat_id: cleanChatId,
