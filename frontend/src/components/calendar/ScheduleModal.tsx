@@ -67,6 +67,7 @@ export function ScheduleModal() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [driveError, setDriveError] = useState<string | null>(null);
   const [driveSuccessUrl, setDriveSuccessUrl] = useState<string | null>(null);
+  const [manualDriveUrl, setManualDriveUrl] = useState('');
 
   const initialDate = scheduleModalDate
     ? format(scheduleModalDate, 'yyyy-MM-dd')
@@ -159,7 +160,13 @@ export function ScheduleModal() {
     if (res.success && res.token) {
       setDriveToken(res.token);
     } else {
-      setDriveError(res.error || 'Error al autorizar con Google Drive.');
+      const err = (res.error || '').toLowerCase();
+      if (err.includes('origin') || err.includes('401') || err.includes('invalid_client')) {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        setDriveError(`⚠️ Google bloqueó el origen (Error 401 no registered origin). Agrega "${origin}" en Google Cloud Console → Credenciales → Orígenes de JavaScript autorizados. O puedes ingresar el enlace de Drive directamente abajo.`);
+      } else {
+        setDriveError(res.error || 'Error al autorizar con Google Drive.');
+      }
     }
   };
 
@@ -252,10 +259,10 @@ export function ScheduleModal() {
     const programadoPara = new Date(`${data.fecha}T${data.hora}`);
     const cleanTitle = videoFile?.name.replace(/\.[^/.]+$/, '') ?? 'Video sin título';
 
-    let driveFileUrl = '#';
+    let driveFileUrl = manualDriveUrl.trim() || '#';
 
-    // Subir video a Google Drive si hay archivo y configuración de Drive
-    if (videoFile) {
+    // Subir video a Google Drive si hay archivo y no se proveyó enlace manual
+    if (videoFile && !manualDriveUrl.trim()) {
       let cfg = getCachedConfig();
       if (!cfg.drive_folder_id && !cfg.drive_client_id) {
         cfg = await loadAppConfig();
@@ -506,11 +513,28 @@ export function ScheduleModal() {
                   )}
 
                   {driveError && (
-                    <p className="text-[10px] text-amber-400 flex items-center gap-1">
+                    <p className="text-[10px] text-amber-400 flex items-center gap-1 leading-snug">
                       <AlertCircle size={11} className="shrink-0" />
                       <span>{driveError}</span>
                     </p>
                   )}
+
+                  {/* Campo para ingresar enlace de Google Drive manualmente */}
+                  <div className="pt-2 border-t border-cyan-500/20">
+                    <label className="text-[11px] font-semibold text-cyan-300 block mb-1">
+                      O pega el enlace de Google Drive manualmente:
+                    </label>
+                    <input
+                      type="text"
+                      value={manualDriveUrl}
+                      onChange={(e) => setManualDriveUrl(e.target.value)}
+                      placeholder="https://drive.google.com/file/d/.../view"
+                      className="w-full glass rounded-lg px-2.5 py-1.5 text-xs text-white border border-cyan-500/30 focus:border-cyan-400 outline-none bg-black/30 font-mono"
+                    />
+                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                      Si pegas el enlace aquí, se usará directamente sin requerir inicio de sesión en Google.
+                    </p>
+                  </div>
                 </div>
               )}
 

@@ -69,6 +69,8 @@ export default function IntegrationsPage() {
   const [showSupabaseKey, setShowSupabaseKey] = useState(false);
   const [supabaseFeedback, setSupabaseFeedback] = useState<{ success: boolean; msg: string } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedOrigin, setCopiedOrigin] = useState(false);
+  const [currentOrigin, setCurrentOrigin] = useState('');
 
   // Global notification
   const [globalSaved, setGlobalSaved] = useState(false);
@@ -100,8 +102,18 @@ export default function IntegrationsPage() {
       setDriveAutoDownload(cfg.drive_auto_download);
       setDriveAutoDelete(cfg.drive_auto_delete_after_verify);
       setDriveRetentionHours(cfg.drive_retention_hours);
+      setDriveOAuthToken(getGoogleDriveToken());
+      setCurrentOrigin(typeof window !== 'undefined' ? window.location.origin : '');
     });
   }, []);
+
+  const handleCopyOrigin = () => {
+    if (typeof window !== 'undefined') {
+      navigator.clipboard.writeText(window.location.origin);
+      setCopiedOrigin(true);
+      setTimeout(() => setCopiedOrigin(false), 3000);
+    }
+  };
 
   // ── Telegram Handlers ──
   const handleSaveTelegram = async () => {
@@ -777,6 +789,37 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
             {driveConnected ? <CheckCircle size={12} /> : <XCircle size={12} />}
             {driveConnected ? 'Sincronizado' : 'Sin Acceso'}
           </div>
+        </div>
+
+        {/* Banner de Solución de Origen para Error 401 */}
+        <div className="p-3.5 rounded-xl border border-amber-500/25 bg-amber-950/20 mb-4 text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-amber-300 flex items-center gap-1.5">
+              <span>⚠️ Requisito de Google Cloud (Evitar Error 401: invalid_client / no registered origin)</span>
+            </span>
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+            Google exige que registres el dominio exacto de tu aplicación para autorizar la conexión con Google Drive.
+          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 rounded-lg bg-black/40 border border-amber-500/20">
+            <div className="min-w-0">
+              <span className="text-[10px] text-[var(--text-muted)] block">Tu Origen actual para agregar en Google Cloud:</span>
+              <span className="text-xs font-mono font-bold text-cyan-300 truncate block">
+                {currentOrigin || 'https://automatizacion-videos-clipearte.vercel.app'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyOrigin}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[11px] font-semibold flex items-center justify-center gap-1 shrink-0 transition-colors"
+            >
+              {copiedOrigin ? <Check size={12} /> : <Copy size={12} />}
+              <span>{copiedOrigin ? 'Copiado' : 'Copiar Origen'}</span>
+            </button>
+          </div>
+          <p className="text-[10px] text-amber-400/90 leading-normal">
+            👉 En <b>console.cloud.google.com</b> → <b>APIs y servicios</b> → <b>Credenciales</b> → Haz clic en tu <b>ID de cliente OAuth 2.0</b> → En <b>&quot;Orígenes de JavaScript autorizados&quot;</b> haz clic en <b>&quot;+ AGREGAR URI&quot;</b>, pega el origen copiado arriba y haz clic en <b>Guardar</b>.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
