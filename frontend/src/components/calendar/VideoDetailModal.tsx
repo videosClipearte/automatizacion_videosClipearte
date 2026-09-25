@@ -34,7 +34,8 @@ import {
   uploadVideoToGoogleDrive,
   requestGoogleDriveOAuthToken
 } from '@/lib/services/driveService';
-import { generateWithGemini } from '@/lib/services/geminiService';
+import { generateWithGemini, generateDescriptionFromVideo } from '@/lib/services/geminiService';
+import { extractVideoStoryboard, VideoAnalysisPayload } from '@/lib/services/videoCompressorService';
 import { format } from 'date-fns';
 import { createNotification } from '@/lib/services/notificationService';
 import { verifyScraperPost } from '@/lib/services/scraperService';
@@ -65,6 +66,8 @@ export function VideoDetailModal() {
   const [editDescripcion, setEditDescripcion] = useState('');
   const [editDriveUrl, setEditDriveUrl] = useState('');
   const [replacementFile, setReplacementFile] = useState<File | null>(null);
+  const [compressedReplacement, setCompressedReplacement] = useState<VideoAnalysisPayload | null>(null);
+  const [compressingReplacement, setCompressingReplacement] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -91,12 +94,44 @@ export function VideoDetailModal() {
       setEditDescripcion(video.descripcion_aprobada_ia || '');
       setEditDriveUrl(video.drive_file_url || '');
       setReplacementFile(null);
+      setCompressedReplacement(null);
+      setCompressingReplacement(false);
       setIsEditing(false);
       setTelegramFeedback(null);
       setEditFeedback(null);
       setUploadProgress(0);
     }
   }, [video]);
+
+  // Extraer fotogramas comprimidos del video de reemplazo para Gemini IA
+  useEffect(() => {
+    if (!replacementFile) {
+      setCompressedReplacement(null);
+      setCompressingReplacement(false);
+      return;
+    }
+
+    let active = true;
+    setCompressingReplacement(true);
+
+    extractVideoStoryboard(replacementFile, 7, 512)
+      .then((payload) => {
+        if (active) {
+          setCompressedReplacement(payload);
+          setCompressingReplacement(false);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          console.warn('Compresión ligera de reemplazo omitida:', err);
+          setCompressingReplacement(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [replacementFile]);
 
   // Dropzone para reemplazar video
   const onDropReplacement = (accepted: File[]) => {
@@ -153,17 +188,37 @@ export function VideoDetailModal() {
     }
 
     try {
-      const res = await generateWithGemini(
-        cfg.gemini_api_key,
-        cfg.gemini_model || 'gemini-1.5-flash',
-        `Genera la descripción para un video titulado "${editTitle}".\n${campaignRules}\nHashtags obligatorios: ${hashtags}.\nDevuelve SOLAMENTE el texto final listo para publicar sin comillas ni encabezados.`,
-        `${cfg.gemini_system_prompt || 'Experto en redes sociales.'}\nRed Social: ${platform.toUpperCase()}`,
-        cfg.gemini_temperature ?? 0.7
-      );
+      let res;
+      if (compressedReplacement && compressedReplacement.frames.length > 0) {
+        res = await generateDescriptionFromVideo(
+          cfg.gemini_api_key,
+          cfg.gemini_model || 'gemini-1.5-flash',
+          compressedReplacement,
+          editTitle,
+          campaignRules,
+          platform,
+          hashtags,
+          `${cfg.gemini_system_prompt || 'Experto en redes sociales.'}\nRed Social: ${platform.toUpperCase()}`,
+          cfg.gemini_temperature ?? 0.7
+        );
+      } else {
+        res = await generateWithGemini(
+          cfg.gemini_api_key,
+          cfg.gemini_model || 'gemini-1.5-flash',
+          `Genera la descripción para un video titulado "${editTitle}".\n${campaignRules}\nHashtags obligatorios: ${hashtags}.\nDevuelve SOLAMENTE el texto final listo para publicar sin comillas ni encabezados.`,
+          `${cfg.gemini_system_prompt || 'Experto en redes sociales.'}\nRed Social: ${platform.toUpperCase()}`,
+          cfg.gemini_temperature ?? 0.7
+        );
+      }
 
       if (res.success && res.text) {
         setEditDescripcion(res.text);
-        setEditFeedback({ success: true, msg: '✨ Copy regenerado con éxito respetando las reglas de la campaña.' });
+        setEditFeedback({
+          success: true,
+          msg: compressedReplacement
+            ? '✨ ¡Video analizado visualmente con Gemini IA! Copy redactado según el nuevo archivo y las reglas de campaña.'
+            : '✨ Copy regenerado con éxito respetando las reglas de la campaña.',
+        });
       } else {
         setEditFeedback({ success: false, msg: `⚠️ ${res.error || 'No se pudo generar'}` });
       }
@@ -666,15 +721,35 @@ export function VideoDetailModal() {
                     >
                       <input {...getInputProps()} />
                       {replacementFile ? (
-                        <div className="flex items-center justify-center gap-2">
-                          <FileVideo size={18} className="text-emerald-400 shrink-0" />
-                          <div className="text-left min-w-0 flex-1">
-                            <p className="text-xs font-bold text-white truncate">{replacementFile.name}</p>
-                            <p className="text-[10px] text-emerald-400 font-mono">
-                              {(replacementFile.size / (1024 * 1024)).toFixed(2)} MB • Nuevo archivo listo
-                            </p>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-center gap-2">
+                            <FileVideo size={18} className="text-emerald-400 shrink-0" />
+                            <div className="text-left min-w-0 flex-1">
+                              <p className="text-xs font-bold text-white truncate">{replacementFile.name}</p>
+                              <p className="text-[10px] text-emerald-400 font-mono">
+                                {(replacementFile.size / (1024 * 1024)).toFixed(2)} MB • Calidad original HD
+                              </p>
+                            </div>
+                            <span className="text-[10px] text-[var(--text-muted)] underline">Cambiar</span>
                           </div>
-                          <span className="text-[10px] text-[var(--text-muted)] underline">Cambiar</span>
+
+                          {/* Badge de optimización para IA */}
+                          <div className="p-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-between text-[10px]">
+                            {compressingReplacement ? (
+                              <span className="text-amber-300 flex items-center gap-1 font-medium">
+                                <Loader2 size={10} className="animate-spin text-amber-400" />
+                                Comprimiendo proxy para IA...
+                              </span>
+                            ) : compressedReplacement ? (
+                              <span className="text-emerald-300 flex items-center gap-1 font-semibold">
+                                <Sparkles size={10} className="text-cyan-400" />
+                                Proxy IA listo: {(compressedReplacement.totalPayloadBytes / 1024).toFixed(0)} KB ({compressedReplacement.frames.length} fts)
+                              </span>
+                            ) : (
+                              <span className="text-[var(--text-muted)]">Listo para reemplazo</span>
+                            )}
+                            <span className="text-[9px] text-[var(--text-secondary)] font-mono">Drive HD</span>
+                          </div>
                         </div>
                       ) : (
                         <div className="py-1">
@@ -801,7 +876,13 @@ export function VideoDetailModal() {
                         className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition-all disabled:opacity-50"
                       >
                         {generatingAI ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
-                        <span>Regenerar con IA</span>
+                        <span>
+                          {generatingAI
+                            ? 'Analizando...'
+                            : compressedReplacement
+                            ? 'Analizar Video con IA 🎬✨'
+                            : 'Regenerar con IA'}
+                        </span>
                       </button>
                     </div>
                     <textarea

@@ -27,7 +27,8 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-import { generateWithGemini } from '@/lib/services/geminiService';
+import { generateWithGemini, generateDescriptionFromVideo } from '@/lib/services/geminiService';
+import { extractVideoStoryboard, VideoAnalysisPayload } from '@/lib/services/videoCompressorService';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import {
   getGoogleDriveToken,
@@ -61,6 +62,8 @@ export function ScheduleModal() {
   const [videoFile, setVideoFile] = useState<File | null>(scheduleModalFile);
   const [generatingAI, setGeneratingAI] = useState(false);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
+  const [compressedVideo, setCompressedVideo] = useState<VideoAnalysisPayload | null>(null);
+  const [compressingVideo, setCompressingVideo] = useState(false);
 
   // Google Drive state
   const [driveToken, setDriveToken] = useState<string | null>(null);
@@ -122,6 +125,36 @@ export function ScheduleModal() {
       }
     }
   }, [isScheduleModalOpen, scheduleModalDate, scheduleModalFile, setValue]);
+
+  // Extraer fotogramas comprimidos (proxy ultraligero) para análisis multimodal con Gemini IA
+  useEffect(() => {
+    if (!videoFile) {
+      setCompressedVideo(null);
+      setCompressingVideo(false);
+      return;
+    }
+
+    let active = true;
+    setCompressingVideo(true);
+
+    extractVideoStoryboard(videoFile, 7, 512)
+      .then((payload) => {
+        if (active) {
+          setCompressedVideo(payload);
+          setCompressingVideo(false);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          console.warn('Compresión visual ligera en segundo plano omitida:', err);
+          setCompressingVideo(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [videoFile]);
 
   const onDrop = useCallback(
     (accepted: File[]) => {
@@ -235,17 +268,39 @@ export function ScheduleModal() {
     }
 
     try {
-      const res = await generateWithGemini(
-        apiKey,
-        model,
-        userPrompt,
-        systemPrompt,
-        cfg.gemini_temperature ?? 0.7
-      );
+      let res;
+      // Si tenemos fotogramas comprimidos extraídos en el navegador, usar análisis multimodal con Gemini
+      if (compressedVideo && compressedVideo.frames.length > 0) {
+        setAiFeedback('🤖 Analizando fotogramas visuales del video con Gemini 1.5 Flash...');
+        res = await generateDescriptionFromVideo(
+          apiKey,
+          model,
+          compressedVideo,
+          videoTitle,
+          campaignRules,
+          platform,
+          hashtags,
+          systemPrompt,
+          cfg.gemini_temperature ?? 0.7
+        );
+      } else {
+        // Fallback a generación textual estándar
+        res = await generateWithGemini(
+          apiKey,
+          model,
+          userPrompt,
+          systemPrompt,
+          cfg.gemini_temperature ?? 0.7
+        );
+      }
 
       if (res.success && res.text) {
         setValue('descripcion', res.text);
-        setAiFeedback('✨ Descripción generada con Gemini IA respetando las reglas de la campaña.');
+        if (compressedVideo) {
+          setAiFeedback('✨ ¡Video analizado visualmente con Gemini IA! Copy redactado según las acciones del video y las reglas de campaña.');
+        } else {
+          setAiFeedback('✨ Descripción generada con Gemini IA respetando las reglas de la campaña.');
+        }
       } else {
         setAiFeedback(`⚠️ ${res.error || 'No se pudo generar con Gemini'}`);
       }
@@ -436,19 +491,46 @@ export function ScheduleModal() {
                 <input {...getInputProps()} />
 
                 {videoFile ? (
-                  <div className="flex items-center justify-center gap-3 py-1">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                      <FileVideo size={20} />
+                  <div className="space-y-2 py-1">
+                    <div className="flex items-center justify-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                        <FileVideo size={20} />
+                      </div>
+                      <div className="text-left min-w-0 flex-1">
+                        <p className="text-xs font-bold text-white truncate">{videoFile.name}</p>
+                        <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
+                          {(videoFile.size / (1024 * 1024)).toFixed(2)} MB • Calidad original HD
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-[var(--text-muted)] underline hover:text-white">
+                        Cambiar
+                      </span>
                     </div>
-                    <div className="text-left min-w-0 flex-1">
-                      <p className="text-xs font-bold text-white truncate">{videoFile.name}</p>
-                      <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
-                        {(videoFile.size / (1024 * 1024)).toFixed(2)} MB • Listo para subir
-                      </p>
+
+                    {/* Badge de optimización para Gemini IA */}
+                    <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-between gap-2 text-[10px]">
+                      {compressingVideo ? (
+                        <div className="flex items-center gap-1.5 text-amber-300 font-medium">
+                          <Loader2 size={12} className="animate-spin text-amber-400" />
+                          <span>Comprimiendo proxy visual para análisis de IA...</span>
+                        </div>
+                      ) : compressedVideo ? (
+                        <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">
+                          <Sparkles size={12} className="text-cyan-400" />
+                          <span>
+                            Proxy IA listo: {(compressedVideo.totalPayloadBytes / 1024).toFixed(0)} KB ({compressedVideo.frames.length} fotogramas · {compressedVideo.aspectRatio})
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
+                          <FileVideo size={12} />
+                          <span>Video cargado listo para Drive</span>
+                        </div>
+                      )}
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-[var(--text-secondary)] font-mono">
+                        Drive 100% HD
+                      </span>
                     </div>
-                    <span className="text-[10px] text-[var(--text-muted)] underline hover:text-white">
-                      Cambiar
-                    </span>
                   </div>
                 ) : (
                   <>
@@ -670,7 +752,13 @@ export function ScheduleModal() {
                     ) : (
                       <Sparkles size={10} />
                     )}
-                    <span>{generatingAI ? 'Generando con Gemini...' : 'Redactar con Gemini IA'}</span>
+                    <span>
+                      {generatingAI
+                        ? 'Analizando con Gemini...'
+                        : compressedVideo
+                        ? 'Analizar Video con Gemini IA 🎬✨'
+                        : 'Redactar con Gemini IA'}
+                    </span>
                   </button>
                 </div>
                 <textarea
