@@ -5,12 +5,16 @@ import { motion } from 'framer-motion';
 import {
   CheckCircle, XCircle, Eye, EyeOff, Loader2, Zap, HardDrive,
   Send, Sparkles, FolderCheck, Bot, CheckCircle2, Database,
-  Copy, Check, RefreshCw, Trash2, Clock
+  Copy, Check, RefreshCw, Trash2, Clock, KeyRound
 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { sendTelegramMessage } from '@/lib/services/telegramService';
 import { generateWithGemini } from '@/lib/services/geminiService';
-import { verifyDriveFolderAccess } from '@/lib/services/driveService';
+import {
+  verifyDriveFolderAccess,
+  getGoogleDriveToken,
+  requestGoogleDriveOAuthToken
+} from '@/lib/services/driveService';
 import {
   getStoredSupabaseConfig, saveStoredSupabaseConfig,
   testSupabaseConnection
@@ -52,6 +56,8 @@ export default function IntegrationsPage() {
   const [testingDrive, setTestingDrive] = useState(false);
   const [savingDrive, setSavingDrive] = useState(false);
   const [showDriveSecret, setShowDriveSecret] = useState(false);
+  const [connectingDriveOAuth, setConnectingDriveOAuth] = useState(false);
+  const [driveOAuthToken, setDriveOAuthToken] = useState<string | null>(null);
   const [driveFeedback, setDriveFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Supabase state
@@ -207,12 +213,39 @@ export default function IntegrationsPage() {
     setTimeout(() => setDriveFeedback(null), 4000);
   };
 
+  const handleConnectDriveOAuth = async () => {
+    if (!driveClientId) {
+      setDriveFeedback({
+        success: false,
+        msg: 'Ingresa primero el Client ID de Google Drive para conectar.',
+      });
+      return;
+    }
+    setConnectingDriveOAuth(true);
+    setDriveFeedback(null);
+    const res = await requestGoogleDriveOAuthToken(driveClientId);
+    setConnectingDriveOAuth(false);
+    if (res.success && res.token) {
+      setDriveOAuthToken(res.token);
+      setDriveConnected(true);
+      setDriveFeedback({
+        success: true,
+        msg: '🎉 Cuenta de Google Drive conectada con éxito. Ya puedes subir videos a tu carpeta seleccionada.',
+      });
+    } else {
+      setDriveFeedback({
+        success: false,
+        msg: res.error || 'Error al conectar con Google Drive.',
+      });
+    }
+  };
+
   const handleTestDrive = async () => {
     setTestingDrive(true);
     setDriveFeedback(null);
     await handleSaveDrive();
 
-    const res = await verifyDriveFolderAccess(driveFolderId, driveClientId);
+    const res = await verifyDriveFolderAccess(driveFolderId, driveClientId, driveOAuthToken || undefined);
     setTestingDrive(false);
     setDriveConnected(res.success);
     setDriveFeedback({ success: res.success, msg: res.message });
@@ -853,7 +886,7 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
             <span>Descargar videos a caché local para Playwright</span>
           </label>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={handleSaveDrive}
@@ -862,6 +895,16 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
             >
               {savingDrive ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
               <span>Actualizar Drive</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleConnectDriveOAuth}
+              disabled={connectingDriveOAuth}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/25 transition-all disabled:opacity-50"
+            >
+              {connectingDriveOAuth ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+              <span>{driveOAuthToken ? 'Re-conectar Drive' : 'Conectar Google Drive'}</span>
             </button>
 
             <button

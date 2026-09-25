@@ -1,13 +1,42 @@
 'use client';
 // src/components/calendar/VideoDetailModal.tsx
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ExternalLink, Edit3, RefreshCw, Send, Trash2, Calendar, Eye, DollarSign } from 'lucide-react';
+import {
+  X,
+  ExternalLink,
+  Edit3,
+  RefreshCw,
+  Send,
+  Trash2,
+  Calendar,
+  Eye,
+  DollarSign,
+  HardDrive,
+  Loader2,
+  CheckCircle2,
+  AlertCircle
+} from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { formatDateTime, formatViews, calcGanancias, getPlatformColor } from '@/lib/utils';
+import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
+import { sendPublicationAlert } from '@/lib/services/telegramService';
+import { format } from 'date-fns';
 
 export function VideoDetailModal() {
-  const { selectedVideoId, setSelectedVideoId, videos, accounts, campaigns, deleteVideo } = useAppStore();
+  const {
+    selectedVideoId,
+    setSelectedVideoId,
+    videos,
+    accounts,
+    campaigns,
+    deleteVideo,
+    updateVideo
+  } = useAppStore();
+
+  const [sendingTelegram, setSendingTelegram] = useState(false);
+  const [telegramFeedback, setTelegramFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   const video = selectedVideoId ? videos.find(v => v.id === selectedVideoId) : null;
   const account = accounts.find(a => a.id === video?.cuenta_id);
@@ -26,6 +55,67 @@ export function VideoDetailModal() {
     }
   };
 
+  // Enviar publicación directamente a Telegram
+  const handleSendTelegramNow = async () => {
+    if (!video) return;
+    setSendingTelegram(true);
+    setTelegramFeedback(null);
+
+    try {
+      let cfg = getCachedConfig();
+      if (!cfg.telegram_bot_token) {
+        cfg = await loadAppConfig();
+      }
+
+      const botToken = cfg.telegram_bot_token;
+      const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id).trim();
+
+      if (!botToken || !targetChat) {
+        setSendingTelegram(false);
+        setTelegramFeedback({
+          success: false,
+          msg: 'Configura el Bot Token y el Chat ID de Telegram en Settings → Integraciones primero.'
+        });
+        return;
+      }
+
+      const res = await sendPublicationAlert(botToken, targetChat, {
+        videoTitle: video.titulo,
+        accountUsername: account?.username || 'cuenta',
+        platform: account?.plataforma || 'red',
+        campaignName: campaign?.nombre,
+        driveFileUrl: video.drive_file_url,
+        descripcion: video.descripcion_aprobada_ia,
+        programadoPara: format(new Date(video.programado_para), 'yyyy-MM-dd HH:mm')
+      });
+
+      setSendingTelegram(false);
+
+      if (res.success) {
+        await updateVideo(video.id, {
+          estado: 'PUBLICADO',
+          enviado_en: new Date(),
+          publicado_en: new Date()
+        });
+        setTelegramFeedback({
+          success: true,
+          msg: '🎉 Publicación enviada con éxito a Telegram y marcada como PUBLICADO.'
+        });
+      } else {
+        setTelegramFeedback({
+          success: false,
+          msg: `⚠️ Error al enviar a Telegram: ${res.message}`
+        });
+      }
+    } catch (e: any) {
+      setSendingTelegram(false);
+      setTelegramFeedback({
+        success: false,
+        msg: `Error: ${e?.message || 'Fallo de conexión'}`
+      });
+    }
+  };
+
   return (
     <AnimatePresence mode="wait">
       {selectedVideoId && video && (
@@ -36,7 +126,7 @@ export function VideoDetailModal() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setSelectedVideoId(null)}
+            onClick={() => { setSelectedVideoId(null); setTelegramFeedback(null); }}
             className="fixed inset-0 bg-black/75 backdrop-blur-sm pointer-events-auto"
           />
 
@@ -62,7 +152,7 @@ export function VideoDetailModal() {
                   </h3>
                 </div>
                 <button
-                  onClick={() => setSelectedVideoId(null)}
+                  onClick={() => { setSelectedVideoId(null); setTelegramFeedback(null); }}
                   className="w-7 h-7 rounded-lg glass flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0"
                 >
                   <X size={13} />
@@ -117,6 +207,29 @@ export function VideoDetailModal() {
                 )}
               </div>
 
+              {/* Google Drive Link (si existe) */}
+              <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 space-y-1.5">
+                <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                  <HardDrive size={13} className="text-cyan-400" />
+                  <span>Google Drive</span>
+                </div>
+                {video.drive_file_url && video.drive_file_url !== '#' ? (
+                  <a
+                    href={video.drive_file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium break-all"
+                  >
+                    <span>Abrir archivo en Google Drive</span>
+                    <ExternalLink size={12} className="shrink-0" />
+                  </a>
+                ) : (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Archivo local (no subido a Google Drive).
+                  </p>
+                )}
+              </div>
+
               {/* Dates & Timeline */}
               <div className="p-3 rounded-xl bg-white/[0.02] border border-[var(--border)] space-y-2 text-xs">
                 <div className="flex justify-between items-center">
@@ -165,11 +278,51 @@ export function VideoDetailModal() {
 
               {/* Caption */}
               <div>
-                <p className="text-xs font-semibold text-[var(--text-secondary)] mb-1.5">Descripción para Redes</p>
-                <p className="text-xs text-[var(--text-primary)] leading-relaxed glass rounded-xl p-3 border border-[var(--border)] max-h-36 overflow-y-auto">
+                <p className="text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
+                  Descripción (Reglas de Campaña)
+                </p>
+                <p className="text-xs text-[var(--text-primary)] leading-relaxed glass rounded-xl p-3 border border-[var(--border)] max-h-36 overflow-y-auto whitespace-pre-wrap">
                   {video.descripcion_aprobada_ia}
                 </p>
               </div>
+
+              {/* Telegram Feedback */}
+              {telegramFeedback && (
+                <div
+                  className={`p-2.5 rounded-xl border text-xs leading-relaxed flex items-center gap-2 ${
+                    telegramFeedback.success
+                      ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                      : 'bg-red-500/10 border-red-500/25 text-red-300'
+                  }`}
+                >
+                  {telegramFeedback.success ? (
+                    <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
+                  ) : (
+                    <AlertCircle size={13} className="shrink-0 text-red-400" />
+                  )}
+                  <span>{telegramFeedback.msg}</span>
+                </div>
+              )}
+
+              {/* Botón de Publicar / Enviar a Telegram Ahora */}
+              <button
+                type="button"
+                onClick={handleSendTelegramNow}
+                disabled={sendingTelegram}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-blue-600/30 to-emerald-600/30 border border-blue-500/40 text-white text-xs font-bold hover:from-blue-600/40 hover:to-emerald-600/40 transition-all shadow-md active:scale-98 disabled:opacity-50"
+              >
+                {sendingTelegram ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Enviando a Telegram...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={13} className="text-blue-400" />
+                    <span>Publicar / Enviar a Telegram Ahora</span>
+                  </>
+                )}
+              </button>
 
               {/* Actions */}
               <div className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">

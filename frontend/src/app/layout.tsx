@@ -7,6 +7,7 @@ import { ScheduleModal } from '@/components/calendar/ScheduleModal';
 import { VideoDetailModal } from '@/components/calendar/VideoDetailModal';
 import { StoreInitializer } from '@/components/layout/StoreInitializer';
 import { SupabaseStatusBanner } from '@/components/layout/SupabaseStatusBanner';
+import { PublicationScheduler } from '@/components/layout/PublicationScheduler';
 
 export const metadata: Metadata = {
   title: 'AutoPublish · Social Manager',
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <StoreInitializer />
         <SupabaseStatusBanner />
+        <PublicationScheduler />
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
           <div className="flex flex-col flex-1 overflow-hidden">

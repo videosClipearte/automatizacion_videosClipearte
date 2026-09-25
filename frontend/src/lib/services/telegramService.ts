@@ -132,3 +132,48 @@ export async function sendToleranceAlert(
 
   return await sendTelegramMessage(token, chatId, text);
 }
+
+/**
+ * Envía la notificación de video programado a Telegram con el enlace de Google Drive y la descripción de la campaña
+ */
+export async function sendPublicationAlert(
+  token: string,
+  chatId: string,
+  data: {
+    videoTitle: string;
+    accountUsername: string;
+    platform: string;
+    campaignName?: string;
+    driveFileUrl?: string;
+    descripcion: string;
+    programadoPara?: string;
+  }
+): Promise<{ success: boolean; message: string }> {
+  const driveSection =
+    data.driveFileUrl && data.driveFileUrl !== '#'
+      ? `📁 <b>Video en Google Drive:</b>\n<a href="${data.driveFileUrl}">${data.driveFileUrl}</a>`
+      : '📁 <b>Video en Drive:</b> <i>(Enlace no registrado)</i>';
+
+  const campaignSection = data.campaignName
+    ? `🎯 <b>Campaña:</b> ${data.campaignName}\n`
+    : '';
+
+  const horaSection = data.programadoPara
+    ? `🕒 <b>Hora programada:</b> ${data.programadoPara}\n`
+    : '';
+
+  const text = `
+🚀 <b>PUBLICACIÓN PROGRAMADA EJECUTADA</b>
+━━━━━━━━━━━━━━━━━━━━
+👤 <b>Cuenta:</b> @${data.accountUsername} (<i>${data.platform.toUpperCase()}</i>)
+${campaignSection}${horaSection}🎬 <b>Título:</b> ${data.videoTitle}
+${driveSection}
+
+📝 <b>DESCRIPCIÓN / COPY APROBADO (REGLAS DE CAMPAÑA):</b>
+${data.descripcion}
+
+⏰ <i>Publicación despachada conforme al horario programado.</i>
+`.trim();
+
+  return await sendTelegramMessage(token, chatId, text);
+}
