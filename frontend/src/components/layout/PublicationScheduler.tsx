@@ -11,6 +11,7 @@ import { sendPublicationAlert, sendTelegramMessage } from '@/lib/services/telegr
 import { handleTelegramUpdate } from '@/lib/services/telegramBotHandler';
 import { getStoredSupabaseConfig } from '@/lib/supabase';
 import { createNotification } from '@/lib/services/notificationService';
+import { verifyScraperPost } from '@/lib/services/scraperService';
 import { format, isToday } from 'date-fns';
 
 export function PublicationScheduler() {
@@ -73,9 +74,9 @@ export function PublicationScheduler() {
                 `[PublicationScheduler] ✅ Alerta de publicación enviada a Telegram para "${video.titulo}".`
               );
               await createNotification({
-                tipo: 'success',
-                titulo: 'Publicación programada ejecutada',
-                mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'red').toUpperCase()}) despachado a Telegram y marcado como PUBLICADO.`,
+                tipo: 'info',
+                titulo: 'Publicación enviada a Telegram',
+                mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'red').toUpperCase()}) despachado a Telegram. Estado: ENVIADO (a la espera de comprobación del scraper).`,
                 video_id: video.id,
                 cuenta_id: video.cuenta_id,
                 origen: 'programador',
@@ -107,11 +108,10 @@ export function PublicationScheduler() {
             });
           }
 
-          // Marcar como PUBLICADO en Supabase y store
+          // Marcar como ENVIADO en Supabase y store (NO como PUBLICADO, que requiere scraper)
           await updateVideo(video.id, {
-            estado: 'PUBLICADO',
+            estado: 'ENVIADO',
             enviado_en: new Date(),
-            publicado_en: new Date(),
           });
         } catch (err: any) {
           console.error(`[PublicationScheduler] Error procesando video ${video.id}:`, err);
@@ -279,16 +279,46 @@ export function PublicationScheduler() {
       }
     };
 
-    // Comprobar publicaciones cada 15 segundos
+    // Comprobador silencioso del Scraper para videos ENVIADOS:
+    // Solo cambia el estado a PUBLICADO cuando el scraper comprueba que la descripción coincide
+    const checkScraperVerifications = async () => {
+      const sentVideos = videos.filter((v) => v.estado === 'ENVIADO');
+      for (const v of sentVideos) {
+        const key = `scraped_verify_${v.id}`;
+        if (alertedDelaysRef.current.has(key)) continue;
+
+        const sentTime = v.enviado_en ? new Date(v.enviado_en).getTime() : new Date(v.programado_para).getTime();
+        // Dejar al menos 1 minuto desde el envío para que el contenido se registre en redes
+        if (Date.now() - sentTime < 60 * 1000) continue;
+
+        alertedDelaysRef.current.add(key);
+        const account = accounts.find((a) => a.id === v.cuenta_id);
+        const res = await verifyScraperPost(v, account);
+
+        if (res.success && res.is_live && res.description_matched) {
+          await updateVideo(v.id, {
+            estado: 'PUBLICADO',
+            publicado_en: new Date(),
+            post_url_publica: res.post_url,
+            vistas_obtenidas: res.vistas,
+          });
+          console.log(`[PublicationScheduler] 🎯 Scraper confirmó video "${v.titulo}". Estado -> PUBLICADO.`);
+        }
+      }
+    };
+
+    // Comprobador de publicaciones cada 15 segundos
     checkScheduledPublications();
     checkDailyQuotaAlert();
     checkToleranceAlerts();
+    checkScraperVerifications();
     checkTelegramCommands();
 
     const interval = setInterval(() => {
       checkScheduledPublications();
       checkDailyQuotaAlert();
       checkToleranceAlerts();
+      checkScraperVerifications();
     }, 15000);
 
     // Escuchar comandos de Telegram cada 4 segundos

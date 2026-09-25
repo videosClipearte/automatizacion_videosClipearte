@@ -60,13 +60,12 @@ export async function GET() {
         sentTelegram = sendRes.success;
       }
 
-      // Marcar como PUBLICADO
+      // Marcar como ENVIADO (esperando confirmación del scraper para pasar a PUBLICADO)
       await db
         .from('publicaciones')
         .update({
-          estado: 'PUBLICADO',
+          estado: 'ENVIADO',
           enviado_en: new Date().toISOString(),
-          publicado_en: new Date().toISOString(),
         })
         .eq('id', video.id);
 

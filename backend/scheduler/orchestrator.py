@@ -119,7 +119,8 @@ class TaskOrchestrator:
                         platform="instagram",
                         profile_url="https://instagram.com/brandofficial",
                         expected_title=video.get("titulo", ""),
-                        post_url=video.get("post_url_publica")
+                        post_url=video.get("post_url_publica"),
+                        expected_description=video.get("descripcion_aprobada_ia", "")
                     )
 
                     if check_result.get("is_live"):

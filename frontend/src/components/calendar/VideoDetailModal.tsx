@@ -37,6 +37,7 @@ import {
 import { generateWithGemini } from '@/lib/services/geminiService';
 import { format } from 'date-fns';
 import { createNotification } from '@/lib/services/notificationService';
+import { verifyScraperPost } from '@/lib/services/scraperService';
 
 export function VideoDetailModal() {
   const {
@@ -51,6 +52,8 @@ export function VideoDetailModal() {
 
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [telegramFeedback, setTelegramFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+  const [verifyingScraper, setVerifyingScraper] = useState(false);
+  const [scraperFeedback, setScraperFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -268,18 +271,17 @@ export function VideoDetailModal() {
 
       if (res.success) {
         await updateVideo(video.id, {
-          estado: 'PUBLICADO',
+          estado: 'ENVIADO',
           enviado_en: new Date(),
-          publicado_en: new Date()
         });
         setTelegramFeedback({
           success: true,
-          msg: '🎉 Publicación enviada con éxito a Telegram y marcada como PUBLICADO.'
+          msg: '🎉 Publicación enviada con éxito a Telegram y marcada como ENVIADO. El scraper comprobará la descripción en redes para pasar a PUBLICADO.'
         });
         createNotification({
-          tipo: 'success',
+          tipo: 'info',
           titulo: 'Publicación enviada a Telegram',
-          mensaje: `Video "${video.titulo}" despachado manualmente a Telegram para @${account?.username || 'cuenta'}.`,
+          mensaje: `Video "${video.titulo}" despachado manualmente a Telegram para @${account?.username || 'cuenta'}. Estado: ENVIADO.`,
           video_id: video.id,
           cuenta_id: video.cuenta_id,
           origen: 'telegram'
@@ -303,6 +305,42 @@ export function VideoDetailModal() {
       setTelegramFeedback({
         success: false,
         msg: `Error: ${e?.message || 'Fallo de conexión'}`
+      });
+    }
+  };
+
+  // Comprobar con Scraper Silencioso si el post ya está en redes y coincide la descripción
+  const handleVerifyWithScraper = async () => {
+    if (!video) return;
+    setVerifyingScraper(true);
+    setScraperFeedback(null);
+
+    try {
+      const res = await verifyScraperPost(video, account);
+      setVerifyingScraper(false);
+
+      if (res.success && res.is_live && res.description_matched) {
+        await updateVideo(video.id, {
+          estado: 'PUBLICADO',
+          publicado_en: new Date(),
+          post_url_publica: res.post_url,
+          vistas_obtenidas: res.vistas,
+        });
+        setScraperFeedback({
+          success: true,
+          msg: res.message,
+        });
+      } else {
+        setScraperFeedback({
+          success: false,
+          msg: res.message,
+        });
+      }
+    } catch (err: any) {
+      setVerifyingScraper(false);
+      setScraperFeedback({
+        success: false,
+        msg: `Error al ejecutar scraper: ${err?.message || 'Fallo de conexión'}`,
       });
     }
   };
@@ -519,6 +557,55 @@ export function VideoDetailModal() {
                     </div>
                   )}
 
+                  {/* Scraper Feedback */}
+                  {scraperFeedback && (
+                    <div
+                      className={`p-2.5 rounded-xl border text-xs leading-relaxed flex items-center gap-2 ${
+                        scraperFeedback.success
+                          ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                          : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+                      }`}
+                    >
+                      {scraperFeedback.success ? (
+                        <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
+                      ) : (
+                        <AlertCircle size={13} className="shrink-0 text-amber-400" />
+                      )}
+                      <span>{scraperFeedback.msg}</span>
+                    </div>
+                  )}
+
+                  {/* Botón de Comprobar con Scraper si está en estado ENVIADO */}
+                  {video.estado === 'ENVIADO' && (
+                    <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25 space-y-2">
+                      <div className="flex items-center gap-1.5 text-cyan-400 text-xs font-semibold">
+                        <Sparkles size={13} />
+                        <span>Estado: ENVIADO a Telegram</span>
+                      </div>
+                      <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                        El video fue despachado a Telegram. El scraper silencioso analiza las redes y comprueba si la descripción coincide para pasarlo a <b>PUBLICADO</b>.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleVerifyWithScraper}
+                        disabled={verifyingScraper}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/35 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all active:scale-98 disabled:opacity-50"
+                      >
+                        {verifyingScraper ? (
+                          <>
+                            <Loader2 size={12} className="animate-spin text-cyan-400" />
+                            <span>Descargando y analizando descripción...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={12} className="text-cyan-400" />
+                            <span>Comprobar con Scraper Ahora (Pasar a PUBLICADO)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Botón de Publicar en Telegram Ahora */}
                   <button
                     type="button"
@@ -534,7 +621,7 @@ export function VideoDetailModal() {
                     ) : (
                       <>
                         <Send size={13} className="text-blue-400" />
-                        <span>Publicar / Enviar a Telegram Ahora</span>
+                        <span>Re-enviar a Telegram Ahora (Marcar ENVIADO)</span>
                       </>
                     )}
                   </button>
