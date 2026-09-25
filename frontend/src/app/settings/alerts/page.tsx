@@ -1,6 +1,6 @@
 'use client';
 // src/app/settings/alerts/page.tsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Clock, Send, AlertTriangle, ShieldCheck, CheckCircle2,
@@ -13,6 +13,10 @@ import { GlassCard } from '@/components/ui/GlassCard';
 import {
   getStoredTelegramConfig, sendTelegramMessage
 } from '@/lib/services/telegramService';
+import { loadAppConfig, getCachedConfig } from '@/lib/services/appConfigService';
+import { getSupabase } from '@/lib/supabase';
+
+const ALERTS_SETTINGS_STORAGE_KEY = 'autopublish_alerts_settings';
 
 export default function AlertsSettingsPage() {
   const { accounts, videos } = useAppStore();
@@ -44,6 +48,32 @@ export default function AlertsSettingsPage() {
   // Save status
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  // Cargar configuraciones guardadas al iniciar
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem(ALERTS_SETTINGS_STORAGE_KEY);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.toleranceMinutes !== undefined) setToleranceMinutes(parsed.toleranceMinutes);
+          if (parsed.retryIntervalMinutes !== undefined) setRetryIntervalMinutes(parsed.retryIntervalMinutes);
+          if (parsed.maxRetries !== undefined) setMaxRetries(parsed.maxRetries);
+          if (parsed.quietHoursEnabled !== undefined) setQuietHoursEnabled(parsed.quietHoursEnabled);
+          if (parsed.quietStart) setQuietStart(parsed.quietStart);
+          if (parsed.quietEnd) setQuietEnd(parsed.quietEnd);
+          if (parsed.telegramTemplate) setTelegramTemplate(parsed.telegramTemplate);
+          if (parsed.dailyQuotaAlertEnabled !== undefined) setDailyQuotaAlertEnabled(parsed.dailyQuotaAlertEnabled);
+          if (parsed.dailyQuotaAlertHour) setDailyQuotaAlertHour(parsed.dailyQuotaAlertHour);
+          if (parsed.scraperIntervalMinutes !== undefined) setScraperIntervalMinutes(parsed.scraperIntervalMinutes);
+          if (parsed.headlessMode !== undefined) setHeadlessMode(parsed.headlessMode);
+          if (parsed.timeoutSeconds !== undefined) setTimeoutSeconds(parsed.timeoutSeconds);
+        } catch (e) {
+          console.error('Error al parsear ajustes de alertas', e);
+        }
+      }
+    }
+  }, []);
+
   const handleTestScraper = async () => {
     setIsTestingScraper(true);
     setScraperTestResult(null);
@@ -53,6 +83,23 @@ export default function AlertsSettingsPage() {
   };
 
   const handleSave = () => {
+    if (typeof window !== 'undefined') {
+      const dataToSave = {
+        toleranceMinutes,
+        retryIntervalMinutes,
+        maxRetries,
+        quietHoursEnabled,
+        quietStart,
+        quietEnd,
+        telegramTemplate,
+        dailyQuotaAlertEnabled,
+        dailyQuotaAlertHour,
+        scraperIntervalMinutes,
+        headlessMode,
+        timeoutSeconds,
+      };
+      localStorage.setItem(ALERTS_SETTINGS_STORAGE_KEY, JSON.stringify(dataToSave));
+    }
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
@@ -62,27 +109,84 @@ export default function AlertsSettingsPage() {
     setSendingDailyReport(true);
     setDailyReportFeedback(null);
 
+    // 1. Obtener credenciales de Telegram desde Supabase (con fallback a caché y localStorage)
+    let cfg = getCachedConfig();
+    if (!cfg.telegram_bot_token) {
+      cfg = await loadAppConfig();
+    }
     const teleConfig = getStoredTelegramConfig();
-    const targetChat = teleConfig.groupId.trim() || teleConfig.adminChatId.trim();
 
-    if (!targetChat) {
+    const botToken = (cfg.telegram_bot_token || teleConfig.botToken || '').trim();
+    // Priorizar ID del grupo, luego ID de admin
+    const targetChat = (
+      cfg.telegram_group_id ||
+      teleConfig.groupId ||
+      cfg.telegram_admin_chat_id ||
+      teleConfig.adminChatId ||
+      ''
+    ).trim();
+
+    if (!botToken || !targetChat) {
       setSendingDailyReport(false);
-      setDailyReportFeedback('⚠️ Configura el ID del Grupo o Chat ID de Telegram en la pestaña Integraciones.');
+      setDailyReportFeedback(
+        '⚠️ No se encontró el Bot Token o Chat ID de Telegram. Ve a Settings → Integraciones y guarda tus credenciales de Telegram.'
+      );
       return;
     }
 
-    // Build consolidated summary for all accounts
+    // 2. Obtener cuentas y videos (desde el store o directamente desde Supabase si el store aún no cargó)
+    let currentAccounts = accounts;
+    let currentVideos = videos;
+
+    if (!currentAccounts || currentAccounts.length === 0) {
+      try {
+        const supa = getSupabase();
+        const [{ data: accData }, { data: vidData }] = await Promise.all([
+          supa.from('cuentas').select('*'),
+          supa.from('publicaciones').select('*'),
+        ]);
+        if (accData && accData.length > 0) {
+          currentAccounts = accData.map((a: any) => ({
+            id: a.id,
+            username: a.username,
+            plataforma: a.plataforma,
+            profile_url: a.profile_url || '',
+            activo: a.activo ?? true,
+            avatar_color: a.avatar_color || '#10b981',
+            publicaciones_estimadas_diarias: a.publicaciones_estimadas_diarias || 3,
+          }));
+        }
+        if (vidData && vidData.length > 0) {
+          currentVideos = vidData.map((v: any) => ({
+            ...v,
+            programado_para: new Date(v.programado_para),
+          }));
+        }
+      } catch (err) {
+        console.error('Error cargando cuentas para reporte de metas:', err);
+      }
+    }
+
+    if (!currentAccounts || currentAccounts.length === 0) {
+      setSendingDailyReport(false);
+      setDailyReportFeedback(
+        '⚠️ No hay cuentas registradas en el sistema para calcular metas diarias. Ve a Settings → Cuentas.'
+      );
+      return;
+    }
+
+    // 3. Construir reporte consolidado para todas las cuentas
     let reportBody = `📊 <b>REPORTE DIARIO DE CUOTAS Y PUBLICACIONES FALTANTES</b>\n━━━━━━━━━━━━━━━━━━━━\n📅 <b>Fecha:</b> ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}\n\n`;
 
     let totalTarget = 0;
     let totalPublished = 0;
     let anyMissing = false;
 
-    accounts.forEach(acc => {
-      const todayVideos = videos.filter(
-        v => v.cuenta_id === acc.id && isToday(new Date(v.programado_para))
+    currentAccounts.forEach((acc) => {
+      const todayVideos = (currentVideos || []).filter(
+        (v) => v.cuenta_id === acc.id && isToday(new Date(v.programado_para))
       );
-      const pubCount = todayVideos.filter(v => v.estado === 'PUBLICADO').length;
+      const pubCount = todayVideos.filter((v) => v.estado === 'PUBLICADO').length;
       const target = acc.publicaciones_estimadas_diarias || 3;
       const missing = Math.max(0, target - pubCount);
 
@@ -106,11 +210,13 @@ export default function AlertsSettingsPage() {
       reportBody += `🎉 <i>¡Todas las cuentas cumplieron sus metas estimadas de hoy!</i>`;
     }
 
-    const res = await sendTelegramMessage(teleConfig.botToken, targetChat, reportBody);
+    const res = await sendTelegramMessage(botToken, targetChat, reportBody);
     setSendingDailyReport(false);
 
     if (res.success) {
-      setDailyReportFeedback(`📢 Reporte de metas diarias enviado con éxito al grupo de Telegram.`);
+      setDailyReportFeedback(
+        `📢 Reporte de metas diarias enviado con éxito al chat de Telegram (${targetChat}).`
+      );
     } else {
       setDailyReportFeedback(`⚠️ Error al enviar reporte: ${res.message}`);
     }
@@ -431,8 +537,18 @@ export default function AlertsSettingsPage() {
         </div>
 
         {dailyReportFeedback && (
-          <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-xs text-cyan-300 flex items-center gap-2">
-            <CheckCircle2 size={14} className="shrink-0 text-cyan-400" />
+          <div
+            className={`p-3 rounded-xl text-xs flex items-center gap-2.5 border ${
+              dailyReportFeedback.startsWith('⚠️')
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+            }`}
+          >
+            {dailyReportFeedback.startsWith('⚠️') ? (
+              <AlertTriangle size={15} className="shrink-0 text-amber-400" />
+            ) : (
+              <CheckCircle2 size={15} className="shrink-0 text-emerald-400" />
+            )}
             <span>{dailyReportFeedback}</span>
           </div>
         )}
