@@ -310,7 +310,7 @@ export function VideoDetailModal() {
   return (
     <AnimatePresence mode="wait">
       {selectedVideoId && video && (
-        <div key="video-detail-root" className="fixed inset-0 z-50 flex items-center justify-end p-4 pointer-events-none">
+        <div key="video-detail-root" className="fixed inset-0 z-50 flex items-center justify-center sm:justify-end p-2 sm:p-4 pointer-events-none">
           {/* Backdrop */}
           <motion.div
             key="video-detail-backdrop"

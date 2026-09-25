@@ -22,11 +22,11 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Top row: Account metrics + Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-1">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+        <div className="lg:col-span-1 flex flex-col h-full">
           <AccountMetrics />
         </div>
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 flex flex-col h-full">
           <ChartsSection />
         </div>
       </div>

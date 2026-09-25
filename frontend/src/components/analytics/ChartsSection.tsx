@@ -45,54 +45,74 @@ export function ChartsSection() {
   });
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
       {/* Area chart: views over time */}
-      <GlassCard>
-        <h3 className="text-sm font-bold text-white mb-4">Vistas en el Tiempo</h3>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={lineData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
-            <defs>
-              <linearGradient id="viewsGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="#10b981" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.01} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} interval={2} />
-            <YAxis tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => formatViews(v)} />
-            <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [formatViews(Number(v) || 0), 'Vistas']} />
-            <Area
-              type="monotone"
-              dataKey="Vistas"
-              stroke="url(#viewsLineGrad)"
-              fill="url(#viewsGrad)"
-              strokeWidth={2}
-            />
-            <defs>
-              <linearGradient id="viewsLineGrad" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%"   stopColor="#10b981" />
-                <stop offset="100%" stopColor="#06b6d4" />
-              </linearGradient>
-            </defs>
-          </AreaChart>
-        </ResponsiveContainer>
+      <GlassCard className="h-full flex flex-col justify-between">
+        <div className="flex items-center justify-between mb-3 shrink-0">
+          <div>
+            <h3 className="text-sm font-bold text-white">Vistas en el Tiempo</h3>
+            <p className="text-[10px] text-[var(--text-muted)]">Historial acumulado de visualizaciones</p>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+            Últimos 14 días
+          </span>
+        </div>
+        <div className="flex-1 w-full min-h-[220px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={lineData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="viewsGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#10b981" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.01} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} interval={2} />
+              <YAxis tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => formatViews(v)} />
+              <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [formatViews(Number(v) || 0), 'Vistas']} />
+              <Area
+                type="monotone"
+                dataKey="Vistas"
+                stroke="url(#viewsLineGrad)"
+                fill="url(#viewsGrad)"
+                strokeWidth={2.5}
+              />
+              <defs>
+                <linearGradient id="viewsLineGrad" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%"   stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#06b6d4" />
+                </linearGradient>
+              </defs>
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </GlassCard>
 
       {/* Bar chart: videos per account by status */}
-      <GlassCard>
-        <h3 className="text-sm font-bold text-white mb-4">Videos por Cuenta</h3>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={barData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }} barSize={10} barGap={2}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="name" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-            <Tooltip {...TOOLTIP_STYLE} />
-            <Legend wrapperStyle={{ fontSize: 10, color: 'var(--text-secondary)' }} />
-            <Bar dataKey="Programados" fill="#a78bfa" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="Enviados"    fill="#60a5fa" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="Publicados"  fill="#34d399" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+      <GlassCard className="h-full flex flex-col justify-between">
+        <div className="flex items-center justify-between mb-3 shrink-0">
+          <div>
+            <h3 className="text-sm font-bold text-white">Videos por Cuenta</h3>
+            <p className="text-[10px] text-[var(--text-muted)]">Distribución por estado y plataforma</p>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold">
+            Por Cuentas
+          </span>
+        </div>
+        <div className="flex-1 w-full min-h-[220px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={barData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }} barSize={10} barGap={3}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="name" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+              <Tooltip {...TOOLTIP_STYLE} />
+              <Legend wrapperStyle={{ fontSize: 10, color: 'var(--text-secondary)' }} />
+              <Bar dataKey="Programados" fill="#a78bfa" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Enviados"    fill="#60a5fa" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Publicados"  fill="#34d399" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </GlassCard>
     </div>
   );

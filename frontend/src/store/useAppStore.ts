@@ -145,6 +145,9 @@ interface AppState {
   closeScheduleModal: () => void;
   setSelectedVideoId: (id: string | null) => void;
   toggleSidebar: () => void;
+  isMobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (open: boolean) => void;
+  toggleMobileSidebar: () => void;
 
   // Videos CRUD
   addVideo: (video: Video) => Promise<void>;
@@ -177,6 +180,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   scheduleModalFile: null,
   selectedVideoId: null,
   isSidebarCollapsed: false,
+  isMobileSidebarOpen: false,
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   initializeStore: async () => {
@@ -232,6 +236,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isScheduleModalOpen: false, scheduleModalDate: null, scheduleModalFile: null }),
   setSelectedVideoId: (id) => set({ selectedVideoId: id }),
   toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
+  setMobileSidebarOpen: (open) => set({ isMobileSidebarOpen: open }),
+  toggleMobileSidebar: () => set((s) => ({ isMobileSidebarOpen: !s.isMobileSidebarOpen })),
 
   // ── Videos ────────────────────────────────────────────────────────────────
   addVideo: async (video) => {

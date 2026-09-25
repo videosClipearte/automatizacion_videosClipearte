@@ -41,22 +41,22 @@ export default function SettingsLayout({
   const pathname = usePathname();
 
   return (
-    <div className="flex-1 p-6 overflow-y-auto max-w-6xl mx-auto w-full">
+    <div className="flex-1 max-w-6xl mx-auto w-full">
       {/* Settings Navigation Header */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             Panel de Control
           </span>
-          <span className="text-xs text-[var(--text-muted)]">• Configuración Global del Sistema</span>
+          <span className="text-xs text-[var(--text-muted)] hidden sm:inline">• Configuración Global del Sistema</span>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Configuración del Sistema</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-1">
+        <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Configuración del Sistema</h1>
+        <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-1">
           Administra credenciales de APIs, cuentas de publicación, intervalos de alertas automáticas y reglas de IA.
         </p>
 
         {/* Tab Navigation */}
-        <div className="mt-6 flex flex-wrap gap-2 p-1.5 glass rounded-2xl border border-[var(--border)]">
+        <div className="mt-5 grid grid-cols-2 lg:grid-cols-4 gap-2 p-1.5 glass rounded-2xl border border-[var(--border)]">
           {SETTINGS_TABS.map((tab) => {
             const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
             const Icon = tab.icon;

@@ -445,23 +445,23 @@ export function CalendarView() {
       </AnimatePresence>
 
       {/* Calendar Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 mb-4 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button onClick={handlePrevious}
-            className="w-8 h-8 rounded-xl glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors"
+            className="w-8 h-8 rounded-xl glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0"
           >
             <ChevronLeft size={15} />
           </button>
-          <h2 className="text-base font-bold text-white capitalize min-w-[200px] text-center tracking-tight">
+          <h2 className="text-sm sm:text-base font-bold text-white capitalize text-center tracking-tight truncate max-w-[170px] sm:max-w-none sm:min-w-[180px]">
             {getTitle()}
           </h2>
           <button onClick={handleNext}
-            className="w-8 h-8 rounded-xl glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors"
+            className="w-8 h-8 rounded-xl glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0"
           >
             <ChevronRight size={15} />
           </button>
           <button onClick={() => setCurrentDate(new Date())}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold glass border border-[var(--border)] text-[var(--text-secondary)] hover:text-white hover:border-[var(--border-strong)] transition-all"
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold glass border border-[var(--border)] text-[var(--text-secondary)] hover:text-white hover:border-[var(--border-strong)] transition-all shrink-0"
           >
             Hoy
           </button>
@@ -560,7 +560,7 @@ export function CalendarView() {
                       setCalendarView('day');
                     }}
                     className={cn(
-                      'relative min-h-[120px] p-2 flex flex-col transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30',
+                      'relative min-h-[85px] sm:min-h-[105px] md:min-h-[120px] p-1.5 sm:p-2 flex flex-col transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30',
                       isCurrentMonth ? 'bg-[var(--bg-card)]' : 'bg-[var(--bg-elevated)]',
                       isToday(day) && 'ring-inset ring-1 ring-emerald-500/40',
                     )}
