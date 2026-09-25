@@ -392,10 +392,17 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
             <input
               type="text"
               value={supabaseUrl}
-              onChange={(e) => setSupabaseUrl(e.target.value)}
-              placeholder="https://xyzcompany.supabase.co"
+              onChange={(e) => {
+                // Limpiar automaticamente el /rest/v1/ si lo pegan por error
+                const cleaned = e.target.value.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+                setSupabaseUrl(cleaned);
+              }}
+              placeholder="https://tuproyecto.supabase.co"
               className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent"
             />
+            <p className="mt-1 text-[10px] text-amber-400/70">
+              Solo la URL base, sin <code className="bg-amber-900/30 px-1 rounded">/rest/v1/</code> al final
+            </p>
           </div>
 
           <div>

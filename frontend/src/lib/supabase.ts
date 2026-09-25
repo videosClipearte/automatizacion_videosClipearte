@@ -5,9 +5,16 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 const ENV_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ENV_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-// URLs invalidas que no son un proyecto Supabase real
+// URLs invalidas o mal formateadas que no funcionan con el cliente JS de Supabase
 function isValidSupabaseUrl(url: string): boolean {
-  return url.startsWith('https://') && !url.includes('xyzcompany') && !url.includes('fallback');
+  return (
+    url.startsWith('https://') &&
+    url.includes('.supabase.co') &&
+    !url.includes('xyzcompany') &&
+    !url.includes('fallback') &&
+    !url.includes('placeholder') &&
+    !url.includes('/rest/v1') // Error comun: copiar la URL con /rest/v1/ al final
+  );
 }
 
 // Devuelve la URL y key correctas: localStorage si son validas, sino las de Vercel env
@@ -29,7 +36,13 @@ export function getStoredSupabaseConfig() {
 
 export function saveStoredSupabaseConfig(url: string, anonKey: string) {
   if (typeof window !== 'undefined') {
-    localStorage.setItem('autopublish_supabase_url', url.trim());
+    // Limpiar errores comunes al copiar la URL de Supabase:
+    // - Quitar /rest/v1/ del final (el cliente JS lo agrega solo)
+    // - Quitar barras finales
+    const cleanUrl = url.trim()
+      .replace(/\/rest\/v1\/?$/, '')
+      .replace(/\/+$/, '');
+    localStorage.setItem('autopublish_supabase_url', cleanUrl);
     localStorage.setItem('autopublish_supabase_key', anonKey.trim());
     cachedClient = null; // Invalidar cache para reconectar con nuevas credenciales
   }
