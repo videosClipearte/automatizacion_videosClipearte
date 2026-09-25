@@ -38,7 +38,7 @@ export default function IntegrationsPage() {
 
   // Gemini AI state
   const [geminiApiKey, setGeminiApiKey] = useState('');
-  const [geminiModel, setGeminiModel] = useState('gemini-1.5-flash');
+  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
   const [geminiPrompt, setGeminiPrompt] = useState('');
   const [geminiTemperature, setGeminiTemperature] = useState(0.7);
   const [geminiConnected, setGeminiConnected] = useState(true);
@@ -95,7 +95,7 @@ export default function IntegrationsPage() {
       setTelegramAdminChatId(cfg.telegram_admin_chat_id);
 
       setGeminiApiKey(cfg.gemini_api_key);
-      setGeminiModel(cfg.gemini_model);
+      setGeminiModel(cfg.gemini_model === 'gemini-1.5-flash' ? 'gemini-2.0-flash' : (cfg.gemini_model || 'gemini-2.0-flash'));
       setGeminiPrompt(cfg.gemini_system_prompt);
       setGeminiTemperature(cfg.gemini_temperature);
 
@@ -921,9 +921,10 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
               onChange={(e) => setGeminiModel(e.target.value)}
               className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-purple-500/50 outline-none bg-transparent"
             >
-              <option value="gemini-1.5-flash" className="bg-[#12121e]">gemini-1.5-flash (Ultra Rápido - Recomendado)</option>
+              <option value="gemini-2.0-flash" className="bg-[#12121e]">gemini-2.0-flash (Ultra Rápido y Multimodal - Recomendado)</option>
+              <option value="gemini-2.5-flash" className="bg-[#12121e]">gemini-2.5-flash (Alta Fidelidad)</option>
+              <option value="gemini-1.5-flash-latest" className="bg-[#12121e]">gemini-1.5-flash-latest (Flash Estable)</option>
               <option value="gemini-1.5-pro" className="bg-[#12121e]">gemini-1.5-pro (Máxima Capacidad)</option>
-              <option value="gemini-2.0-flash" className="bg-[#12121e]">gemini-2.0-flash (Próxima Generación)</option>
             </select>
           </div>
         </div>

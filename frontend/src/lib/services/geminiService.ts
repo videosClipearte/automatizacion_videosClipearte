@@ -9,13 +9,18 @@ export interface GeminiConfig {
 }
 
 const STORAGE_KEY = 'autopublish_gemini_config';
+let cachedWorkingModel: string | null = null;
 
 export function getStoredGeminiConfig(): GeminiConfig {
   if (typeof window !== 'undefined') {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       try {
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        if (parsed.model === 'gemini-1.5-flash') {
+          parsed.model = 'gemini-2.0-flash';
+        }
+        return parsed;
       } catch (e) {
         console.error('Error parsing gemini config', e);
       }
@@ -23,7 +28,7 @@ export function getStoredGeminiConfig(): GeminiConfig {
   }
   return {
     apiKey: '',
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.0-flash',
     systemPrompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas, juveniles y llamativas con hashtags de tendencia.',
     temperature: 0.7,
   };
@@ -36,6 +41,110 @@ export function saveStoredGeminiConfig(config: GeminiConfig): void {
 }
 
 /**
+ * Consulta la lista oficial de modelos habilitados para la clave API del usuario
+ */
+export async function getAvailableGeminiModels(apiKey: string): Promise<string[]> {
+  try {
+    const cleanKey = apiKey.trim();
+    if (!cleanKey) return [];
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const models = (data.models || [])
+      .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+      .map((m: any) => m.name.replace(/^models\//, ''));
+    return models;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Normaliza el modelo y ejecuta la petición con fallback automático si el modelo fue retirado
+ */
+async function fetchGeminiWithFallback(
+  apiKey: string,
+  preferredModel: string,
+  body: any
+): Promise<{ ok: boolean; data: any; usedModel: string }> {
+  const cleanKey = apiKey.trim();
+
+  let initial = (preferredModel || '').replace(/^models\//, '').trim();
+  // gemini-1.5-flash fue retirado por Google; migrar automáticamente a gemini-2.0-flash
+  if (!initial || initial === 'gemini-1.5-flash') {
+    initial = cachedWorkingModel || 'gemini-2.0-flash';
+  }
+
+  // Lista ordenada de candidatos en caso de 404 o modelo no encontrado
+  const candidates = [
+    cachedWorkingModel,
+    initial,
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash-002',
+    'gemini-1.5-flash-001',
+    'gemini-1.5-pro',
+  ].filter((m, idx, self): m is string => Boolean(m) && self.indexOf(m) === idx);
+
+  let lastErrorData: any = null;
+
+  for (const candidate of candidates) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${candidate}:generateContent?key=${cleanKey}`;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        cachedWorkingModel = candidate;
+        return { ok: true, data, usedModel: candidate };
+      }
+
+      const errMsg = (data?.error?.message || '').toLowerCase();
+      // Si el modelo está retirado o no se encuentra en v1beta, probar con el siguiente candidato
+      if (response.status === 404 || errMsg.includes('not found') || errMsg.includes('not supported for generatecontent')) {
+        lastErrorData = data;
+        continue;
+      }
+
+      // Si es otro tipo de error (ej: API key inválida), retornar inmediatamente
+      return { ok: false, data, usedModel: candidate };
+    } catch (err: any) {
+      lastErrorData = { error: { message: err?.message || 'Error de red' } };
+    }
+  }
+
+  // Si ninguno de los candidatos estándar funcionó, consultar dinámicamente la lista de modelos de la API Key
+  try {
+    const liveModels = await getAvailableGeminiModels(cleanKey);
+    const candidateLive = liveModels.find((m) => m.includes('flash')) || liveModels[0];
+    if (candidateLive && !candidates.includes(candidateLive)) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${candidateLive}:generateContent?key=${cleanKey}`;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        cachedWorkingModel = candidateLive;
+        return { ok: true, data, usedModel: candidateLive };
+      }
+      lastErrorData = data;
+    }
+  } catch {
+    // ignorar
+  }
+
+  return { ok: false, data: lastErrorData, usedModel: initial };
+}
+
+/**
  * Llama a la API oficial de Google Gemini para generar contenido de redes
  */
 export async function generateWithGemini(
@@ -44,14 +153,12 @@ export async function generateWithGemini(
   userPrompt: string,
   systemInstruction?: string,
   temperature: number = 0.7
-): Promise<{ success: boolean; text: string; error?: string }> {
+): Promise<{ success: boolean; text: string; error?: string; usedModel?: string }> {
   try {
     const cleanKey = apiKey.trim();
     if (!cleanKey) {
       return { success: false, text: '', error: 'La API Key de Gemini es obligatoria.' };
     }
-
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
 
     const body: any = {
       contents: [
@@ -72,22 +179,16 @@ export async function generateWithGemini(
       };
     }
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const result = await fetchGeminiWithFallback(cleanKey, model, body);
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      const errMsg = data?.error?.message || `Error HTTP ${response.status}`;
+    if (!result.ok) {
+      const errMsg = result.data?.error?.message || 'Error desconocido al invocar Gemini API';
       return { success: false, text: '', error: `Error Gemini API: ${errMsg}` };
     }
 
-    const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidateText = result.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (candidateText) {
-      return { success: true, text: candidateText.trim() };
+      return { success: true, text: candidateText.trim(), usedModel: result.usedModel };
     } else {
       return { success: false, text: '', error: 'Respuesta vacía recibida del modelo Gemini.' };
     }
@@ -110,14 +211,12 @@ export async function generateDescriptionFromVideo(
   hashtags: string,
   systemInstruction?: string,
   temperature: number = 0.7
-): Promise<{ success: boolean; text: string; error?: string }> {
+): Promise<{ success: boolean; text: string; error?: string; usedModel?: string }> {
   try {
     const cleanKey = apiKey.trim();
     if (!cleanKey) {
       return { success: false, text: '', error: 'La API Key de Gemini es obligatoria.' };
     }
-
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
 
     // Construir partes multimodales: fotogramas del video en orden cronológico
     const parts: any[] = videoPayload.frames.map((frameBase64) => ({
@@ -163,22 +262,16 @@ IMPORTANTE: Devuelve SOLAMENTE el texto final de la publicación (listo para cop
       };
     }
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const result = await fetchGeminiWithFallback(cleanKey, model, body);
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      const errMsg = data?.error?.message || `Error HTTP ${response.status}`;
+    if (!result.ok) {
+      const errMsg = result.data?.error?.message || 'Error desconocido al invocar Gemini API';
       return { success: false, text: '', error: `Error Gemini API: ${errMsg}` };
     }
 
-    const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidateText = result.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (candidateText) {
-      return { success: true, text: candidateText.trim() };
+      return { success: true, text: candidateText.trim(), usedModel: result.usedModel };
     } else {
       return { success: false, text: '', error: 'Respuesta vacía recibida del modelo Gemini tras analizar el video.' };
     }

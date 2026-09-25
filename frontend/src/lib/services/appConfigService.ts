@@ -49,7 +49,7 @@ const DEFAULT_CONFIG: AppConfig = {
   drive_auto_delete_after_verify: false,
   drive_retention_hours: 24,
   gemini_api_key: '',
-  gemini_model: 'gemini-1.5-flash',
+  gemini_model: 'gemini-2.0-flash',
   gemini_system_prompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas y llamativas con hashtags de tendencia.',
   gemini_temperature: 0.7,
   alerta_tolerancia_minutos: 60,
@@ -96,6 +96,10 @@ export async function loadAppConfig(): Promise<AppConfig> {
       return DEFAULT_CONFIG;
     }
 
+    // Si la base de datos tenía guardado el modelo retirado gemini-1.5-flash, migrar a 2.0-flash
+    const rawModel = data.gemini_model ?? 'gemini-2.0-flash';
+    const activeModel = rawModel === 'gemini-1.5-flash' ? 'gemini-2.0-flash' : rawModel;
+
     const config: AppConfig = {
       telegram_bot_token: data.telegram_bot_token ?? '',
       telegram_group_id: data.telegram_group_id ?? '',
@@ -107,7 +111,7 @@ export async function loadAppConfig(): Promise<AppConfig> {
       drive_auto_delete_after_verify: data.drive_auto_delete_after_verify ?? false,
       drive_retention_hours: data.drive_retention_hours ?? 24,
       gemini_api_key: data.gemini_api_key ?? '',
-      gemini_model: data.gemini_model ?? 'gemini-1.5-flash',
+      gemini_model: activeModel,
       gemini_system_prompt: data.gemini_system_prompt ?? DEFAULT_CONFIG.gemini_system_prompt,
       gemini_temperature: Number(data.gemini_temperature) ?? 0.7,
       alerta_tolerancia_minutos: data.alerta_tolerancia_minutos ?? 60,

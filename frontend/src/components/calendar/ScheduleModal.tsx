@@ -245,7 +245,7 @@ export function ScheduleModal() {
     }
 
     const apiKey = cfg.gemini_api_key;
-    const model = cfg.gemini_model || 'gemini-1.5-flash';
+    const model = (cfg.gemini_model && cfg.gemini_model !== 'gemini-1.5-flash') ? cfg.gemini_model : 'gemini-2.0-flash';
     const systemPrompt = `${cfg.gemini_system_prompt || 'Actúa como un experto en copywriting para redes sociales.'}\nRed Social Objetivo: ${platform.toUpperCase()}.\nDirectrices de la plataforma: ${targetRule}`;
     const userPrompt = `Genera la descripción para un video titulado "${videoTitle}".\n${campaignRules}\nHashtags obligatorios a incluir: ${hashtags}.\nDevuelve SOLAMENTE el texto final listo para publicar sin comillas ni encabezados.`;
 

@@ -189,10 +189,11 @@ export function VideoDetailModal() {
 
     try {
       let res;
+      const targetModel = (cfg.gemini_model && cfg.gemini_model !== 'gemini-1.5-flash') ? cfg.gemini_model : 'gemini-2.0-flash';
       if (compressedReplacement && compressedReplacement.frames.length > 0) {
         res = await generateDescriptionFromVideo(
           cfg.gemini_api_key,
-          cfg.gemini_model || 'gemini-1.5-flash',
+          targetModel,
           compressedReplacement,
           editTitle,
           campaignRules,
@@ -204,7 +205,7 @@ export function VideoDetailModal() {
       } else {
         res = await generateWithGemini(
           cfg.gemini_api_key,
-          cfg.gemini_model || 'gemini-1.5-flash',
+          targetModel,
           `Genera la descripción para un video titulado "${editTitle}".\n${campaignRules}\nHashtags obligatorios: ${hashtags}.\nDevuelve SOLAMENTE el texto final listo para publicar sin comillas ni encabezados.`,
           `${cfg.gemini_system_prompt || 'Experto en redes sociales.'}\nRed Social: ${platform.toUpperCase()}`,
           cfg.gemini_temperature ?? 0.7
