@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { sendPublicationAlert } from '@/lib/services/telegramService';
+import { loadAppConfig } from '@/lib/services/appConfigService';
 import { format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
@@ -11,9 +12,8 @@ export async function GET() {
   try {
     const db = getSupabase();
 
-    // 1. Obtener configuracion de Telegram desde Supabase
-    const { data: configRows } = await db.from('app_config').select('*').limit(1);
-    const cfg = configRows?.[0] || {};
+    // 1. Obtener configuracion de Telegram desde Supabase (tabla configuracion_app)
+    const cfg = await loadAppConfig();
 
     const botToken = cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
     const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id || process.env.TELEGRAM_GROUP_ID || '').trim();

@@ -185,8 +185,8 @@ export function PublicationScheduler() {
 
         const offsetParam =
           lastTelegramUpdateIdRef.current > 0
-            ? `?offset=${lastTelegramUpdateIdRef.current + 1}&limit=10&timeout=0`
-            : '?limit=10&timeout=0';
+            ? `?offset=${lastTelegramUpdateIdRef.current + 1}&limit=100&timeout=0`
+            : '?limit=100&timeout=0';
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates${offsetParam}`);
         const data = await res.json();
@@ -197,11 +197,12 @@ export function PublicationScheduler() {
               lastTelegramUpdateIdRef.current,
               update.update_id
             );
-            await handleTelegramUpdate(update);
+            await handleTelegramUpdate(update, botToken);
           }
         } else if (data.error_code === 409) {
           // Webhook activo en producción
           webhookActiveRef.current = true;
+          console.log('[PublicationScheduler] Webhook de Telegram activo en producción. Polling desactivado.');
         }
       } catch (err) {
         // Ignorar errores puntuales de red

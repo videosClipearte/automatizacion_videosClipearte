@@ -2,7 +2,7 @@
 // Endpoint que recibe actualizaciones de Telegram en tiempo real 24/7 (Webhook)
 import { NextRequest, NextResponse } from 'next/server';
 import { handleTelegramUpdate } from '@/lib/services/telegramBotHandler';
-import { getSupabase } from '@/lib/supabase';
+import { loadAppConfig } from '@/lib/services/appConfigService';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Payload inválido' }, { status: 400 });
     }
 
-    const result = await handleTelegramUpdate(update);
+    const cfg = await loadAppConfig();
+    const result = await handleTelegramUpdate(update, cfg.telegram_bot_token);
 
     return NextResponse.json({
       ok: true,
@@ -31,15 +32,14 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const db = getSupabase();
-    const { data: configRows } = await db.from('app_config').select('telegram_bot_token, telegram_group_id').limit(1);
-    const cfg = (configRows?.[0] || {}) as any;
+    const cfg = await loadAppConfig();
     const hasToken = Boolean(cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN);
 
     return NextResponse.json({
       ok: true,
       service: 'AutoPublish Telegram Bot Webhook',
       botConfigured: hasToken,
+      groupId: cfg.telegram_group_id || '(no configurado)',
       availableCommands: ['/hoy', '/programados', '/metas', '/faltantes', '/siguiente', '/proximo', '/ayuda'],
       timestamp: new Date().toISOString(),
     });

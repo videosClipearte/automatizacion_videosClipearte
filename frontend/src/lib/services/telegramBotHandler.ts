@@ -3,6 +3,7 @@
 
 import { getSupabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/services/telegramService';
+import { loadAppConfig } from '@/lib/services/appConfigService';
 import { format, isToday } from 'date-fns';
 
 function escapeHtml(text: string): string {
@@ -23,7 +24,10 @@ export interface TelegramCommandResult {
 /**
  * Procesa un update recibido desde Telegram (Webhook o Polling)
  */
-export async function handleTelegramUpdate(update: any): Promise<TelegramCommandResult> {
+export async function handleTelegramUpdate(
+  update: any,
+  botTokenOverride?: string
+): Promise<TelegramCommandResult> {
   const message = update?.message || update?.channel_post || update?.edited_message;
   if (!message || !message.text) {
     return { handled: false, message: 'Update sin mensaje de texto' };
@@ -42,16 +46,25 @@ export async function handleTelegramUpdate(update: any): Promise<TelegramCommand
   const rawCmd = text.split(/\s+/)[0];
   const command = rawCmd.split('@')[0].toLowerCase();
 
-  // 1. Obtener Token del bot desde Supabase
+  // 1. Obtener Token del bot (override o desde configuracion_app)
   const db = getSupabase();
-  const { data: configRows } = await db.from('app_config').select('*').limit(1);
-  const cfg = configRows?.[0] || {};
-  const botToken = (cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  let botToken = (botTokenOverride || '').trim();
 
   if (!botToken) {
-    console.warn('[TelegramBot] Bot Token no configurado en app_config ni en variables de entorno.');
+    try {
+      const cfg = await loadAppConfig();
+      botToken = (cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+    } catch (e) {
+      console.error('[TelegramBot] Error cargando config de bot:', e);
+    }
+  }
+
+  if (!botToken) {
+    console.warn('[TelegramBot] Bot Token no configurado en configuracion_app ni en variables de entorno.');
     return { handled: true, command, responseSent: false, message: 'Bot Token no configurado' };
   }
+
+  console.log(`[TelegramBot] 📩 Ejecutando comando "${command}" en chat ${chatId} (Usuario: ${message.from?.username || message.from?.first_name || 'anónimo'})...`);
 
   // 2. Procesar según el comando
   switch (command) {
