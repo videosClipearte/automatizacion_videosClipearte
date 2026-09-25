@@ -45,13 +45,14 @@ function escapeHtml(text: string): string {
  */
 export async function sendTelegramMessage(
   token: string,
-  chatId: string,
+  chatId: string | number,
   text: string,
-  parseMode: 'HTML' | 'Markdown' | undefined = 'HTML'
+  parseMode: 'HTML' | 'Markdown' | undefined = 'HTML',
+  extra?: { reply_to_message_id?: number; message_thread_id?: number }
 ): Promise<{ success: boolean; message: string; data?: any }> {
   try {
     const cleanToken = token.trim();
-    const cleanChatId = chatId.trim();
+    const cleanChatId = String(chatId).trim();
 
     if (!cleanToken || !cleanChatId) {
       return { success: false, message: 'El Token y el ID de Chat son obligatorios.' };
@@ -63,6 +64,8 @@ export async function sendTelegramMessage(
       text: text,
     };
     if (parseMode) payload.parse_mode = parseMode;
+    if (extra?.reply_to_message_id) payload.reply_to_message_id = extra.reply_to_message_id;
+    if (extra?.message_thread_id) payload.message_thread_id = extra.message_thread_id;
 
     const response = await fetch(url, {
       method: 'POST',

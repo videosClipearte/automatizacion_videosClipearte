@@ -8,12 +8,16 @@ import { useEffect, useRef } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import { sendPublicationAlert, sendTelegramMessage } from '@/lib/services/telegramService';
+import { handleTelegramUpdate } from '@/lib/services/telegramBotHandler';
 import { format, isToday } from 'date-fns';
 
 export function PublicationScheduler() {
   const { videos, accounts, campaigns, updateVideo } = useAppStore();
   const processingRef = useRef<Set<string>>(new Set());
   const lastDailyAlertDateRef = useRef<string | null>(null);
+  const lastTelegramUpdateIdRef = useRef<number>(0);
+  const webhookActiveRef = useRef<boolean>(false);
+  const isPollingCommandsRef = useRef<boolean>(false);
 
   useEffect(() => {
     const checkScheduledPublications = async () => {
@@ -163,15 +167,68 @@ export function PublicationScheduler() {
       }
     };
 
+    // Comprobador de comandos del Bot de Telegram (Polling local cuando Webhook no está activo)
+    const checkTelegramCommands = async () => {
+      if (typeof window === 'undefined' || webhookActiveRef.current || isPollingCommandsRef.current) return;
+      isPollingCommandsRef.current = true;
+
+      try {
+        let cfg = getCachedConfig();
+        if (!cfg.telegram_bot_token) {
+          cfg = await loadAppConfig();
+        }
+        const botToken = cfg.telegram_bot_token?.trim();
+        if (!botToken) {
+          isPollingCommandsRef.current = false;
+          return;
+        }
+
+        const offsetParam =
+          lastTelegramUpdateIdRef.current > 0
+            ? `?offset=${lastTelegramUpdateIdRef.current + 1}&limit=10&timeout=0`
+            : '?limit=10&timeout=0';
+
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates${offsetParam}`);
+        const data = await res.json();
+
+        if (data.ok && Array.isArray(data.result)) {
+          for (const update of data.result) {
+            lastTelegramUpdateIdRef.current = Math.max(
+              lastTelegramUpdateIdRef.current,
+              update.update_id
+            );
+            await handleTelegramUpdate(update);
+          }
+        } else if (data.error_code === 409) {
+          // Webhook activo en producción
+          webhookActiveRef.current = true;
+        }
+      } catch (err) {
+        // Ignorar errores puntuales de red
+      } finally {
+        isPollingCommandsRef.current = false;
+      }
+    };
+
     // Comprobar publicaciones cada 15 segundos
     checkScheduledPublications();
     checkDailyQuotaAlert();
+    checkTelegramCommands();
+
     const interval = setInterval(() => {
       checkScheduledPublications();
       checkDailyQuotaAlert();
     }, 15000);
 
-    return () => clearInterval(interval);
+    // Escuchar comandos de Telegram cada 4 segundos
+    const commandInterval = setInterval(() => {
+      checkTelegramCommands();
+    }, 4000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(commandInterval);
+    };
   }, [videos, accounts, campaigns, updateVideo]);
 
   return null;

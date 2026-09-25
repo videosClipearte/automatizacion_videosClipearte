@@ -33,6 +33,8 @@ export default function IntegrationsPage() {
   const [savingTelegram, setSavingTelegram] = useState(false);
   const [showTelegramToken, setShowTelegramToken] = useState(false);
   const [telegramFeedback, setTelegramFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+  const [activatingWebhook, setActivatingWebhook] = useState(false);
+  const [webhookFeedback, setWebhookFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Gemini AI state
   const [geminiApiKey, setGeminiApiKey] = useState('');
@@ -161,6 +163,66 @@ export default function IntegrationsPage() {
     } else {
       setTelegramConnected(false);
       setTelegramFeedback({ success: false, msg: `⚠️ ${res.message}` });
+    }
+  };
+
+  const handleActivateWebhook = async () => {
+    if (!telegramToken.trim()) {
+      setWebhookFeedback({ success: false, msg: 'Ingresa primero el Token del Bot.' });
+      return;
+    }
+    setActivatingWebhook(true);
+    setWebhookFeedback(null);
+    try {
+      const webhookUrl = `${window.location.origin}/api/telegram/webhook`;
+      const res = await fetch(
+        `https://api.telegram.org/bot${telegramToken.trim()}/setWebhook?url=${encodeURIComponent(webhookUrl)}`
+      );
+      const data = await res.json();
+      setActivatingWebhook(false);
+      if (data.ok) {
+        setWebhookFeedback({
+          success: true,
+          msg: `🎉 Webhook enlazado exitosamente a: ${webhookUrl}. Tu bot responderá comandos las 24 horas en tus grupos de Telegram.`,
+        });
+      } else {
+        setWebhookFeedback({
+          success: false,
+          msg: `⚠️ Error de Telegram al registrar Webhook: ${data.description}`,
+        });
+      }
+    } catch (err: any) {
+      setActivatingWebhook(false);
+      setWebhookFeedback({
+        success: false,
+        msg: `Error de red al registrar Webhook: ${err?.message || 'Error de conexión'}`,
+      });
+    }
+  };
+
+  const handleCheckWebhook = async () => {
+    if (!telegramToken.trim()) {
+      setWebhookFeedback({ success: false, msg: 'Ingresa primero el Token del Bot.' });
+      return;
+    }
+    setActivatingWebhook(true);
+    setWebhookFeedback(null);
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${telegramToken.trim()}/getWebhookInfo`);
+      const data = await res.json();
+      setActivatingWebhook(false);
+      if (data.ok && data.result) {
+        const info = data.result;
+        const statusMsg = info.url
+          ? `✅ Webhook activo en Telegram: ${info.url} (Actualizaciones pendientes: ${info.pending_update_count || 0})`
+          : `ℹ️ No hay Webhook activo. El bot opera en modo Polling automático cada vez que tienes la aplicación web abierta.`;
+        setWebhookFeedback({ success: Boolean(info.url), msg: statusMsg });
+      } else {
+        setWebhookFeedback({ success: false, msg: `⚠️ ${data.description}` });
+      }
+    } catch (err: any) {
+      setActivatingWebhook(false);
+      setWebhookFeedback({ success: false, msg: `Error al consultar estado: ${err?.message}` });
     }
   };
 
@@ -708,6 +770,85 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
             {telegramFeedback.msg}
           </div>
         )}
+
+        {/* Sección de Comandos de Telegram en Grupos */}
+        <div className="mt-4 pt-4 border-t border-[var(--border)]">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div>
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Sparkles size={13} className="text-blue-400" />
+                Comandos Interactivos del Bot en Grupos de Telegram
+              </h4>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Escribe estos comandos en tu grupo o en privado con tu bot para recibir respuestas al instante:
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCheckWebhook}
+                disabled={activatingWebhook}
+                className="px-2.5 py-1 rounded-lg border border-[var(--border)] hover:bg-white/[0.05] text-[11px] text-[var(--text-muted)] hover:text-white transition-all disabled:opacity-50"
+              >
+                Ver Estado Webhook
+              </button>
+              <button
+                type="button"
+                onClick={handleActivateWebhook}
+                disabled={activatingWebhook}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[11px] font-bold hover:bg-blue-500/30 transition-all disabled:opacity-50 shadow-sm"
+              >
+                {activatingWebhook ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
+                <span>Activar Webhook 24/7</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)]">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-bold text-blue-400">/hoy</span>
+                <span className="text-[10px] text-[var(--text-muted)]">o /programados</span>
+              </div>
+              <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
+                Lista los videos programados para hoy con fecha, campaña y título (sin links ni descripciones).
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)]">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-bold text-cyan-400">/metas</span>
+                <span className="text-[10px] text-[var(--text-muted)]">o /faltantes</span>
+              </div>
+              <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
+                Reporta cuántos videos faltan publicar hoy en cada red social para cumplir la cuota diaria.
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)]">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-bold text-emerald-400">/siguiente</span>
+                <span className="text-[10px] text-[var(--text-muted)]">o /proximo</span>
+              </div>
+              <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
+                Envía la ficha del próximo video con link de Google Drive y su descripción aislada en 2 mensajes.
+              </p>
+            </div>
+          </div>
+
+          {webhookFeedback && (
+            <div
+              className={`mt-2.5 p-2 rounded-xl border text-[11px] leading-relaxed ${
+                webhookFeedback.success
+                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                  : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+              }`}
+            >
+              {webhookFeedback.msg}
+            </div>
+          )}
+        </div>
       </GlassCard>
 
       {/* ── CARD 3: GOOGLE GEMINI IA ── */}
