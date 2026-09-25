@@ -40,8 +40,10 @@ export function saveStoredSupabaseConfig(url: string, anonKey: string) {
 let cachedClient: SupabaseClient | null = null;
 let cachedUrl = '';
 
-export function getSupabase(): SupabaseClient {
-  const { url, anonKey } = getStoredSupabaseConfig();
+export function getSupabase(customUrl?: string, customKey?: string): SupabaseClient {
+  const stored = getStoredSupabaseConfig();
+  const url = customUrl || stored.url;
+  const anonKey = customKey || stored.anonKey;
 
   // Recrear el cliente si la URL cambio o no existe cache
   if (!cachedClient || cachedUrl !== url) {
