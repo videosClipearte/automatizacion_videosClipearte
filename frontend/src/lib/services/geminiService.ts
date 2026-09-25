@@ -8,6 +8,23 @@ export interface GeminiConfig {
   temperature: number;
 }
 
+export interface ExtractedSubtitlesJson {
+  gancho_inicial?: string;
+  subtitulos_detectados?: string[];
+  tema_principal?: string;
+  llamado_a_la_accion?: string;
+  dialogo_completo?: string;
+  [key: string]: any;
+}
+
+export interface GeminiAnalysisResult {
+  success: boolean;
+  text: string;
+  subtitlesJson?: ExtractedSubtitlesJson | null;
+  usedModel?: string;
+  error?: string;
+}
+
 const STORAGE_KEY = 'autopublish_gemini_config';
 
 export function getStoredGeminiConfig(): GeminiConfig {
@@ -43,8 +60,9 @@ export function saveStoredGeminiConfig(config: GeminiConfig): void {
 async function callGoogleGeminiDirect(
   apiKey: string,
   modelName: string,
-  body: any
-): Promise<{ success: boolean; text: string; error?: string; usedModel?: string }> {
+  body: any,
+  isSubtitleAnalysis: boolean = false
+): Promise<GeminiAnalysisResult> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
     return {
@@ -85,7 +103,6 @@ async function callGoogleGeminiDirect(
       try {
         responseJson = JSON.parse(responseText);
       } catch {
-        // Respuesta no es JSON (ej. error 502/504 de red)
         lastErrorMessage = responseText.slice(0, 160) || `Error HTTP ${response.status}`;
         continue;
       }
@@ -93,9 +110,35 @@ async function callGoogleGeminiDirect(
       if (response.ok) {
         const candidateText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (candidateText) {
+          let parsedSubtitles: ExtractedSubtitlesJson | null = null;
+          let finalText = candidateText.trim();
+
+          // Si es análisis de subtítulos, separar el bloque JSON y el copy final
+          if (isSubtitleAnalysis) {
+            if (candidateText.includes('---COPY---')) {
+              const parts = candidateText.split('---COPY---');
+              const rawJson = parts[0].replace(/```json/gi, '').replace(/```/gi, '').trim();
+              try {
+                parsedSubtitles = JSON.parse(rawJson);
+              } catch {
+                parsedSubtitles = { dialogo_detectado: rawJson };
+              }
+              finalText = parts[1].trim();
+            } else if (candidateText.includes('```json')) {
+              const jsonMatch = candidateText.match(/```json([\s\S]*?)```/i);
+              if (jsonMatch) {
+                try {
+                  parsedSubtitles = JSON.parse(jsonMatch[1].trim());
+                  finalText = candidateText.replace(jsonMatch[0], '').trim();
+                } catch {}
+              }
+            }
+          }
+
           return {
             success: true,
-            text: candidateText.trim(),
+            text: finalText,
+            subtitlesJson: parsedSubtitles,
             usedModel: currentModel,
           };
         }
@@ -103,10 +146,9 @@ async function callGoogleGeminiDirect(
 
       const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
 
-      // Si la API key es inválida o está deshabilitada (error 400/403 de autenticación), salir de inmediato
       if (
         response.status === 403 ||
-        response.status === 400 && errMsg.toLowerCase().includes('api key not valid')
+        (response.status === 400 && errMsg.toLowerCase().includes('api key not valid'))
       ) {
         return {
           success: false,
@@ -115,7 +157,6 @@ async function callGoogleGeminiDirect(
         };
       }
 
-      // Si es 404 (modelo no encontrado en esta cuenta), probar el siguiente modelo
       lastErrorMessage = errMsg;
     } catch (err: any) {
       lastErrorMessage = err?.message || 'Error de conexión con Google Gemini';
@@ -130,7 +171,7 @@ async function callGoogleGeminiDirect(
 }
 
 /**
- * Llama a la API oficial de Google Gemini para redactar copy textual
+ * Llama a la API oficial de Google Gemini para redactar copy textual estándar
  */
 export async function generateWithGemini(
   apiKey: string,
@@ -138,7 +179,7 @@ export async function generateWithGemini(
   userPrompt: string,
   systemInstruction?: string,
   temperature: number = 0.7
-): Promise<{ success: boolean; text: string; error?: string; usedModel?: string }> {
+): Promise<GeminiAnalysisResult> {
   const body: any = {
     contents: [
       {
@@ -158,12 +199,13 @@ export async function generateWithGemini(
     };
   }
 
-  return callGoogleGeminiDirect(apiKey, model, body);
+  return callGoogleGeminiDirect(apiKey, model, body, false);
 }
 
 /**
- * Llama a Gemini pasando la secuencia multimodal de fotogramas del video comprimido
- * directamente desde el navegador a Google para análisis visual ultrarrápido y sin timeouts.
+ * Flujo integrado de Extracción de Subtítulos a JSON + Análisis de Video + Redacción:
+ * 1. Extrae todos los subtítulos, diálogos y textos del video en un bloque JSON estructurado.
+ * 2. Analiza el JSON y redacta la descripción perfecta para la red social respetando las reglas de campaña.
  */
 export async function generateDescriptionFromVideo(
   apiKey: string,
@@ -175,8 +217,7 @@ export async function generateDescriptionFromVideo(
   hashtags: string,
   systemInstruction?: string,
   temperature: number = 0.7
-): Promise<{ success: boolean; text: string; error?: string; usedModel?: string }> {
-  // Construir partes multimodales cronológicas
+): Promise<GeminiAnalysisResult> {
   const parts: any[] = videoPayload.frames.map((frameBase64) => ({
     inline_data: {
       mime_type: 'image/jpeg',
@@ -185,17 +226,38 @@ export async function generateDescriptionFromVideo(
   }));
 
   const userPrompt = `
-Mira detenidamente la secuencia cronológica de fotogramas del video adjunto (duración aproximada: ${videoPayload.durationSeconds}s, aspecto: ${videoPayload.aspectRatio}, título propuesto: "${videoTitle}").
+Analiza detenidamente la secuencia cronológica de fotogramas del video adjunto (duración aproximada: ${videoPayload.durationSeconds}s, aspecto: ${videoPayload.aspectRatio}, título propuesto: "${videoTitle}").
 
-TAREA:
-1. Analiza de qué trata el video (tema principal, acciones que se observan, ganchos visuales y tono general).
-2. Redacta el COPY/DESCRIPCIÓN PERFECTO para publicar en la red social ${platform.toUpperCase()}, asegurando que enganche a la audiencia en los primeros segundos acorde a lo que pasa en el video.
-3. Cumple OBLIGATORIAMENTE las siguientes directrices y reglas de la campaña:
+REALIZA ESTE FLUJO DE TRABAJO OBLIGATORIO:
+
+PASO 1: EXTRACCIÓN DE SUBTÍTULOS Y DIÁLOGO A JSON
+- Lee y transcribe todos los textos, subtítulos en pantalla y diálogos que aparecen a lo largo del video.
+- Sintetiza la información en un objeto JSON estructurado con:
+  • "gancho_inicial": La primera frase o gancho impactante con el que abre el video.
+  • "subtitulos_detectados": Array con las frases o líneas de subtítulos en orden cronológico.
+  • "tema_principal": El tema central y el valor o mensaje que transmite el video.
+  • "llamado_a_la_accion": La acción que se le pide a la audiencia (comentar, compartir, seguir, etc.).
+
+PASO 2: REDACCIÓN DE DESCRIPCIÓN CON BASE EN LOS SUBTÍTULOS EXTRAÍDOS
+- Con base ESTRICTAMENTE en el diálogo y subtítulos identificados en el JSON anterior:
+- Redacta el COPY/DESCRIPCIÓN perfecto para publicar en la red social ${platform.toUpperCase()}.
+- Cumple OBLIGATORIAMENTE las siguientes reglas y directrices de la campaña:
 ${campaignRules}
+- Incluye de forma natural o al final estos hashtags obligatorios: ${hashtags}
 
-4. Incluye de forma natural o al final estos hashtags obligatorios: ${hashtags}
+FORMATO DE RESPUESTA OBLIGATORIO:
+Devuelve tu respuesta EXACTAMENTE con este formato separado por la etiqueta '---COPY---':
 
-IMPORTANTE: Devuelve SOLAMENTE el texto final de la publicación (listo para copiar y pegar), con emojis adecuados y sin títulos como "Descripción:" ni comillas.
+\`\`\`json
+{
+  "gancho_inicial": "Texto del gancho inicial aquí",
+  "subtitulos_detectados": ["Línea 1...", "Línea 2...", "Línea 3..."],
+  "tema_principal": "Tema principal aquí",
+  "llamado_a_la_accion": "Llamado a la acción aquí"
+}
+\`\`\`
+---COPY---
+[Aquí escribe SOLAMENTE el texto final de la descripción listo para publicar, con emojis adecuados y los hashtags obligatorios, sin títulos como "Descripción:" ni comillas]
 `.trim();
 
   parts.push({ text: userPrompt });
@@ -209,7 +271,7 @@ IMPORTANTE: Devuelve SOLAMENTE el texto final de la publicación (listo para cop
     ],
     generationConfig: {
       temperature: temperature,
-      maxOutputTokens: 750,
+      maxOutputTokens: 900,
     },
   };
 
@@ -219,5 +281,5 @@ IMPORTANTE: Devuelve SOLAMENTE el texto final de la publicación (listo para cop
     };
   }
 
-  return callGoogleGeminiDirect(apiKey, model, body);
+  return callGoogleGeminiDirect(apiKey, model, body, true);
 }

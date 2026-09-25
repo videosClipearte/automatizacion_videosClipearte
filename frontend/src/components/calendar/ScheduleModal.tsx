@@ -15,7 +15,9 @@ import {
   AlertCircle,
   Loader2,
   Check,
-  ExternalLink
+  ExternalLink,
+  FileText,
+  Code
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -27,7 +29,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-import { generateWithGemini, generateDescriptionFromVideo } from '@/lib/services/geminiService';
+import { generateWithGemini, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
 import { extractVideoStoryboard, VideoAnalysisPayload } from '@/lib/services/videoCompressorService';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import {
@@ -64,6 +66,8 @@ export function ScheduleModal() {
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
   const [compressedVideo, setCompressedVideo] = useState<VideoAnalysisPayload | null>(null);
   const [compressingVideo, setCompressingVideo] = useState(false);
+  const [extractedSubtitles, setExtractedSubtitles] = useState<ExtractedSubtitlesJson | null>(null);
+  const [showSubtitlesJson, setShowSubtitlesJson] = useState(false);
 
   // Google Drive state
   const [driveToken, setDriveToken] = useState<string | null>(null);
@@ -128,6 +132,8 @@ export function ScheduleModal() {
 
   // Extraer fotogramas comprimidos (proxy ultraligero) para análisis multimodal con Gemini IA
   useEffect(() => {
+    setExtractedSubtitles(null);
+    setShowSubtitlesJson(false);
     if (!videoFile) {
       setCompressedVideo(null);
       setCompressingVideo(false);
@@ -294,9 +300,12 @@ export function ScheduleModal() {
 
       if (res.success && res.text) {
         setValue('descripcion', res.text);
+        if (res.subtitlesJson) {
+          setExtractedSubtitles(res.subtitlesJson);
+        }
         const usedName = res.usedModel || model;
         if (compressedVideo) {
-          setAiFeedback(`✨ ¡Video analizado con éxito usando ${usedName}! Copy redactado según el contenido real y las reglas.`);
+          setAiFeedback(`✨ Subtítulos y diálogo extraídos en JSON. Copy generado con éxito usando ${usedName}.`);
         } else {
           setAiFeedback(`✨ Descripción generada con éxito usando ${usedName}.`);
         }
@@ -769,6 +778,47 @@ export function ScheduleModal() {
                 {aiFeedback && (
                   <p className="text-[10px] text-cyan-300 mt-1 leading-snug">{aiFeedback}</p>
                 )}
+
+                {/* Subtítulos y Diálogo extraídos en JSON */}
+                {extractedSubtitles && (
+                  <div className="mt-2.5 p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-purple-300 font-bold text-[11px]">
+                        <FileText size={13} className="text-cyan-400" />
+                        <span>Subtítulos y Diálogo Extraídos en JSON</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowSubtitlesJson(!showSubtitlesJson)}
+                        className="text-[10px] font-semibold text-cyan-300 hover:text-white underline"
+                      >
+                        {showSubtitlesJson ? 'Ocultar JSON' : 'Ver JSON'}
+                      </button>
+                    </div>
+
+                    {extractedSubtitles.gancho_inicial && (
+                      <div className="p-2 rounded-lg bg-black/40 border border-purple-500/20 text-[11px]">
+                        <span className="text-[9px] text-purple-400 font-bold uppercase tracking-wider block">
+                          Gancho Inicial Detectado:
+                        </span>
+                        <p className="text-white italic mt-0.5">"{extractedSubtitles.gancho_inicial}"</p>
+                      </div>
+                    )}
+
+                    {extractedSubtitles.tema_principal && (
+                      <p className="text-[11px] text-[var(--text-secondary)]">
+                        <b className="text-purple-300">Tema:</b> {extractedSubtitles.tema_principal}
+                      </p>
+                    )}
+
+                    {showSubtitlesJson && (
+                      <pre className="text-[10px] font-mono text-purple-200 bg-black/70 p-2.5 rounded-lg overflow-x-auto max-h-36 overflow-y-auto border border-purple-500/20">
+                        {JSON.stringify(extractedSubtitles, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
                 {errors.descripcion && (
                   <p className="text-red-400 text-[10px] mt-1">{errors.descripcion.message}</p>
                 )}
