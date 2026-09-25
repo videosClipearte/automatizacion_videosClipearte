@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import {
   CheckCircle, XCircle, Eye, EyeOff, Loader2, Zap, HardDrive,
   Send, Sparkles, FolderCheck, Bot, CheckCircle2, Database,
-  Copy, Check, RefreshCw, Trash2, Clock, KeyRound
+  Copy, Check, RefreshCw, Trash2, Clock, KeyRound, DownloadCloud
 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { sendTelegramMessage } from '@/lib/services/telegramService';
@@ -71,6 +71,7 @@ export default function IntegrationsPage() {
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedOrigin, setCopiedOrigin] = useState(false);
   const [currentOrigin, setCurrentOrigin] = useState('');
+  const [syncingFromSupabase, setSyncingFromSupabase] = useState(false);
 
   // Global notification
   const [globalSaved, setGlobalSaved] = useState(false);
@@ -277,6 +278,62 @@ export default function IntegrationsPage() {
     }, 400);
   };
 
+  const handleSyncFromSupabase = async () => {
+    setSyncingFromSupabase(true);
+    setSupabaseFeedback(null);
+    clearConfigCache();
+
+    try {
+      const cfg = await loadAppConfig();
+
+      // Rellenar Telegram
+      if (cfg.telegram_bot_token) setTelegramToken(cfg.telegram_bot_token);
+      if (cfg.telegram_group_id) setTelegramGroupId(cfg.telegram_group_id);
+      if (cfg.telegram_admin_chat_id) setTelegramAdminChatId(cfg.telegram_admin_chat_id);
+      if (cfg.telegram_bot_token) setTelegramConnected(true);
+
+      // Rellenar Gemini
+      if (cfg.gemini_api_key) setGeminiApiKey(cfg.gemini_api_key);
+      if (cfg.gemini_model) setGeminiModel(cfg.gemini_model);
+      if (cfg.gemini_system_prompt) setGeminiPrompt(cfg.gemini_system_prompt);
+      if (cfg.gemini_temperature !== undefined) setGeminiTemperature(Number(cfg.gemini_temperature));
+      if (cfg.gemini_api_key) setGeminiConnected(true);
+
+      // Rellenar Google Drive
+      if (cfg.drive_client_id) setDriveClientId(cfg.drive_client_id);
+      if (cfg.drive_client_secret) setDriveClientSecret(cfg.drive_client_secret);
+      if (cfg.drive_folder_id) setDriveFolderId(cfg.drive_folder_id);
+      if (cfg.drive_auto_download !== undefined) setDriveAutoDownload(cfg.drive_auto_download);
+      if (cfg.drive_auto_delete_after_verify !== undefined) setDriveAutoDelete(cfg.drive_auto_delete_after_verify);
+      if (cfg.drive_retention_hours !== undefined) setDriveRetentionHours(Number(cfg.drive_retention_hours));
+
+      setSyncingFromSupabase(false);
+      setSupabaseConnected(true);
+
+      const itemsPopulated = [
+        cfg.telegram_bot_token ? 'Telegram' : null,
+        cfg.gemini_api_key ? 'Gemini IA' : null,
+        cfg.drive_folder_id || cfg.drive_client_id ? 'Google Drive' : null,
+      ].filter(Boolean);
+
+      const summary = itemsPopulated.length > 0
+        ? `Se han rellenado los campos de: ${itemsPopulated.join(', ')}.`
+        : 'Se consultó Supabase, pero la tabla de configuración aún no tiene valores guardados.';
+
+      setSupabaseFeedback({
+        success: true,
+        msg: `🎉 ¡Configuración sincronizada exitosamente desde Supabase! ${summary}`
+      });
+      setTimeout(() => setSupabaseFeedback(null), 5000);
+    } catch (e: any) {
+      setSyncingFromSupabase(false);
+      setSupabaseFeedback({
+        success: false,
+        msg: `Error al sincronizar datos desde Supabase: ${e?.message || 'Error desconocido'}`
+      });
+    }
+  };
+
   const handleTestSupabase = async () => {
     setTestingSupabase(true);
     setSupabaseFeedback(null);
@@ -289,6 +346,11 @@ export default function IntegrationsPage() {
       success: res.success,
       msg: res.message
     });
+
+    // Si la conexión fue exitosa, sincronizar automáticamente los datos a las demás configuraciones
+    if (res.success) {
+      await handleSyncFromSupabase();
+    }
   };
 
   const handleCopySql = () => {
@@ -483,7 +545,7 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
             <span>{copiedSql ? '¡SQL Copiado!' : 'Copiar Script SQL de Tablas'}</span>
           </button>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={handleSaveSupabase}
@@ -502,6 +564,17 @@ CREATE TABLE IF NOT EXISTS public.logs_alertas_telegram (
             >
               {testingSupabase ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
               <span>Probar Conexión Supabase</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSyncFromSupabase}
+              disabled={syncingFromSupabase}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all disabled:opacity-50 shadow-sm"
+              title="Carga los valores guardados en la tabla de Supabase y rellena automáticamente Telegram, Gemini y Google Drive"
+            >
+              {syncingFromSupabase ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={13} />}
+              <span>Cargar Datos a Telegram, Gemini y Drive</span>
             </button>
           </div>
         </div>

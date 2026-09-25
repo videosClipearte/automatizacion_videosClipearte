@@ -76,11 +76,20 @@ let cachedConfig: AppConfig | null = null;
 export async function loadAppConfig(): Promise<AppConfig> {
   try {
     const db = getSupabase();
-    const { data, error } = await db
+    let { data, error } = await db
       .from('configuracion_app')
       .select('*')
       .eq('id', 'singleton')
-      .single();
+      .maybeSingle();
+
+    if (!data) {
+      // Si no existe id='singleton', traer la primera fila existente
+      const fallback = await db.from('configuracion_app').select('*').limit(1).maybeSingle();
+      if (fallback.data) {
+        data = fallback.data;
+        error = null;
+      }
+    }
 
     if (error || !data) {
       console.warn('appConfigService: No se pudo cargar config de Supabase, usando defaults.', error?.message);
