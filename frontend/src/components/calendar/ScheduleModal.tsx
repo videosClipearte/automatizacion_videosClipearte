@@ -14,7 +14,8 @@ import {
   KeyRound,
   AlertCircle,
   Loader2,
-  Check
+  Check,
+  ExternalLink
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -301,11 +302,12 @@ export function ScheduleModal() {
           driveFileUrl = uploadRes.fileUrl;
           setDriveSuccessUrl(driveFileUrl);
         } else {
+          setUploadingDrive(false);
           setDriveError(
-            `Error al subir a Google Drive: ${uploadRes.error || 'Fallo desconocido'}. El video se programará de todas formas.`
+            `❌ Error al subir a Google Drive: ${uploadRes.error || 'Fallo desconocido'}. El video NO fue subido a tu carpeta de Drive.`
           );
-          // Pausar brevemente para que el usuario vea el aviso
-          await new Promise((r) => setTimeout(r, 2000));
+          // DETENER: No cerrar el modal ni engañar diciendo que se subió
+          return;
         }
       }
     }
@@ -513,10 +515,25 @@ export function ScheduleModal() {
                   )}
 
                   {driveError && (
-                    <p className="text-[10px] text-amber-400 flex items-center gap-1 leading-snug">
-                      <AlertCircle size={11} className="shrink-0" />
-                      <span>{driveError}</span>
-                    </p>
+                    <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-xs space-y-2">
+                      <p className="text-[11px] text-red-300 flex items-start gap-1.5 leading-snug">
+                        <AlertCircle size={14} className="shrink-0 text-red-400 mt-0.5" />
+                        <span>{driveError}</span>
+                      </p>
+                      {(driveError.includes('drive.googleapis.com') ||
+                        driveError.includes('disabled') ||
+                        driveError.includes('has not been used')) && (
+                        <a
+                          href="https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=149769622108"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 text-[11px] font-bold transition-all"
+                        >
+                          <span>👉 Habilitar Google Drive API en tu Proyecto de Google Cloud</span>
+                          <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </div>
                   )}
 
                   {/* Campo para ingresar enlace de Google Drive manualmente */}
