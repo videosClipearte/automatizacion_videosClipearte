@@ -10,9 +10,8 @@ import { isToday } from 'date-fns';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { getPlatformColor } from '@/lib/utils';
-import {
-  getStoredTelegramConfig, sendDailyQuotaAlert
-} from '@/lib/services/telegramService';
+import { sendDailyQuotaAlert } from '@/lib/services/telegramService';
+import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import type { Account, Platform } from '@/store/useAppStore';
 
 const PLATFORM_ICONS: Record<string, React.ElementType> = {
@@ -119,10 +118,25 @@ export default function AccountsPage() {
   };
 
   // Enviar aviso de videos faltantes a Telegram
+  // Lee la config de Supabase (no de localStorage) via appConfigService
   const handleSendTelegramQuotaAlert = async (account: Account) => {
     setAlertingAccountId(account.id);
-    const teleConfig = getStoredTelegramConfig();
-    const targetChat = teleConfig.groupId.trim() || teleConfig.adminChatId.trim();
+
+    // Cargar config fresca de Supabase (getCachedConfig usa el cache en memoria)
+    // Si el cache esta vacio, hacer una carga fresca
+    let cfg = getCachedConfig();
+    if (!cfg.telegram_bot_token) {
+      cfg = await loadAppConfig();
+    }
+
+    const botToken = cfg.telegram_bot_token;
+    const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id).trim();
+
+    if (!botToken || !targetChat) {
+      setAlertingAccountId(null);
+      showNotification('⚠️ Configura el Bot Token y el Group ID de Telegram en Settings → Integraciones primero.');
+      return;
+    }
 
     // Contar cuántos videos tiene programados o publicados hoy
     const todayVideos = videos.filter(
@@ -132,7 +146,7 @@ export default function AccountsPage() {
     const targetCount = account.publicaciones_estimadas_diarias || 3;
 
     const res = await sendDailyQuotaAlert(
-      teleConfig.botToken,
+      botToken,
       targetChat,
       account.username,
       account.plataforma,
