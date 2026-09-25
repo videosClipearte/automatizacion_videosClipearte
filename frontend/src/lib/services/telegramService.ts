@@ -32,13 +32,22 @@ export function saveStoredTelegramConfig(config: TelegramConfig): void {
   }
 }
 
+function escapeHtml(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 /**
  * Envia un mensaje real a Telegram mediante HTTP POST a la API oficial de Telegram
  */
 export async function sendTelegramMessage(
   token: string,
   chatId: string,
-  text: string
+  text: string,
+  parseMode: 'HTML' | 'Markdown' | undefined = 'HTML'
 ): Promise<{ success: boolean; message: string; data?: any }> {
   try {
     const cleanToken = token.trim();
@@ -49,14 +58,16 @@ export async function sendTelegramMessage(
     }
 
     const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
+    const payload: any = {
+      chat_id: cleanChatId,
+      text: text,
+    };
+    if (parseMode) payload.parse_mode = parseMode;
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: cleanChatId,
-        text: text,
-        parse_mode: 'HTML',
-      }),
+      body: JSON.stringify(payload),
     });
 
     const result = await response.json();
@@ -68,6 +79,26 @@ export async function sendTelegramMessage(
         data: result.result,
       };
     } else {
+      // Si falló por entidades HTML en texto del usuario, reintentar automáticamente en texto plano
+      if (parseMode && result.description?.toLowerCase().includes('parse entities')) {
+        const fallbackRes = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: cleanChatId,
+            text: text.replace(/<[^>]*>/g, ''),
+          }),
+        });
+        const fallbackResult = await fallbackRes.json();
+        if (fallbackResult.ok) {
+          return {
+            success: true,
+            message: `Mensaje enviado en texto plano al chat ${cleanChatId}.`,
+            data: fallbackResult.result,
+          };
+        }
+      }
+
       return {
         success: false,
         message: `Error de Telegram (${result.error_code}): ${result.description}`,
@@ -97,7 +128,7 @@ export async function sendDailyQuotaAlert(
   const text = `
 📊 <b>REPORTE DE META DIARIA DE PUBLICACIONES</b>
 ━━━━━━━━━━━━━━━━━━━━
-👤 <b>Cuenta:</b> @${accountUsername} (<i>${platform.toUpperCase()}</i>)
+👤 <b>Cuenta:</b> @${escapeHtml(accountUsername)} (<i>${escapeHtml(platform.toUpperCase())}</i>)
 🎯 <b>Meta diaria programada:</b> ${targetCount} videos
 ✅ <b>Videos subidos hoy:</b> ${currentPublished}
 ⚠️ <b>Videos faltantes:</b> <b>${missing} video(s)</b>
@@ -122,9 +153,9 @@ export async function sendToleranceAlert(
   const text = `
 🚨 <b>ALERTA DE RETRASO EN PUBLICACIÓN</b>
 ━━━━━━━━━━━━━━━━━━━━
-🎬 <b>Video:</b> ${videoTitle}
-👤 <b>Cuenta:</b> @${accountUsername}
-🕒 <b>Hora programada:</b> ${scheduledTime}
+🎬 <b>Video:</b> ${escapeHtml(videoTitle)}
+👤 <b>Cuenta:</b> @${escapeHtml(accountUsername)}
+🕒 <b>Hora programada:</b> ${escapeHtml(scheduledTime)}
 ⏱️ <b>Retraso detectado:</b> ${delayMinutes} minutos
 
 ⚠️ <i>El scraper silencioso en segundo plano no ha confirmado la publicación del video tras vencer el margen de tolerancia.</i>
@@ -134,7 +165,9 @@ export async function sendToleranceAlert(
 }
 
 /**
- * Envía la notificación de video programado a Telegram con el enlace de Google Drive y la descripción de la campaña
+ * Envía la notificación de video programado a Telegram en 2 mensajes separados:
+ * Mensaje 1: Ficha técnica con cuenta, campaña, hora, título y enlace de Drive.
+ * Mensaje 2: Descripción / Copy limpio para copiar y pegar directamente en la publicación.
  */
 export async function sendPublicationAlert(
   token: string,
@@ -149,31 +182,62 @@ export async function sendPublicationAlert(
     programadoPara?: string;
   }
 ): Promise<{ success: boolean; message: string }> {
-  const driveSection =
+  const driveUrlText =
     data.driveFileUrl && data.driveFileUrl !== '#'
-      ? `📁 <b>Video en Google Drive:</b>\n<a href="${data.driveFileUrl}">${data.driveFileUrl}</a>`
-      : '📁 <b>Video en Drive:</b> <i>(Enlace no registrado)</i>';
+      ? data.driveFileUrl
+      : '<i>(Enlace no registrado)</i>';
 
   const campaignSection = data.campaignName
-    ? `🎯 <b>Campaña:</b> ${data.campaignName}\n`
+    ? `🎯 <b>Campaña:</b> ${escapeHtml(data.campaignName)}\n`
     : '';
 
   const horaSection = data.programadoPara
-    ? `🕒 <b>Hora programada:</b> ${data.programadoPara}\n`
+    ? `🕒 <b>Hora programada:</b> ${escapeHtml(data.programadoPara)}\n`
     : '';
 
-  const text = `
+  const safeUsername = escapeHtml(data.accountUsername);
+  const safePlatform = escapeHtml(data.platform.toUpperCase());
+  const safeTitle = escapeHtml(data.videoTitle);
+  const safeDesc = escapeHtml(data.descripcion);
+
+  // Mensaje 1: Ficha técnica y archivo en Drive
+  const msg1 = `
 🚀 <b>PUBLICACIÓN PROGRAMADA EJECUTADA</b>
 ━━━━━━━━━━━━━━━━━━━━
-👤 <b>Cuenta:</b> @${data.accountUsername} (<i>${data.platform.toUpperCase()}</i>)
-${campaignSection}${horaSection}🎬 <b>Título:</b> ${data.videoTitle}
-${driveSection}
+👤 <b>Cuenta:</b> @${safeUsername} (<b>${safePlatform}</b>)
+${campaignSection}${horaSection}🎬 <b>Título:</b> ${safeTitle}
 
-📝 <b>DESCRIPCIÓN / COPY APROBADO (REGLAS DE CAMPAÑA):</b>
-${data.descripcion}
-
-⏰ <i>Publicación despachada conforme al horario programado.</i>
+📁 <b>Video en Google Drive:</b>
+${driveUrlText}
 `.trim();
 
-  return await sendTelegramMessage(token, chatId, text);
+  // Mensaje 2: Descripción / Copy exclusivo para copiar y pegar directamente
+  const msg2 = `
+📝 <b>DESCRIPCIÓN / COPY APROBADO (REGLAS DE CAMPAÑA):</b>
+${safeDesc}
+`.trim();
+
+  // Enviar mensaje 1
+  const res1 = await sendTelegramMessage(token, chatId, msg1);
+  if (!res1.success) {
+    return res1;
+  }
+
+  // Pequeña pausa para asegurar el orden secuencial de llegada en Telegram
+  await new Promise((r) => setTimeout(r, 400));
+
+  // Enviar mensaje 2 con la descripción
+  const res2 = await sendTelegramMessage(token, chatId, msg2);
+
+  if (res2.success) {
+    return {
+      success: true,
+      message: `2 mensajes enviados con éxito a Telegram (Detalle del video + Descripción independiente).`,
+    };
+  } else {
+    return {
+      success: true,
+      message: `Ficha de video enviada, pero hubo un error al enviar la descripción: ${res2.message}`,
+    };
+  }
 }
