@@ -41,7 +41,7 @@ export function getStoredGeminiConfig(): GeminiConfig {
   }
   return {
     apiKey: '',
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3.8-flash',
     systemPrompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas, juveniles y llamativas con hashtags de tendencia.',
     temperature: 0.7,
   };
@@ -72,13 +72,13 @@ async function callGoogleGeminiDirect(
     };
   }
 
-  // Modelos a probar en orden: primero el modelo elegido por el usuario, luego alternativas modernas
-  const requestedModel = (modelName || 'gemini-2.0-flash').replace(/^models\//, '').trim();
+  // Modelos a probar en orden: primero el modelo elegido por el usuario, luego alternativas activas
+  const requestedModel = (modelName || 'gemini-3.8-flash').replace(/^models\//, '').trim();
   const modelsToTry: string[] = [requestedModel];
 
-  // Alternativas si el modelo elegido no existe en la cuenta de Google del usuario
-  // SOLO se usan modelos activos en v1beta (gemini-1.5-pro y gemini-1.5-flash fueron retirados)
-  for (const alt of ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash-lite-preview-06-17', 'gemini-2.5-flash']) {
+  // Fallbacks SOLO con modelos activos en 2025 (gemini-2.5-flash retirado para nuevos usuarios)
+  // Google recomienda gemini-3.8-flash como sucesor principal
+  for (const alt of ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite']) {
     if (!modelsToTry.includes(alt)) {
       modelsToTry.push(alt);
     }
