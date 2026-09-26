@@ -53,9 +53,19 @@ export function saveStoredGeminiConfig(config: GeminiConfig): void {
   }
 }
 
+// ─── Mapa de modelos retirados → sucesor activo (fuente: mensajes de error de Google) ───
+const RETIRED_MODEL_MAP: Record<string, string> = {
+  'gemini-2.0-flash-lite':              'gemini-3.5-flash-lite',
+  'gemini-2.5-flash':                   'gemini-3.8-flash',
+  'gemini-2.5-flash-lite-preview-06-17':'gemini-3.5-flash-lite',
+  'gemini-1.5-flash':                   'gemini-3.5-flash',
+  'gemini-1.5-flash-latest':            'gemini-3.5-flash',
+  'gemini-1.5-pro':                     'gemini-3.8-flash',
+};
+
 /**
- * Ejecuta una petición directa y segura a Google Gemini API desde el navegador
- * sin límites de tiempo de servidores intermedios (como Vercel 504 Gateway Timeout).
+ * Ejecuta una petición directa a Google Gemini API desde el navegador.
+ * Prueba el modelo configurado + fallbacks en orden, en ambos endpoints (v1 y v1beta).
  */
 async function callGoogleGeminiDirect(
   apiKey: string,
@@ -72,102 +82,112 @@ async function callGoogleGeminiDirect(
     };
   }
 
-  // Modelos a probar en orden: primero el modelo elegido por el usuario, luego alternativas activas
-  const requestedModel = (modelName || 'gemini-3.8-flash').replace(/^models\//, '').trim();
-  const modelsToTry: string[] = [requestedModel];
+  // Resolver el modelo configurado (reemplazar si está retirado)
+  const rawModel = (modelName || 'gemini-3.8-flash').replace(/^models\//, '').trim();
+  const resolvedModel = RETIRED_MODEL_MAP[rawModel] || rawModel;
 
-  // Fallbacks SOLO con modelos activos en 2025 (gemini-2.5-flash retirado para nuevos usuarios)
-  // Google recomienda gemini-3.8-flash como sucesor principal
-  for (const alt of ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite']) {
-    if (!modelsToTry.includes(alt)) {
-      modelsToTry.push(alt);
-    }
+  // Lista de modelos en orden de preferencia (sin duplicados)
+  // Basada en los modelos que Google recomienda en sus propios mensajes de error 2025
+  const modelsToTry: string[] = [];
+  for (const m of [
+    resolvedModel,
+    'gemini-3.8-flash',        // sucesor oficial de gemini-2.5-flash
+    'gemini-3.5-flash',        // versión flash estable 2025
+    'gemini-3.5-flash-lite',   // sucesor oficial de gemini-2.0-flash-lite
+    'gemini-2.0-flash',        // último recurso (puede seguir activo en algunas cuentas)
+  ]) {
+    if (!modelsToTry.includes(m)) modelsToTry.push(m);
   }
 
+  // Probar cada modelo en ambas versiones de API (algunos modelos solo existen en una)
+  const apiVersions = ['v1', 'v1beta'];
   let lastErrorMessage = '';
 
   for (const currentModel of modelsToTry) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${cleanKey}`;
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-
-      const responseText = await response.text();
-      let responseJson: any = null;
+    for (const apiVersion of apiVersions) {
+      const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/models/${currentModel}:generateContent?key=${cleanKey}`;
 
       try {
-        responseJson = JSON.parse(responseText);
-      } catch {
-        lastErrorMessage = responseText.slice(0, 160) || `Error HTTP ${response.status}`;
-        continue;
-      }
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
 
-      if (response.ok) {
-        const candidateText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (candidateText) {
-          let parsedSubtitles: ExtractedSubtitlesJson | null = null;
-          let finalText = candidateText.trim();
+        const responseText = await response.text();
+        let responseJson: any = null;
 
-          // Si es análisis de subtítulos, separar el bloque JSON y el copy final
-          if (isSubtitleAnalysis) {
-            if (candidateText.includes('---COPY---')) {
-              const parts = candidateText.split('---COPY---');
-              const rawJson = parts[0].replace(/```json/gi, '').replace(/```/gi, '').trim();
-              try {
-                parsedSubtitles = JSON.parse(rawJson);
-              } catch {
-                parsedSubtitles = { dialogo_detectado: rawJson };
-              }
-              finalText = parts[1].trim();
-            } else if (candidateText.includes('```json')) {
-              const jsonMatch = candidateText.match(/```json([\s\S]*?)```/i);
-              if (jsonMatch) {
+        try {
+          responseJson = JSON.parse(responseText);
+        } catch {
+          lastErrorMessage = responseText.slice(0, 200) || `Error HTTP ${response.status}`;
+          continue;
+        }
+
+        // ✅ Éxito
+        if (response.ok) {
+          const candidateText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (candidateText) {
+            let parsedSubtitles: ExtractedSubtitlesJson | null = null;
+            let finalText = candidateText.trim();
+
+            if (isSubtitleAnalysis) {
+              if (candidateText.includes('---COPY---')) {
+                const parts = candidateText.split('---COPY---');
+                const rawJson = parts[0].replace(/```json/gi, '').replace(/```/gi, '').trim();
                 try {
-                  parsedSubtitles = JSON.parse(jsonMatch[1].trim());
-                  finalText = candidateText.replace(jsonMatch[0], '').trim();
-                } catch {}
+                  parsedSubtitles = JSON.parse(rawJson);
+                } catch {
+                  parsedSubtitles = { dialogo_detectado: rawJson };
+                }
+                finalText = parts[1].trim();
+              } else if (candidateText.includes('```json')) {
+                const jsonMatch = candidateText.match(/```json([\s\S]*?)```/i);
+                if (jsonMatch) {
+                  try {
+                    parsedSubtitles = JSON.parse(jsonMatch[1].trim());
+                    finalText = candidateText.replace(jsonMatch[0], '').trim();
+                  } catch {}
+                }
               }
             }
-          }
 
+            return {
+              success: true,
+              text: finalText,
+              subtitlesJson: parsedSubtitles,
+              usedModel: `${currentModel}`,
+            };
+          }
+        }
+
+        const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
+
+        // API Key inválida → parar inmediatamente
+        if (
+          response.status === 403 ||
+          (response.status === 400 && errMsg.toLowerCase().includes('api key not valid'))
+        ) {
           return {
-            success: true,
-            text: finalText,
-            subtitlesJson: parsedSubtitles,
-            usedModel: currentModel,
+            success: false,
+            text: '',
+            error: `Clave API de Gemini inválida o sin permisos. Genera una clave gratuita en aistudio.google.com/app/apikey.`,
           };
         }
+
+        lastErrorMessage = errMsg;
+        console.warn(`[Gemini] ${currentModel} (${apiVersion}): ${errMsg.slice(0, 120)}`);
+      } catch (err: any) {
+        lastErrorMessage = err?.message || 'Error de conexión con Google Gemini';
+        console.warn(`[Gemini] ${currentModel} (${apiVersion}) excepción: ${lastErrorMessage}`);
       }
-
-      const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
-
-      if (
-        response.status === 403 ||
-        (response.status === 400 && errMsg.toLowerCase().includes('api key not valid'))
-      ) {
-        return {
-          success: false,
-          text: '',
-          error: `Error Gemini: Clave API inválida o sin permisos. Genera una clave gratuita en Google AI Studio (aistudio.google.com/app/apikey).`,
-        };
-      }
-
-      lastErrorMessage = errMsg;
-    } catch (err: any) {
-      lastErrorMessage = err?.message || 'Error de conexión con Google Gemini';
     }
   }
 
   return {
     success: false,
     text: '',
-    error: `Error Gemini API (${requestedModel}): ${lastErrorMessage || 'No se pudo conectar con el servicio de IA.'}`,
+    error: `Error Gemini (${resolvedModel}): ${lastErrorMessage || 'Ningún modelo disponible respondió. Verifica tu API Key en aistudio.google.com.'}`,
   };
 }
 
