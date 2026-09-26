@@ -77,7 +77,8 @@ async function callGoogleGeminiDirect(
   const modelsToTry: string[] = [requestedModel];
 
   // Alternativas si el modelo elegido no existe en la cuenta de Google del usuario
-  for (const alt of ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro']) {
+  // SOLO se usan modelos activos en v1beta (gemini-1.5-pro y gemini-1.5-flash fueron retirados)
+  for (const alt of ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash-lite-preview-06-17', 'gemini-2.5-flash']) {
     if (!modelsToTry.includes(alt)) {
       modelsToTry.push(alt);
     }

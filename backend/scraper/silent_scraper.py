@@ -4,18 +4,48 @@ Implementación 3: Scraper Silencioso de Verificación y Métricas (Headless Pyt
 - 100% en segundo plano: NUNCA abre navegadores visibles ni ventanas de interfaz gráfica.
 - Verifica si un post programado ya está en vivo en Instagram, TikTok, Facebook o YouTube.
 - Extrae métricas reales (vistas, likes, comentarios) y las guarda en la tabla Supabase.
+- VERIFICACIÓN ESTRICTA: Solo marca como PUBLICADO si hay coincidencia real (≥2 tokens clave)
+  entre la descripción aprobada y el HTML del perfil/post scrapeado.
 """
 import re
 import json
 import logging
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("SilentScraper")
 
+
+def _extract_keywords(text: str, min_len: int = 4) -> List[str]:
+    """
+    Extrae palabras clave significativas de un texto, ignorando stopwords comunes
+    y priorizando hashtags. Retorna lista en lowercase.
+    """
+    if not text:
+        return []
+    # Incluir hashtags y palabras largas; excluir stopwords básicas
+    stopwords = {
+        "para", "este", "esta", "esto", "como", "que", "los", "las", "del",
+        "con", "una", "uno", "por", "son", "sus", "pero", "todo", "cada",
+        "nuestro", "nuestra", "sobre", "entre", "desde", "hasta", "tiene",
+        "the", "and", "for", "are", "with", "this", "that", "from", "your",
+    }
+    tokens = []
+    for word in re.split(r'\s+', text):
+        clean = word.strip(".,!?:;\"'()[]{}").lower()
+        if clean.startswith("#"):
+            tokens.append(clean)  # siempre incluir hashtags
+        elif len(clean) >= min_len and clean not in stopwords:
+            tokens.append(clean)
+    return tokens
+
+
 class SilentScraper:
+    # Umbral mínimo de tokens coincidentes para confirmar publicación
+    MIN_MATCH_THRESHOLD = 2
+
     def __init__(self, timeout: int = 15):
         self.timeout = timeout
         self.headers = {
@@ -34,115 +64,151 @@ class SilentScraper:
     ) -> Dict[str, Any]:
         """
         Verificación silenciosa en segundo plano (sin abrir navegador web).
-        Comprueba si la publicación ya existe en la red social y si los datos
-        scrapeados coinciden con la descripción aprobada de los primeros videos.
+        
+        LÓGICA DE VERIFICACIÓN ESTRICTA:
+        - Extrae tokens clave de la descripción aprobada (descripcion_aprobada_ia).
+        - Requiere que al menos MIN_MATCH_THRESHOLD tokens aparezcan en el HTML del post/perfil.
+        - Si no se pueden verificar suficientes tokens → is_live = False (no marca como publicado).
+        - Solo retorna is_live = True cuando hay evidencia real de publicación.
         """
         logger.info(f"Ejecutando verificación silenciosa para {platform} ({profile_url}) - Video: '{expected_title}'")
-        
-        # Palabras clave y hashtags a buscar en la descripción del video publicado
-        keywords = []
+
+        # ── 1. Construir lista de tokens a buscar ──────────────────────────────
+        keywords: List[str] = []
+
         if expected_description:
-            words = [w.strip(".,!?:;\"'()[]{}").lower() for w in expected_description.split()]
-            keywords = [w for w in words if len(w) > 4 or w.startswith("#")]
+            keywords = _extract_keywords(expected_description)
+            logger.info(f"Tokens extraídos de la descripción aprobada ({len(keywords)}): {keywords[:10]}")
+        
         if not keywords and expected_title:
-            keywords = [w.lower() for w in expected_title.split() if len(w) > 3]
+            keywords = _extract_keywords(expected_title, min_len=3)
+            logger.info(f"Usando tokens del título como fallback ({len(keywords)}): {keywords}")
 
-        # Si ya tenemos la URL específica del post, comprobamos su respuesta HTTP directa
-        if post_url and post_url != "#":
-            try:
-                resp = requests.get(post_url, headers=self.headers, timeout=self.timeout)
-                if resp.status_code == 200:
-                    html_lower = resp.text.lower()
-                    matched = [kw for kw in keywords if kw in html_lower]
-                    desc_matches = len(matched) > 0 or not keywords
-                    logger.info(f"Post verificado ONLINE: {post_url} - Coincidencia descripción: {desc_matches} ({len(matched)} tokens)")
-                    return {
-                        "is_live": desc_matches,
-                        "description_matched": desc_matches,
-                        "matched_tokens": matched,
-                        "status_code": 200,
-                        "post_url": post_url,
-                        "method": "direct_http",
-                        "checked_at": datetime.utcnow().isoformat(),
-                    }
-            except Exception as e:
-                logger.warning(f"Consulta directa a URL del post falló: {e}")
-
-        # Consulta al perfil público en segundo plano
-        try:
-            target_url = profile_url if profile_url.startswith("http") else f"https://{platform}.com/{profile_url.replace('@', '')}"
-            resp = requests.get(target_url, headers=self.headers, timeout=self.timeout)
-            
-            # Análisis de respuesta HTML sin renderizado gráfico
-            if resp.status_code == 200:
-                html_lower = resp.text.lower()
-                matched = [kw for kw in keywords if kw in html_lower]
-                desc_matches = len(matched) > 0 or not keywords
-                logger.info(f"Perfil {target_url} analizado - Coincidencia descripción en primeros videos: {desc_matches} ({len(matched)} tokens)")
-                
-                return {
-                    "is_live": desc_matches,
-                    "description_matched": desc_matches,
-                    "matched_tokens": matched,
-                    "status_code": 200,
-                    "post_url": f"{target_url}/reel/verified_{int(datetime.utcnow().timestamp())}",
-                    "method": "profile_http_check",
-                    "checked_at": datetime.utcnow().isoformat(),
-                }
-            else:
-                logger.warning(f"Perfil {target_url} respondió con status {resp.status_code}")
-                return {
-                    "is_live": False,
-                    "description_matched": False,
-                    "status_code": resp.status_code,
-                    "error": f"HTTP {resp.status_code}",
-                    "checked_at": datetime.utcnow().isoformat(),
-                }
-
-        except Exception as e:
-            logger.error(f"Error en verificación silenciosa de {platform}: {e}")
+        if not keywords:
+            logger.warning("No hay tokens disponibles para verificar. Se requiere description o title.")
             return {
                 "is_live": False,
-                "error": str(e),
+                "description_matched": False,
+                "error": "No hay tokens de verificación disponibles (descripcion_aprobada_ia o titulo vacíos).",
                 "checked_at": datetime.utcnow().isoformat(),
             }
+
+        # ── 2. Intentar verificar por URL directa del post (más precisa) ──────
+        if post_url and post_url not in ("#", "", None):
+            result = self._check_url(post_url, keywords, method="direct_post_url")
+            if result is not None:
+                return result
+
+        # ── 3. Fallback: verificar desde el perfil público ────────────────────
+        if profile_url:
+            target_url = (
+                profile_url
+                if profile_url.startswith("http")
+                else f"https://{platform.lower()}.com/{profile_url.replace('@', '')}"
+            )
+            result = self._check_url(target_url, keywords, method="profile_http_check")
+            if result is not None:
+                return result
+
+        # ── 4. No se pudo verificar ───────────────────────────────────────────
+        return {
+            "is_live": False,
+            "description_matched": False,
+            "error": "No se pudo acceder al post o perfil para verificar la publicación.",
+            "checked_at": datetime.utcnow().isoformat(),
+        }
+
+    def _check_url(self, url: str, keywords: List[str], method: str) -> Optional[Dict[str, Any]]:
+        """
+        Realiza un GET silencioso a una URL y comprueba la coincidencia de keywords
+        en el HTML de respuesta. Retorna None si la petición falla (para que el
+        llamante pruebe la siguiente URL).
+        """
+        try:
+            resp = requests.get(url, headers=self.headers, timeout=self.timeout)
+        except Exception as e:
+            logger.warning(f"[{method}] Consulta HTTP a {url} falló: {e}")
+            return None
+
+        if resp.status_code != 200:
+            logger.warning(f"[{method}] {url} respondió HTTP {resp.status_code} — no se puede verificar.")
+            return {
+                "is_live": False,
+                "description_matched": False,
+                "status_code": resp.status_code,
+                "error": f"HTTP {resp.status_code} al consultar {url}",
+                "checked_at": datetime.utcnow().isoformat(),
+            }
+
+        html_lower = resp.text.lower()
+        matched = [kw for kw in keywords if kw in html_lower]
+        match_count = len(matched)
+
+        # ── UMBRAL ESTRICTO: necesita al menos MIN_MATCH_THRESHOLD coincidencias ──
+        is_confirmed = match_count >= self.MIN_MATCH_THRESHOLD
+        match_pct = round((match_count / max(len(keywords), 1)) * 100, 1)
+
+        logger.info(
+            f"[{method}] URL: {url} | "
+            f"Coincidencias: {match_count}/{len(keywords)} ({match_pct}%) | "
+            f"Tokens: {matched[:6]} | "
+            f"Confirmado: {is_confirmed}"
+        )
+
+        return {
+            "is_live": is_confirmed,
+            "description_matched": is_confirmed,
+            "matched_tokens": matched,
+            "match_count": match_count,
+            "total_keywords": len(keywords),
+            "match_percentage": match_pct,
+            "status_code": 200,
+            "post_url": url,
+            "method": method,
+            "checked_at": datetime.utcnow().isoformat(),
+        }
 
     def extract_metrics(self, platform: str, post_url: str) -> Dict[str, Any]:
         """
         Extracción silenciosa de métricas (views, likes, comentarios) en segundo plano.
         """
         logger.info(f"Extrayendo métricas silenciosas para {platform} en {post_url}")
-        
-        # En producción se extraen metatags opengraph o APIs JSON públicas
+
         try:
             if post_url and post_url.startswith("http"):
                 resp = requests.get(post_url, headers=self.headers, timeout=self.timeout)
                 if resp.status_code == 200:
                     text = resp.text
-                    
-                    # Regex para extraer conteo de vistas o likes de meta tags
-                    views_match = re.search(r'(\d+[\d,.]*)\s*(?:views|reproducciones|vistas)', text, re.IGNORECASE)
-                    likes_match = re.search(r'(\d+[\d,.]*)\s*(?:likes|me gusta)', text, re.IGNORECASE)
-                    
-                    views = int(views_match.group(1).replace(",", "").replace(".", "")) if views_match else 142500
-                    likes = int(likes_match.group(1).replace(",", "").replace(".", "")) if likes_match else 8900
-                    comments = 340
-                    
-                    return {
-                        "success": True,
-                        "vistas": views,
-                        "likes": likes,
-                        "comentarios": comments,
-                        "extracted_at": datetime.utcnow().isoformat(),
-                    }
-        except Exception as e:
-            logger.warning(f"Extracción directa falló, aplicando valores de métricas base: {e}")
 
-        # Valores base calculados
+                    # Regex para extraer conteo de vistas o likes de meta tags
+                    views_match = re.search(r'(\d+[\d,.]*)[\s\xa0]*(?:views|reproducciones|vistas)', text, re.IGNORECASE)
+                    likes_match = re.search(r'(\d+[\d,.]*)[\s\xa0]*(?:likes|me\s+gusta)', text, re.IGNORECASE)
+                    comments_match = re.search(r'(\d+[\d,.]*)[\s\xa0]*(?:comments?|comentarios?)', text, re.IGNORECASE)
+
+                    views = int(views_match.group(1).replace(",", "").replace(".", "")) if views_match else None
+                    likes = int(likes_match.group(1).replace(",", "").replace(".", "")) if likes_match else None
+                    comments = int(comments_match.group(1).replace(",", "").replace(".", "")) if comments_match else None
+
+                    if views is not None or likes is not None:
+                        return {
+                            "success": True,
+                            "vistas": views or 0,
+                            "likes": likes or 0,
+                            "comentarios": comments or 0,
+                            "source": "scraper_real",
+                            "extracted_at": datetime.utcnow().isoformat(),
+                        }
+        except Exception as e:
+            logger.warning(f"Extracción directa falló: {e}")
+
+        # Valores base estimados (cuando no se pueden extraer métricas reales)
+        logger.info("No se encontraron métricas reales en el HTML. Retornando estado sin métricas.")
         return {
-            "success": True,
-            "vistas": 128400,
-            "likes": 7450,
-            "comentarios": 290,
+            "success": False,
+            "vistas": None,
+            "likes": None,
+            "comentarios": None,
+            "source": "unavailable",
+            "error": "No se pudieron extraer métricas reales del HTML público.",
             "extracted_at": datetime.utcnow().isoformat(),
         }

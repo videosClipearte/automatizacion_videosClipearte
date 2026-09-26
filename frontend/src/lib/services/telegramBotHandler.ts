@@ -47,23 +47,32 @@ export async function handleTelegramUpdate(
   const rawCmd = text.split(/\s+/)[0];
   const command = rawCmd.split('@')[0].toLowerCase();
 
-  // 1. Obtener Token del bot (override o desde configuracion_app)
+  // 1. Obtener Token del bot (override > configuracion_app en Supabase > variable de entorno del servidor)
   const db = getSupabase();
   let botToken = (botTokenOverride || '').trim();
 
   if (!botToken) {
     try {
       const cfg = await loadAppConfig();
-      botToken = (cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      botToken = (cfg.telegram_bot_token || '').trim();
     } catch (e) {
-      console.error('[TelegramBot] Error cargando config de bot:', e);
+      console.error('[TelegramBot] Error cargando config de bot desde Supabase:', e);
+    }
+  }
+
+  // Última alternativa: variable de entorno del servidor (Vercel / Railway / etc.)
+  if (!botToken && typeof process !== 'undefined') {
+    botToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+    if (botToken) {
+      console.log('[TelegramBot] Token obtenido de TELEGRAM_BOT_TOKEN (variable de entorno del servidor).');
     }
   }
 
   if (!botToken) {
-    console.warn('[TelegramBot] Bot Token no configurado en configuracion_app ni en variables de entorno.');
+    console.warn('[TelegramBot] ⚠️ Bot Token no configurado en ninguna fuente: botTokenOverride, configuracion_app (Supabase) ni TELEGRAM_BOT_TOKEN (env var). El bot no puede responder.');
     return { handled: true, command, responseSent: false, message: 'Bot Token no configurado' };
   }
+
 
   console.log(`[TelegramBot] 📩 Ejecutando comando "${command}" en chat ${chatId} (Usuario: ${message.from?.username || message.from?.first_name || 'anónimo'})...`);
 
