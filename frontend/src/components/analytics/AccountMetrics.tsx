@@ -7,7 +7,6 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { formatViews, calcGanancias, getPlatformColor } from '@/lib/utils';
-import type { Platform } from '@/store/useAppStore';
 
 const STATUS_COLORS: Record<string, string> = {
   PROGRAMADO: '#a78bfa',
@@ -78,189 +77,168 @@ export function AccountMetrics() {
   const totalEnviados = accountVideos.filter(v => v.estado === 'ENVIADO' || v.estado === 'VERIFICACION_PENDIENTE').length;
 
   return (
-    <GlassCard className="h-full flex flex-col p-5">
-      {/* Header with Title & Custom Glass Account Selector */}
-      <div className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-            <BarChart2 size={16} />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-white tracking-wide">Métricas por Cuenta</h3>
-            <p className="text-[10px] text-[var(--text-muted)]">Rendimiento y estado del canal</p>
-          </div>
-        </div>
-
-        {/* Custom Account Selector Dropdown */}
-        <div className="relative" ref={dropdownRef}>
-          <button
-            type="button"
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-[var(--border)] hover:border-emerald-500/40 text-xs text-white transition-all shadow-sm active:scale-95"
-          >
-            <div
-              className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
-              style={{ backgroundColor: `${platformColor}33` }}
-            >
-              <SelectedIcon size={12} style={{ color: platformColor }} />
+    <GlassCard className="h-full flex flex-col justify-between p-4">
+      {/* Header: Title & Dropdown without wrapping */}
+      <div>
+        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[var(--border)]">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+              <BarChart2 size={14} />
             </div>
-            <span className="font-semibold truncate max-w-[110px]">
-              @{account?.username ?? 'Seleccionar'}
-            </span>
-            <span className="text-[10px] text-[var(--text-muted)] capitalize hidden sm:inline">
-              ({account?.plataforma})
-            </span>
-            <ChevronDown
-              size={13}
-              className={`text-[var(--text-muted)] transition-transform duration-200 ${
-                isDropdownOpen ? 'rotate-180 text-emerald-400' : ''
-              }`}
-            />
-          </button>
+            <h3 className="text-xs font-bold text-white tracking-wide whitespace-nowrap">
+              Métricas por Cuenta
+            </h3>
+          </div>
 
-          {/* Dropdown Menu */}
-          <AnimatePresence>
-            {isDropdownOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.95 }}
-                transition={{ duration: 0.15 }}
-                className="absolute right-0 mt-2 w-64 glass-strong border border-[var(--border-strong)] rounded-2xl shadow-2xl p-1.5 z-50 backdrop-blur-xl"
+          {/* Selector de cuenta compacto */}
+          <div className="relative shrink-0" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg glass border border-[var(--border)] hover:border-emerald-500/40 text-[11px] text-white transition-all shadow-sm active:scale-95"
+            >
+              <div
+                className="w-4 h-4 rounded-md flex items-center justify-center shrink-0"
+                style={{ backgroundColor: `${platformColor}33` }}
               >
-                <div className="px-2 py-1.5 border-b border-[var(--border)] mb-1">
-                  <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                    Seleccionar Cuenta de Redes
-                  </p>
-                </div>
+                <SelectedIcon size={10} style={{ color: platformColor }} />
+              </div>
+              <span className="font-semibold truncate max-w-[85px]">
+                @{account?.username ?? 'Cuenta'}
+              </span>
+              <ChevronDown
+                size={11}
+                className={`text-[var(--text-muted)] transition-transform duration-200 ${
+                  isDropdownOpen ? 'rotate-180 text-emerald-400' : ''
+                }`}
+              />
+            </button>
 
-                <div className="space-y-1 max-h-56 overflow-y-auto">
-                  {accounts.map((acc) => {
-                    const isSelected = acc.id === currentAccountId;
-                    const Icon = PLATFORM_ICONS[acc.plataforma] ?? Send;
-                    const color = getPlatformColor(acc.plataforma);
-                    const vCount = videos.filter(v => v.cuenta_id === acc.id).length;
+            {/* Dropdown Menu */}
+            <AnimatePresence>
+              {isDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-1.5 w-56 glass-strong border border-[var(--border-strong)] rounded-xl shadow-2xl p-1 z-50 backdrop-blur-xl"
+                >
+                  <div className="px-2 py-1 border-b border-[var(--border)] mb-1">
+                    <p className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                      Seleccionar Cuenta
+                    </p>
+                  </div>
 
-                    return (
-                      <button
-                        key={acc.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedAccountId(acc.id);
-                          setIsDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between p-2 rounded-xl text-xs transition-all ${
-                          isSelected
-                            ? 'bg-emerald-500/15 border border-emerald-500/30 text-white'
-                            : 'hover:bg-white/5 text-[var(--text-secondary)] hover:text-white border border-transparent'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm"
-                            style={{ backgroundColor: `${color}25` }}
-                          >
-                            <Icon size={13} style={{ color }} />
+                  <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                    {accounts.map((acc) => {
+                      const isSelected = acc.id === currentAccountId;
+                      const Icon = PLATFORM_ICONS[acc.plataforma] ?? Send;
+                      const color = getPlatformColor(acc.plataforma);
+                      const vCount = videos.filter(v => v.cuenta_id === acc.id).length;
+
+                      return (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAccountId(acc.id);
+                            setIsDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between p-1.5 rounded-lg text-[11px] transition-all ${
+                            isSelected
+                              ? 'bg-emerald-500/15 border border-emerald-500/30 text-white'
+                              : 'hover:bg-white/5 text-[var(--text-secondary)] hover:text-white border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div
+                              className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                              style={{ backgroundColor: `${color}25` }}
+                            >
+                              <Icon size={11} style={{ color }} />
+                            </div>
+                            <span className="font-semibold text-white truncate text-[11px]">@{acc.username}</span>
+                            <span className="text-[9px] text-[var(--text-muted)]">({vCount})</span>
                           </div>
-                          <div className="text-left truncate">
-                            <p className="font-semibold text-xs text-white truncate">@{acc.username}</p>
-                            <p className="text-[10px] text-[var(--text-muted)] capitalize">{acc.plataforma} · {vCount} videos</p>
-                          </div>
-                        </div>
 
-                        {isSelected && (
-                          <Check size={14} className="text-emerald-400 shrink-0 ml-2" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* Main Metric Cards with Clean Spacing */}
-      <div className="grid grid-cols-2 gap-3 my-4">
-        <motion.div
-          key={`views-${account?.id}`}
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-          className="p-3.5 rounded-2xl border shadow-sm flex flex-col justify-between"
-          style={{
-            background: `linear-gradient(135deg, ${platformColor}14, rgba(255,255,255,0.01))`,
-            borderColor: `${platformColor}30`,
-          }}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-medium text-[var(--text-muted)]">Vistas Totales</span>
-            <div
-              className="w-6 h-6 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: `${platformColor}25` }}
-            >
-              <Eye size={13} style={{ color: platformColor }} />
-            </div>
+                          {isSelected && (
+                            <Check size={12} className="text-emerald-400 shrink-0 ml-1" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          <div>
-            <p className="text-2xl font-black text-white tracking-tight leading-none mb-1">
+        </div>
+
+        {/* Tarjetas de métricas compactas */}
+        <div className="grid grid-cols-2 gap-2 my-2.5">
+          <div
+            className="p-2.5 rounded-xl border shadow-sm"
+            style={{
+              background: `linear-gradient(135deg, ${platformColor}14, rgba(255,255,255,0.01))`,
+              borderColor: `${platformColor}30`,
+            }}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-medium text-[var(--text-muted)]">Vistas</span>
+              <Eye size={11} style={{ color: platformColor }} />
+            </div>
+            <p className="text-lg font-black text-white tracking-tight leading-tight">
               {formatViews(totalViews)}
             </p>
-            <p className="text-[10px] text-[var(--text-muted)]">Reales acumuladas</p>
+            <p className="text-[9px] text-[var(--text-muted)]">Totales reales</p>
           </div>
-        </motion.div>
 
-        <motion.div
-          key={`earn-${account?.id}`}
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 shadow-sm flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-medium text-[var(--text-muted)]">Ganancias RPM</span>
-            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-              <DollarSign size={13} className="text-emerald-400" />
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 shadow-sm">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-medium text-[var(--text-muted)]">Ganancias</span>
+              <DollarSign size={11} className="text-emerald-400" />
             </div>
-          </div>
-          <div>
-            <p className="text-2xl font-black gradient-text tracking-tight leading-none mb-1">
+            <p className="text-lg font-black gradient-text tracking-tight leading-tight">
               ${totalEarnings.toFixed(2)}
             </p>
-            <p className="text-[10px] text-[var(--text-muted)]">Estimación campañas</p>
+            <p className="text-[9px] text-[var(--text-muted)]">Estimadas RPM</p>
           </div>
-        </motion.div>
+        </div>
+
+        {/* Mini status pills */}
+        <div className="grid grid-cols-3 gap-1 py-1.5 px-2 rounded-lg bg-white/[0.02] border border-[var(--border)] text-center mb-2">
+          <div>
+            <p className="text-[11px] font-bold text-emerald-400 font-mono">{totalPublicados}</p>
+            <p className="text-[8px] text-[var(--text-muted)] uppercase tracking-wider">Publicados</p>
+          </div>
+          <div className="border-x border-[var(--border)]">
+            <p className="text-[11px] font-bold text-blue-400 font-mono">{totalEnviados}</p>
+            <p className="text-[8px] text-[var(--text-muted)] uppercase tracking-wider">Enviados</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-purple-400 font-mono">{totalProgramados}</p>
+            <p className="text-[8px] text-[var(--text-muted)] uppercase tracking-wider">Programados</p>
+          </div>
+        </div>
       </div>
 
-      {/* Mini status pills */}
-      <div className="grid grid-cols-3 gap-2 py-2.5 px-3 rounded-xl bg-white/[0.02] border border-[var(--border)] mb-4 text-center">
-        <div>
-          <p className="text-xs font-bold text-emerald-400 font-mono">{totalPublicados}</p>
-          <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Publicados</p>
-        </div>
-        <div className="border-x border-[var(--border)]">
-          <p className="text-xs font-bold text-blue-400 font-mono">{totalEnviados}</p>
-          <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Enviados</p>
-        </div>
-        <div>
-          <p className="text-xs font-bold text-purple-400 font-mono">{totalProgramados}</p>
-          <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Programados</p>
-        </div>
-      </div>
-
-      {/* Pie Chart / Distribution Area */}
-      <div className="flex-1 flex flex-col justify-center">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-white">Distribución de Videos</span>
-          <span className="text-[10px] text-[var(--text-muted)] font-mono">{accountVideos.length} total</span>
+      {/* Donut Chart / Distribución */}
+      <div className="pt-1 border-t border-[var(--border)]">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] font-semibold text-white">Distribución de Videos</span>
+          <span className="text-[9px] text-[var(--text-muted)] font-mono">{accountVideos.length} videos</span>
         </div>
 
         {pieData.length > 0 ? (
-          <div className="flex items-center gap-4 py-2">
-            <div className="w-28 h-28 shrink-0">
+          <div className="flex items-center gap-3 py-1">
+            <div className="w-24 h-24 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={pieData}
                     cx="50%" cy="50%"
-                    innerRadius={30} outerRadius={52}
+                    innerRadius={24} outerRadius={42}
                     paddingAngle={3}
                     dataKey="value"
                     stroke="none"
@@ -270,28 +248,27 @@ export function AccountMetrics() {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', borderRadius: 10, fontSize: 11 }}
+                    contentStyle={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', borderRadius: 8, fontSize: 10 }}
                     formatter={(v, n, p) => [v, p.payload.label]}
                   />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="space-y-1.5 flex-1 min-w-0">
+            <div className="space-y-1 flex-1 min-w-0">
               {pieData.map(item => (
-                <div key={item.name} className="flex items-center justify-between text-xs py-0.5">
-                  <div className="flex items-center gap-2 truncate">
+                <div key={item.name} className="flex items-center justify-between text-[10px]">
+                  <div className="flex items-center gap-1.5 truncate">
                     <span className="w-2 h-2 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: STATUS_COLORS[item.name] ?? '#6b7280' }} />
-                    <span className="text-[11px] text-[var(--text-secondary)] truncate">{item.label}</span>
+                    <span className="text-[var(--text-secondary)] truncate">{item.label}</span>
                   </div>
-                  <span className="text-[11px] font-bold text-white font-mono ml-2">{item.value}</span>
+                  <span className="font-bold text-white font-mono ml-1">{item.value}</span>
                 </div>
               ))}
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-6 text-center rounded-xl border border-dashed border-[var(--border)] bg-white/[0.01]">
-            <VideoIcon size={20} className="text-[var(--text-muted)] mb-1.5 opacity-50" />
-            <p className="text-[11px] text-[var(--text-muted)]">Sin publicaciones registradas en esta cuenta</p>
+          <div className="flex items-center justify-center py-4 text-center rounded-lg border border-dashed border-[var(--border)] bg-white/[0.01]">
+            <p className="text-[10px] text-[var(--text-muted)]">Sin publicaciones en esta cuenta</p>
           </div>
         )}
       </div>

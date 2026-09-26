@@ -2,10 +2,11 @@
 // src/app/analytics/page.tsx
 import { motion } from 'framer-motion';
 import { AccountMetrics } from '@/components/analytics/AccountMetrics';
+import { ChartsSection } from '@/components/analytics/ChartsSection';
+import { ScraperMonitor } from '@/components/analytics/ScraperMonitor';
+import { TitleDuplicateChecker } from '@/components/analytics/TitleDuplicateChecker';
 import { RecentCarousel } from '@/components/analytics/RecentCarousel';
 import { DataGrid } from '@/components/analytics/DataGrid';
-import { ChartsSection } from '@/components/analytics/ChartsSection';
-import { TitleDuplicateChecker } from '@/components/analytics/TitleDuplicateChecker';
 
 export default function AnalyticsPage() {
   return (
@@ -22,15 +23,19 @@ export default function AnalyticsPage() {
         </p>
       </div>
 
-      {/* Top row: Account metrics + Charts */}
+      {/* Fila superior: Métricas por Cuenta (1 col) + Vistas en el Tiempo & Videos por Cuenta (2 cols) */}
+      {/* Tienen exactamente la misma altura (items-stretch) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
-        <div className="lg:col-span-1 flex flex-col h-full">
+        <div className="lg:col-span-1 h-full">
           <AccountMetrics />
         </div>
-        <div className="lg:col-span-2 flex flex-col h-full">
+        <div className="lg:col-span-2 h-full">
           <ChartsSection />
         </div>
       </div>
+
+      {/* Monitor del Scraper ocupa TODO el ancho del contenedor de analítica */}
+      <ScraperMonitor />
 
       {/* Verificador de títulos duplicados por cuenta */}
       <TitleDuplicateChecker />
