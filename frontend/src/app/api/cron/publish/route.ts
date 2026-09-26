@@ -7,8 +7,16 @@ import { loadAppConfig } from '@/lib/services/appConfigService';
 import { format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Verificar que la llamada viene de Vercel Cron o es interna autorizada
+  const authHeader = request.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+
   try {
     const db = getSupabase();
 
