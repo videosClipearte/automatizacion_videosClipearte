@@ -191,7 +191,7 @@ export function VideoDetailModal() {
 
     try {
       let res;
-      const targetModel = cfg.gemini_model || 'gemini-2.0-flash';
+      const targetModel = cfg.gemini_model || 'gemini-3.8-flash';
       if (compressedReplacement && compressedReplacement.frames.length > 0) {
         res = await generateDescriptionFromVideo(
           cfg.gemini_api_key,

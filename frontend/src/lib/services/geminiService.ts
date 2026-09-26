@@ -132,24 +132,40 @@ async function callGoogleGeminiDirect(
             let finalText = candidateText.trim();
 
             if (isSubtitleAnalysis) {
+              // Estrategia 1: separador explícito ---COPY---
               if (candidateText.includes('---COPY---')) {
-                const parts = candidateText.split('---COPY---');
-                const rawJson = parts[0].replace(/```json/gi, '').replace(/```/gi, '').trim();
-                try {
-                  parsedSubtitles = JSON.parse(rawJson);
-                } catch {
+                const splitParts = candidateText.split('---COPY---');
+                const rawJson = splitParts[0].replace(/```json/gi, '').replace(/```/gi, '').trim();
+                try { parsedSubtitles = JSON.parse(rawJson); } catch {
                   parsedSubtitles = { dialogo_detectado: rawJson };
                 }
-                finalText = parts[1].trim();
+                finalText = splitParts.slice(1).join('').trim();
+
+              // Estrategia 2: bloque ```json ... ```
               } else if (candidateText.includes('```json')) {
                 const jsonMatch = candidateText.match(/```json([\s\S]*?)```/i);
                 if (jsonMatch) {
-                  try {
-                    parsedSubtitles = JSON.parse(jsonMatch[1].trim());
-                    finalText = candidateText.replace(jsonMatch[0], '').trim();
-                  } catch {}
+                  try { parsedSubtitles = JSON.parse(jsonMatch[1].trim()); } catch {}
+                  // Eliminar el bloque JSON del texto final
+                  finalText = candidateText.replace(/```json[\s\S]*?```/gi, '').trim();
+                }
+
+              // Estrategia 3: JSON inline { ... } al inicio del texto
+              } else {
+                const jsonInlineMatch = candidateText.match(/^\s*(\{[\s\S]*?\})\s*([\s\S]+)/);
+                if (jsonInlineMatch) {
+                  try { parsedSubtitles = JSON.parse(jsonInlineMatch[1]); } catch {}
+                  finalText = jsonInlineMatch[2].trim();
                 }
               }
+
+              // Limpieza final: eliminar cualquier fragmento JSON residual del copy
+              finalText = finalText
+                .replace(/```json[\s\S]*?```/gi, '')  // bloques json
+                .replace(/```[\s\S]*?```/g, '')        // otros bloques code
+                .replace(/^\s*\{[\s\S]*?\}\s*\n?/m, '') // JSON inline al inicio
+                .replace(/^(gancho_inicial|subtitulos_detectados|tema_principal|llamado_a_la_accion)[:\s].*/gim, '')
+                .trim();
             }
 
             return {
