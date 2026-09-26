@@ -216,9 +216,22 @@ export function ScheduleModal() {
     setGeneratingAI(true);
     setAiFeedback(null);
 
-    const selectedAccount = accounts.find((a) => a.id === selectedCuentaId) || accounts[0];
-    const selectedCampaign = campaigns.find((c) => c.id === selectedCampanaId) || campaigns[0];
-    const platform = selectedAccount?.plataforma || 'instagram';
+    const selectedAccount = accounts.find((a) => a.id === selectedCuentaId);
+    const selectedCampaign = campaigns.find((c) => c.id === selectedCampanaId);
+
+    // ── Validación obligatoria: cuenta y campaña deben estar seleccionadas ──
+    if (!selectedAccount) {
+      setAiFeedback('⚠️ Selecciona una cuenta de red social antes de generar la descripción.');
+      setGeneratingAI(false);
+      return;
+    }
+    if (!selectedCampaign) {
+      setAiFeedback('⚠️ Selecciona una campaña antes de generar la descripción. Las reglas de la campaña son necesarias para crear un copy correcto.');
+      setGeneratingAI(false);
+      return;
+    }
+
+    const platform = selectedAccount.plataforma || 'instagram';
     const videoTitle =
       videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || 'Nuevo video';
 

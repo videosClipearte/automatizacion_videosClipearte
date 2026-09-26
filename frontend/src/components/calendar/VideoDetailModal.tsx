@@ -166,9 +166,22 @@ export function VideoDetailModal() {
     setGeneratingAI(true);
     setEditFeedback(null);
 
-    const selectedAccount = accounts.find(a => a.id === editCuentaId) || accounts[0];
-    const selectedCampaign = campaigns.find(c => c.id === editCampanaId) || campaigns[0];
-    const platform = selectedAccount?.plataforma || 'instagram';
+    const selectedAccount = accounts.find(a => a.id === editCuentaId);
+    const selectedCampaign = campaigns.find(c => c.id === editCampanaId);
+
+    // ── Validación obligatoria ──
+    if (!selectedAccount) {
+      setEditFeedback({ success: false, msg: '⚠️ Selecciona una cuenta de red social para generar la descripción.' });
+      setGeneratingAI(false);
+      return;
+    }
+    if (!selectedCampaign) {
+      setEditFeedback({ success: false, msg: '⚠️ Selecciona una campaña. Sus reglas son necesarias para generar el copy correcto.' });
+      setGeneratingAI(false);
+      return;
+    }
+
+    const platform = selectedAccount.plataforma || 'instagram';
 
     const networkCampaignRule = (selectedCampaign?.reglas_por_red as any)?.[platform] || '';
     const campaignRules = [
