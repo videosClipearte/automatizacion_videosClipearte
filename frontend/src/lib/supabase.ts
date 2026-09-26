@@ -1,23 +1,35 @@
 // src/lib/supabase.ts
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-// Variables de entorno de Vercel (baked-in en build time para NEXT_PUBLIC_*)
-// Estas son la fuente de verdad en produccion.
-const ENV_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-const ENV_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+// Variables de entorno de Vercel y fallback del proyecto
+const DEFAULT_SUPABASE_URL = 'https://arrpvitdxdbrqkgndrjn.supabase.co';
+
+const ENV_URL =
+  (process.env.NEXT_PUBLIC_SUPABASE_URL ||
+   process.env.SUPABASE_URL ||
+   process.env.NEXT_PUBLIC_SUPABASE_PROJECT_URL ||
+   DEFAULT_SUPABASE_URL).trim();
+
+const ENV_KEY =
+  (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+   process.env.SUPABASE_ANON_KEY ||
+   process.env.SUPABASE_KEY ||
+   '').trim();
 
 // Devuelve la configuracion de Supabase.
-// PRIORIDAD: env vars de Vercel > localStorage (fallback para desarrollo local)
+// PRIORIDAD: env vars de Vercel > localStorage > URL por defecto
 export function getStoredSupabaseConfig(): { url: string; anonKey: string } {
   if (typeof window === 'undefined') {
-    // SSR: siempre env vars
+    // SSR / Serverless: env vars o URL de proyecto
     return { url: ENV_URL, anonKey: ENV_KEY };
   }
 
-  // Cliente: env vars de Vercel tienen PRIORIDAD ABSOLUTA
-  // localStorage solo se usa cuando env vars estan vacias (desarrollo local)
-  const url = ENV_URL || (localStorage.getItem('autopublish_supabase_url') ?? '');
-  const anonKey = ENV_KEY || (localStorage.getItem('autopublish_supabase_key') ?? '');
+  // Cliente: env vars de Vercel > localStorage > URL de proyecto
+  const localUrl = (localStorage.getItem('autopublish_supabase_url') ?? '').trim();
+  const localKey = (localStorage.getItem('autopublish_supabase_key') ?? '').trim();
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || localUrl || ENV_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || localKey || ENV_KEY;
 
   return { url, anonKey };
 }

@@ -177,6 +177,9 @@ export default function IntegrationsPage() {
     }
   };
 
+  const [simulatingCmd, setSimulatingCmd] = useState<string | null>(null);
+  const [commandTestOutput, setCommandTestOutput] = useState<{ cmd: string; output: string } | null>(null);
+
   const handleActivateWebhook = async () => {
     if (!telegramToken.trim()) {
       setWebhookFeedback({ success: false, msg: 'Ingresa primero el Token del Bot.' });
@@ -185,16 +188,40 @@ export default function IntegrationsPage() {
     setActivatingWebhook(true);
     setWebhookFeedback(null);
     try {
-      const webhookUrl = `${window.location.origin}/api/telegram/webhook`;
+      // 1. Guardar primero en Supabase
+      await handleSaveTelegram();
+
+      const cleanToken = telegramToken.trim();
+      const webhookUrl = `${window.location.origin}/api/telegram/webhook?token=${encodeURIComponent(cleanToken)}`;
+      
       const res = await fetch(
-        `https://api.telegram.org/bot${telegramToken.trim()}/setWebhook?url=${encodeURIComponent(webhookUrl)}`
+        `https://api.telegram.org/bot${cleanToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}&drop_pending_updates=true`
       );
       const data = await res.json();
+
+      // 2. Registrar el menú de comandos en Telegram para que aparezca el botón emergente
+      try {
+        await fetch(`https://api.telegram.org/bot${cleanToken}/setMyCommands`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            commands: [
+              { command: 'hoy', description: 'Videos programados para hoy' },
+              { command: 'metas', description: 'Videos faltantes por red social' },
+              { command: 'siguiente', description: 'Próximo video con enlace y copy' },
+              { command: 'ayuda', description: 'Menú de comandos de AutoPublish' },
+            ],
+          }),
+        });
+      } catch (cmdErr) {
+        console.warn('Error registrando comandos de menú en Telegram:', cmdErr);
+      }
+
       setActivatingWebhook(false);
       if (data.ok) {
         setWebhookFeedback({
           success: true,
-          msg: `🎉 Webhook enlazado exitosamente a: ${webhookUrl}. Tu bot responderá comandos las 24 horas en tus grupos de Telegram.`,
+          msg: `🎉 Webhook 24/7 enlazado y menú de comandos configurado. Tu bot responderá /hoy, /metas y /siguiente en tus grupos de Telegram.`,
         });
       } else {
         setWebhookFeedback({
@@ -208,6 +235,61 @@ export default function IntegrationsPage() {
         success: false,
         msg: `Error de red al registrar Webhook: ${err?.message || 'Error de conexión'}`,
       });
+    }
+  };
+
+  const handleDeleteWebhook = async () => {
+    if (!telegramToken.trim()) {
+      setWebhookFeedback({ success: false, msg: 'Ingresa primero el Token del Bot.' });
+      return;
+    }
+    setActivatingWebhook(true);
+    setWebhookFeedback(null);
+    try {
+      const cleanToken = telegramToken.trim();
+      const res = await fetch(`https://api.telegram.org/bot${cleanToken}/deleteWebhook?drop_pending_updates=false`);
+      const data = await res.json();
+      setActivatingWebhook(false);
+      if (data.ok) {
+        setWebhookFeedback({
+          success: true,
+          msg: 'ℹ️ Webhook desactivado en Telegram. El bot ahora opera en modo Polling mientras tengas la aplicación web abierta.',
+        });
+      } else {
+        setWebhookFeedback({ success: false, msg: `⚠️ ${data.description}` });
+      }
+    } catch (err: any) {
+      setActivatingWebhook(false);
+      setWebhookFeedback({ success: false, msg: `Error al desactivar Webhook: ${err?.message}` });
+    }
+  };
+
+  const handleSimulateCommand = async (cmd: string) => {
+    setSimulatingCmd(cmd);
+    setCommandTestOutput(null);
+    try {
+      const res = await fetch(
+        `/api/telegram/webhook?simulate=${encodeURIComponent(cmd)}&token=${encodeURIComponent(telegramToken.trim())}`
+      );
+      const data = await res.json();
+      if (data.ok && data.result) {
+        setCommandTestOutput({
+          cmd,
+          output: data.result.message || (data.result.responseSent ? 'Comando ejecutado con éxito' : 'Sin respuesta'),
+        });
+      } else {
+        setCommandTestOutput({
+          cmd,
+          output: `Error simulando comando: ${data.error || 'Respuesta inválida'}`,
+        });
+      }
+    } catch (err: any) {
+      setCommandTestOutput({
+        cmd,
+        output: `Error de red: ${err.message}`,
+      });
+    } finally {
+      setSimulatingCmd(null);
     }
   };
 
@@ -806,7 +888,7 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={handleCheckWebhook}
@@ -814,6 +896,15 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
                 className="px-2.5 py-1 rounded-lg border border-[var(--border)] hover:bg-white/[0.05] text-[11px] text-[var(--text-muted)] hover:text-white transition-all disabled:opacity-50"
               >
                 Ver Estado Webhook
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteWebhook}
+                disabled={activatingWebhook}
+                className="px-2.5 py-1 rounded-lg border border-red-500/30 hover:bg-red-500/10 text-[11px] text-red-300 transition-all disabled:opacity-50"
+                title="Desactiva el Webhook de Telegram para que el bot responda por Polling local"
+              >
+                Desactivar Webhook (Usar Polling)
               </button>
               <button
                 type="button"
@@ -828,36 +919,90 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
-            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)]">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-blue-400">/hoy</span>
-                <span className="text-[10px] text-[var(--text-muted)]">o /programados</span>
+            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)] flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-blue-400">/hoy</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">o /programados</span>
+                </div>
+                <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
+                  Lista los videos programados para hoy con fecha, campaña y título (sin links ni descripciones).
+                </p>
               </div>
-              <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
-                Lista los videos programados para hoy con fecha, campaña y título (sin links ni descripciones).
-              </p>
+              <button
+                type="button"
+                onClick={() => handleSimulateCommand('/hoy')}
+                disabled={simulatingCmd !== null}
+                className="mt-2 text-[10px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-md py-1 px-2 hover:bg-blue-500/20 transition-all flex items-center justify-center gap-1"
+              >
+                {simulatingCmd === '/hoy' ? <Loader2 size={10} className="animate-spin" /> : '🧪'}
+                <span>Probar respuesta /hoy</span>
+              </button>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)]">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-cyan-400">/metas</span>
-                <span className="text-[10px] text-[var(--text-muted)]">o /faltantes</span>
+            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)] flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-cyan-400">/metas</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">o /faltantes</span>
+                </div>
+                <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
+                  Reporta cuántos videos faltan publicar hoy en cada red social para cumplir la cuota diaria.
+                </p>
               </div>
-              <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
-                Reporta cuántos videos faltan publicar hoy en cada red social para cumplir la cuota diaria.
-              </p>
+              <button
+                type="button"
+                onClick={() => handleSimulateCommand('/metas')}
+                disabled={simulatingCmd !== null}
+                className="mt-2 text-[10px] font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 rounded-md py-1 px-2 hover:bg-cyan-500/20 transition-all flex items-center justify-center gap-1"
+              >
+                {simulatingCmd === '/metas' ? <Loader2 size={10} className="animate-spin" /> : '🧪'}
+                <span>Probar respuesta /metas</span>
+              </button>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)]">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-emerald-400">/siguiente</span>
-                <span className="text-[10px] text-[var(--text-muted)]">o /proximo</span>
+            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)] flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-emerald-400">/siguiente</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">o /proximo</span>
+                </div>
+                <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
+                  Envía la ficha del próximo video con link de Drive y su descripción aislada en 2 mensajes.
+                </p>
               </div>
-              <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
-                Envía la ficha del próximo video con link de Google Drive y su descripción aislada en 2 mensajes.
-              </p>
+              <button
+                type="button"
+                onClick={() => handleSimulateCommand('/siguiente')}
+                disabled={simulatingCmd !== null}
+                className="mt-2 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md py-1 px-2 hover:bg-emerald-500/20 transition-all flex items-center justify-center gap-1"
+              >
+                {simulatingCmd === '/siguiente' ? <Loader2 size={10} className="animate-spin" /> : '🧪'}
+                <span>Probar respuesta /siguiente</span>
+              </button>
             </div>
           </div>
+
+          {commandTestOutput && (
+            <div className="mt-2.5 p-3 rounded-xl bg-white/[0.03] border border-blue-500/30 text-xs">
+              <div className="flex items-center justify-between mb-1 pb-1 border-b border-white/[0.06]">
+                <span className="font-bold text-blue-400 flex items-center gap-1">
+                  <span>🤖 Respuesta simulada de:</span>
+                  <code className="text-white font-mono bg-white/10 px-1 rounded">{commandTestOutput.cmd}</code>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCommandTestOutput(null)}
+                  className="text-[10px] text-[var(--text-muted)] hover:text-white"
+                >
+                  Cerrar
+                </button>
+              </div>
+              <div className="font-mono text-[11px] text-white/90 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto mt-1 p-2 bg-black/40 rounded-lg">
+                {commandTestOutput.output}
+              </div>
+            </div>
+          )}
 
           {webhookFeedback && (
             <div
