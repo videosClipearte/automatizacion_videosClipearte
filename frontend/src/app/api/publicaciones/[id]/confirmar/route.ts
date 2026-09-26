@@ -22,6 +22,9 @@ export async function POST(
 
     const body = await request.json().catch(() => ({}));
     const postUrlPublica: string = body.post_url_publica || '';
+    const vistasObtenidas = body.vistas_obtenidas !== undefined && body.vistas_obtenidas !== ''
+      ? Number(body.vistas_obtenidas)
+      : undefined;
 
     const db = getSupabase();
     const now = new Date();
@@ -46,6 +49,9 @@ export async function POST(
     };
     if (postUrlPublica) {
       updatePayload.post_url_publica = postUrlPublica;
+    }
+    if (vistasObtenidas !== undefined && !isNaN(vistasObtenidas)) {
+      updatePayload.vistas_obtenidas = Math.max(0, vistasObtenidas);
     }
 
     const { error: updateErr } = await db

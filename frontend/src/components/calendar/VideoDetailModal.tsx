@@ -59,6 +59,7 @@ export function VideoDetailModal() {
   const [confirmando, setConfirmando] = useState(false);
   const [confirmFeedback, setConfirmFeedback] = useState<{ success: boolean; msg: string } | null>(null);
   const [confirmPostUrl, setConfirmPostUrl] = useState('');
+  const [confirmVistas, setConfirmVistas] = useState('');
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -445,10 +446,14 @@ export function VideoDetailModal() {
     setConfirmFeedback(null);
 
     try {
+      const vistasNum = confirmVistas.trim() !== '' ? Number(confirmVistas) : undefined;
       const res = await fetch(`/api/publicaciones/${video.id}/confirmar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ post_url_publica: confirmPostUrl.trim() }),
+        body: JSON.stringify({
+          post_url_publica: confirmPostUrl.trim(),
+          vistas_obtenidas: vistasNum !== undefined && !isNaN(vistasNum) ? vistasNum : undefined,
+        }),
       });
       const data = await res.json();
 
@@ -457,12 +462,14 @@ export function VideoDetailModal() {
           estado: 'PUBLICADO',
           publicado_en: new Date(),
           ...(confirmPostUrl.trim() ? { post_url_publica: confirmPostUrl.trim() } : {}),
+          ...(vistasNum !== undefined && !isNaN(vistasNum) ? { vistas_obtenidas: vistasNum } : {}),
         });
         setConfirmFeedback({
           success: true,
           msg: '✅ ¡Publicación confirmada! El estado se actualizó a PUBLICADO y se notificó a Telegram.',
         });
         setConfirmPostUrl('');
+        setConfirmVistas('');
         createNotification({
           tipo: 'success',
           titulo: 'Publicación confirmada manualmente',
@@ -728,14 +735,24 @@ export function VideoDetailModal() {
                         Cuando el equipo suba el video a la red social, haz clic aquí para registrarlo como <b>PUBLICADO</b> y notificar al grupo de Telegram.
                       </p>
 
-                      {/* URL opcional del post */}
-                      <input
-                        type="url"
-                        value={confirmPostUrl}
-                        onChange={(e) => setConfirmPostUrl(e.target.value)}
-                        placeholder="URL del post (opcional)"
-                        className="w-full px-3 py-1.5 rounded-lg bg-white/[0.05] border border-[var(--border)] text-xs text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:border-emerald-500/50"
-                      />
+                      {/* Inputs opcionales: URL y Vistas */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input
+                          type="url"
+                          value={confirmPostUrl}
+                          onChange={(e) => setConfirmPostUrl(e.target.value)}
+                          placeholder="URL del post en la red (opcional)"
+                          className="w-full px-3 py-1.5 rounded-lg bg-white/[0.05] border border-[var(--border)] text-xs text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:border-emerald-500/50"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          value={confirmVistas}
+                          onChange={(e) => setConfirmVistas(e.target.value)}
+                          placeholder="Vistas obtenidas (ej: 2500)"
+                          className="w-full px-3 py-1.5 rounded-lg bg-white/[0.05] border border-[var(--border)] text-xs text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:border-emerald-500/50"
+                        />
+                      </div>
 
                       {/* Feedback de confirmación */}
                       {confirmFeedback && (

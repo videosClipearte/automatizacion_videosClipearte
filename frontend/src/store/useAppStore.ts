@@ -218,6 +218,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         campaigns,
         videos,
         metrics: computeMetrics(videos),
+        selectedAccountId: get().selectedAccountId ?? accounts[0]?.id ?? null,
         isLoading: false,
       });
     } catch (err: any) {

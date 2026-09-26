@@ -5,6 +5,7 @@ import { AccountMetrics } from '@/components/analytics/AccountMetrics';
 import { RecentCarousel } from '@/components/analytics/RecentCarousel';
 import { DataGrid } from '@/components/analytics/DataGrid';
 import { ChartsSection } from '@/components/analytics/ChartsSection';
+import { TitleDuplicateChecker } from '@/components/analytics/TitleDuplicateChecker';
 
 export default function AnalyticsPage() {
   return (
@@ -30,6 +31,9 @@ export default function AnalyticsPage() {
           <ChartsSection />
         </div>
       </div>
+
+      {/* Verificador de títulos duplicados por cuenta */}
+      <TitleDuplicateChecker />
 
       {/* Recent carousel */}
       <RecentCarousel />
