@@ -60,6 +60,12 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
     setSelectedDate(d);
   };
 
+  const handleQuickDate = (offsetDays: number) => {
+    const target = addDays(new Date(), offsetDays);
+    setCalDate(target);
+    selectDay(target);
+  };
+
   const handleConfirm = () => {
     const finalDate = new Date(selectedDate);
     finalDate.setHours(selectedHour, 0, 0, 0);
@@ -70,196 +76,239 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
   const cleanName = droppedFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
 
   return (
-    <motion.div
-      key="drag-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="absolute inset-0 z-40 rounded-2xl overflow-hidden flex flex-col"
-    >
-      {/* Background gradient */}
-      <div className="absolute inset-0 bg-[#070711]/97" />
-      <div className="absolute inset-0 opacity-25"
-        style={{ background: 'radial-gradient(ellipse 70% 40% at 50% 0%, rgba(16,185,129,0.4) 0%, transparent 65%)' }}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      {/* Backdrop con desenfoque profundo */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onCancel}
+        className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
       />
 
-      {/* Scrollable content — overflow-y-auto so buttons are never clipped */}
-      <div className="relative flex-1 overflow-y-auto
-        [&::-webkit-scrollbar]:w-1.5
-        [&::-webkit-scrollbar-track]:bg-white/[0.03]
-        [&::-webkit-scrollbar-thumb]:bg-emerald-500/30
-        [&::-webkit-scrollbar-thumb]:rounded-full">
-      <div className="flex flex-col gap-3 p-4">
+      {/* Contenedor flotante centrado */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 16 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+        className="relative z-10 w-full max-w-xl md:max-w-2xl bg-[#0b0f19]/95 backdrop-blur-xl rounded-3xl border border-emerald-500/30 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(16,185,129,0.18)] overflow-hidden flex flex-col my-auto"
+      >
+        {/* Resplandor radial decorativo */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-32 bg-emerald-500/15 blur-3xl pointer-events-none" />
 
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Header Modal */}
+        <div className="relative px-6 py-4 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 border border-emerald-500/40 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 border border-emerald-500/40 flex items-center justify-center shadow-inner shadow-emerald-500/20">
               <FileVideo size={20} className="text-emerald-300" />
             </div>
             <div>
-              <p className="text-sm font-bold text-white flex items-center gap-2">
-                Nueva Programación de Video
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
-                  BORRADOR
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white">Programar Publicación</h2>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase tracking-wider">
+                  Paso 1 de 2
                 </span>
-              </p>
-              <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                Selecciona la fecha y hora para continuar con la configuración
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Selecciona la fecha y hora de emisión para tu video
               </p>
             </div>
           </div>
 
           <button
             onClick={onCancel}
-            className="w-8 h-8 rounded-xl glass border border-[var(--border)] hover:border-rose-500/40 flex items-center justify-center text-[var(--text-muted)] hover:text-rose-400 transition-all"
+            className="w-8 h-8 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+            title="Cerrar"
           >
-            <X size={14} />
+            <X size={16} />
           </button>
         </div>
 
-        {/* File info banner */}
-        <div className="p-2.5 rounded-xl bg-emerald-500/[0.07] border border-emerald-500/25 flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
-            <Film size={14} className="text-emerald-400" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-white truncate">{droppedFile.name}</p>
-            <p className="text-[10px] text-emerald-300 font-mono">{fileSize} MB · Video detectado</p>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <Zap size={11} className="text-amber-400" />
-            <span className="text-[10px] text-amber-300 font-semibold">Listo</span>
-          </div>
-        </div>
-
-        {/* Main two-column layout */}
-        <div className="flex gap-3">
-
-          {/* Mini Calendar */}
-          <div className="flex-1 min-w-0">
-            {/* Month nav */}
-            <div className="flex items-center justify-between mb-2">
-              <button onClick={() => setCalDate(subMonths(calDate, 1))}
-                className="w-6 h-6 rounded-lg glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors"
-              >
-                <ChevronLeft size={12} />
-              </button>
-              <span className="text-[11px] font-bold text-white capitalize">
-                {format(calDate, 'MMMM yyyy', { locale: es })}
-              </span>
-              <button onClick={() => setCalDate(addMonths(calDate, 1))}
-                className="w-6 h-6 rounded-lg glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors"
-              >
-                <ChevronRight size={12} />
-              </button>
+        {/* Contenido principal */}
+        <div className="p-5 sm:p-6 flex flex-col gap-4 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-emerald-500/30 [&::-webkit-scrollbar-thumb]:rounded-full">
+          
+          {/* Card del video seleccionado */}
+          <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-500/[0.08] via-cyan-500/[0.04] to-transparent border border-emerald-500/25 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                <Film size={16} className="text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-white truncate max-w-[280px] sm:max-w-md">{droppedFile.name}</p>
+                <p className="text-[11px] text-emerald-300 font-mono">{fileSize} MB · Video listo para programar</p>
+              </div>
             </div>
-
-            {/* Day names */}
-            <div className="grid grid-cols-7 mb-0.5">
-              {DAY_NAMES.map(d => (
-                <div key={d} className="text-center text-[9px] font-semibold text-[var(--text-muted)] py-0.5 uppercase">
-                  {d[0]}
-                </div>
-              ))}
-            </div>
-
-            {/* Day grid — fixed h-7 cells so calendar doesn't expand to fill flex container */}
-            <div className="grid grid-cols-7 gap-0.5">
-              {miniMonthDays.map((day) => {
-                const isSelected = isSameDay(day, selectedDate);
-                const isCurrentMonth = isSameMonth(day, calDate);
-                const isTodayDay = isToday(day);
-
-                return (
-                  <button
-                    key={format(day, 'yyyy-MM-dd')}
-                    onClick={() => selectDay(day)}
-                    className={cn(
-                      'h-7 flex items-center justify-center rounded-lg text-[11px] font-semibold transition-all duration-150',
-                      isSelected
-                        ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white shadow-md shadow-emerald-500/30 scale-105'
-                        : isTodayDay
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                          : isCurrentMonth
-                            ? 'text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-white'
-                            : 'text-[var(--text-muted)] opacity-40'
-                    )}
-                  >
-                    {format(day, 'd')}
-                  </button>
-                );
-              })}
+            <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-semibold">
+              <Zap size={12} className="text-amber-400" />
+              <span>Detectado</span>
             </div>
           </div>
 
-          {/* Right panel: hour + preview */}
-          <div className="w-48 flex flex-col gap-2.5 shrink-0">
+          {/* Atajos Rápidos de Fecha */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Atajos:</span>
+            <button
+              onClick={() => handleQuickDate(0)}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium glass hover:bg-emerald-500/20 hover:border-emerald-500/30 border border-white/10 text-slate-300 hover:text-white transition-all"
+            >
+              📅 Hoy
+            </button>
+            <button
+              onClick={() => handleQuickDate(1)}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium glass hover:bg-emerald-500/20 hover:border-emerald-500/30 border border-white/10 text-slate-300 hover:text-white transition-all"
+            >
+              🚀 Mañana
+            </button>
+            <button
+              onClick={() => handleQuickDate(2)}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium glass hover:bg-emerald-500/20 hover:border-emerald-500/30 border border-white/10 text-slate-300 hover:text-white transition-all"
+            >
+              ⚡ En 2 días
+            </button>
+          </div>
 
-            {/* Hour selector */}
-            <div>
-              <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                Hora de publicación
-              </p>
-              <div className="grid grid-cols-4 gap-1">
-                {[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23].map(h => (
-                  <button
-                    key={h}
-                    onClick={() => setSelectedHour(h)}
-                    className={cn(
-                      'py-1 rounded-lg text-[10px] font-mono font-bold transition-all',
-                      selectedHour === h
-                        ? 'bg-gradient-to-r from-emerald-500/40 to-cyan-500/40 text-white border border-emerald-500/40'
-                        : 'glass border border-[var(--border)] text-[var(--text-muted)] hover:text-white hover:border-emerald-500/25'
-                    )}
-                  >
-                    {h.toString().padStart(2, '0')}h
-                  </button>
+          {/* Grid de 2 Columnas: Calendario + Hora/Resumen */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+            
+            {/* Columna Izquierda: Mini Calendario (7 cols) */}
+            <div className="md:col-span-7 flex flex-col p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+              {/* Navegación del Mes */}
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={() => setCalDate(subMonths(calDate, 1))}
+                  className="w-7 h-7 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="text-xs font-bold text-white capitalize tracking-wide">
+                  {format(calDate, 'MMMM yyyy', { locale: es })}
+                </span>
+                <button
+                  onClick={() => setCalDate(addMonths(calDate, 1))}
+                  className="w-7 h-7 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+
+              {/* Días de la semana */}
+              <div className="grid grid-cols-7 mb-1 text-center">
+                {DAY_NAMES.map(d => (
+                  <span key={d} className="text-[10px] font-bold text-[var(--text-muted)] py-1 uppercase">
+                    {d}
+                  </span>
                 ))}
               </div>
+
+              {/* Días del mes */}
+              <div className="grid grid-cols-7 gap-1">
+                {miniMonthDays.map((day) => {
+                  const isSelected = isSameDay(day, selectedDate);
+                  const isCurrentMonth = isSameMonth(day, calDate);
+                  const isTodayDay = isToday(day);
+
+                  return (
+                    <button
+                      key={format(day, 'yyyy-MM-dd')}
+                      onClick={() => selectDay(day)}
+                      className={cn(
+                        'h-8 sm:h-9 flex items-center justify-center rounded-xl text-xs font-semibold transition-all duration-150',
+                        isSelected
+                          ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white font-bold shadow-lg shadow-emerald-500/30 scale-105 ring-2 ring-emerald-400/40'
+                          : isTodayDay
+                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 font-bold'
+                            : isCurrentMonth
+                              ? 'text-slate-200 hover:bg-white/[0.08] hover:text-white'
+                              : 'text-slate-600 opacity-40'
+                      )}
+                    >
+                      {format(day, 'd')}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Summary card */}
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-500/10 to-cyan-500/5 border border-emerald-500/25 flex flex-col gap-1.5">
-              <p className="text-[9px] text-[var(--text-muted)] font-semibold uppercase tracking-wider">Programado para:</p>
-              <div className="flex items-center gap-1.5">
-                <CalendarCheck size={13} className="text-emerald-400 shrink-0" />
-                <p className="text-[11px] font-bold text-white capitalize leading-tight">
-                  {format(selectedDate, "EEEE d 'de' MMM", { locale: es })}
-                </p>
+            {/* Columna Derecha: Selector de Hora y Card de Resumen (5 cols) */}
+            <div className="md:col-span-5 flex flex-col gap-3.5 justify-between">
+              
+              {/* Horas */}
+              <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
+                    Hora de publicación
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-emerald-400">
+                    {selectedHour.toString().padStart(2, '0')}:00 hs
+                  </span>
+                </div>
+
+                {/* Grid de Horas */}
+                <div className="grid grid-cols-4 gap-1.5 max-h-[140px] overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-emerald-500/20">
+                  {HOURS.map(h => (
+                    <button
+                      key={h}
+                      onClick={() => setSelectedHour(h)}
+                      className={cn(
+                        'py-1.5 rounded-xl text-xs font-mono font-bold transition-all text-center',
+                        selectedHour === h
+                          ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-md shadow-emerald-500/30 scale-105'
+                          : 'bg-white/[0.04] border border-white/[0.08] text-slate-300 hover:text-white hover:border-emerald-500/40 hover:bg-white/[0.08]'
+                      )}
+                    >
+                      {h.toString().padStart(2, '0')}h
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Clock size={13} className="text-cyan-400 shrink-0" />
-                <p className="text-sm font-bold text-cyan-300 font-mono">
-                  {selectedHour.toString().padStart(2, '0')}:00 hs
-                </p>
+
+              {/* Resumen Card */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-cyan-500/5 to-transparent border border-emerald-500/30 flex flex-col gap-2">
+                <span className="text-[10px] text-emerald-300/80 font-bold uppercase tracking-wider">
+                  Programado para:
+                </span>
+                
+                <div className="flex items-center gap-2">
+                  <CalendarCheck size={16} className="text-emerald-400 shrink-0" />
+                  <span className="text-xs font-bold text-white capitalize">
+                    {format(selectedDate, "EEEE d 'de' MMMM", { locale: es })}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Clock size={16} className="text-cyan-400 shrink-0" />
+                  <span className="text-sm font-extrabold text-cyan-300 font-mono">
+                    {selectedHour.toString().padStart(2, '0')}:00 hs
+                  </span>
+                </div>
               </div>
-              <p className="text-[9px] text-emerald-300 font-medium truncate">📎 {cleanName}</p>
+
             </div>
           </div>
+
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 pt-1">
+        {/* Footer con Botones de Acción */}
+        <div className="p-4 sm:p-5 border-t border-white/[0.08] bg-white/[0.02] flex items-center gap-3">
           <button
             onClick={onCancel}
-            className="flex-1 py-2.5 rounded-xl glass border border-[var(--border)] text-xs font-semibold text-[var(--text-muted)] hover:text-white hover:border-[var(--border-strong)] transition-all"
+            className="flex-1 py-3 rounded-2xl glass border border-white/10 text-xs font-semibold text-slate-300 hover:text-white hover:border-white/20 transition-all"
           >
             Cancelar
           </button>
           <button
             onClick={handleConfirm}
-            className="flex-[2] py-2.5 rounded-xl btn-gradient text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition-all"
+            className="flex-[2] py-3 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-400 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 active:scale-[0.98] transition-all"
           >
-            <Sparkles size={13} />
+            <Sparkles size={14} />
             <span>Continuar y Configurar</span>
-            <ArrowRight size={13} />
+            <ArrowRight size={14} />
           </button>
         </div>
 
-      </div>
-      </div>
-    </motion.div>
+      </motion.div>
+    </div>
   );
 }
 

@@ -464,19 +464,22 @@ export function ScheduleModal() {
           />
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+            initial={{ opacity: 0, scale: 0.94, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 16 }}
-            transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-            className="relative z-10 w-full max-w-lg glass-strong rounded-2xl border border-[var(--border-strong)] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
+            exit={{ opacity: 0, scale: 0.94, y: 16 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            className="relative z-10 w-full max-w-xl bg-[#0b0f19]/95 backdrop-blur-xl rounded-3xl border border-emerald-500/30 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(16,185,129,0.18)] overflow-hidden max-h-[92vh] flex flex-col"
           >
+            {/* Resplandor radial decorativo */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-32 bg-emerald-500/15 blur-3xl pointer-events-none" />
+
             {/* Header */}
-            <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
+            <div className="p-5 border-b border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-white">Programar Publicación</h2>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
-                    Google Drive + Telegram
+                  <h2 className="text-base font-bold text-white">Configurar Publicación</h2>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase tracking-wider">
+                    Paso 2 de 2
                   </span>
                 </div>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
@@ -485,9 +488,10 @@ export function ScheduleModal() {
               </div>
               <button
                 onClick={closeScheduleModal}
-                className="w-8 h-8 rounded-xl glass hover:bg-white/10 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors"
+                className="w-8 h-8 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+                title="Cerrar"
               >
-                <X size={15} />
+                <X size={16} />
               </button>
             </div>
 
