@@ -77,18 +77,35 @@ export async function sendTelegramMessage(
     const payload: any = {
       chat_id: cleanChatId,
       text: text,
+      allow_sending_without_reply: true,
     };
     if (parseMode) payload.parse_mode = parseMode;
     if (extra?.reply_to_message_id) payload.reply_to_message_id = extra.reply_to_message_id;
     if (extra?.message_thread_id) payload.message_thread_id = extra.message_thread_id;
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
-    const result = await response.json();
+    let result = await response.json();
+
+    // Fallback 1: Si falló por mensaje a responder no encontrado o thread no válido, reintentar sin reply_to_message_id
+    if (!result.ok && result.description && (
+      result.description.toLowerCase().includes('replied not found') ||
+      result.description.toLowerCase().includes('thread not found')
+    )) {
+      const retryPayload = { ...payload };
+      delete retryPayload.reply_to_message_id;
+      delete retryPayload.message_thread_id;
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(retryPayload),
+      });
+      result = await response.json();
+    }
 
     if (result.ok) {
       return {
@@ -97,7 +114,7 @@ export async function sendTelegramMessage(
         data: result.result,
       };
     } else {
-      // Si falló por entidades HTML en texto del usuario, reintentar automáticamente en texto plano
+      // Fallback 2: Si falló por entidades HTML en texto del usuario, reintentar automáticamente en texto plano
       if (parseMode && result.description?.toLowerCase().includes('parse entities')) {
         const fallbackRes = await fetch(url, {
           method: 'POST',
@@ -105,6 +122,7 @@ export async function sendTelegramMessage(
           body: JSON.stringify({
             chat_id: cleanChatId,
             text: text.replace(/<[^>]*>/g, ''),
+            allow_sending_without_reply: true,
           }),
         });
         const fallbackResult = await fallbackRes.json();

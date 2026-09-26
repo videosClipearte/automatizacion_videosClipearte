@@ -18,19 +18,36 @@ export async function POST(req: NextRequest) {
     const payload: any = {
       chat_id: cleanChatId,
       text: text,
+      allow_sending_without_reply: true,
     };
     if (parseMode) payload.parse_mode = parseMode;
     if (extra?.reply_to_message_id) payload.reply_to_message_id = extra.reply_to_message_id;
     if (extra?.message_thread_id) payload.message_thread_id = extra.message_thread_id;
 
     const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
-    const res = await fetch(url, {
+    let res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
-    const result = await res.json();
+    let result = await res.json();
+
+    // Fallback 1: Si falló por reply_to_message_id no encontrado o thread
+    if (!result.ok && result.description && (
+      result.description.toLowerCase().includes('replied not found') ||
+      result.description.toLowerCase().includes('thread not found')
+    )) {
+      const retryPayload = { ...payload };
+      delete retryPayload.reply_to_message_id;
+      delete retryPayload.message_thread_id;
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(retryPayload),
+      });
+      result = await res.json();
+    }
 
     if (result.ok) {
       return NextResponse.json({
@@ -39,7 +56,7 @@ export async function POST(req: NextRequest) {
         data: result.result,
       });
     } else {
-      // Si falló por entidades HTML, fallback en texto plano
+      // Fallback 2: Si falló por entidades HTML, fallback en texto plano
       if (parseMode && result.description?.toLowerCase().includes('parse entities')) {
         const fallbackRes = await fetch(url, {
           method: 'POST',
@@ -47,6 +64,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             chat_id: cleanChatId,
             text: text.replace(/<[^>]*>/g, ''),
+            allow_sending_without_reply: true,
           }),
         });
         const fallbackResult = await fallbackRes.json();
