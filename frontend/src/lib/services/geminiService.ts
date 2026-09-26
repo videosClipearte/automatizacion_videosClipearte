@@ -176,7 +176,7 @@ export async function generateWithGemini(
 ): Promise<GeminiAnalysisResult> {
   const body: any = {
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    generationConfig: { temperature, maxOutputTokens: 600 },
+    generationConfig: { temperature, maxOutputTokens: 1500 },
   };
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
@@ -226,7 +226,7 @@ INSTRUCCIONES DE FORMATO — SEGUIR AL PIE DE LA LETRA:
 
   const body: any = {
     contents: [{ role: 'user', parts: imageParts }],
-    generationConfig: { temperature, maxOutputTokens: 700 },
+    generationConfig: { temperature, maxOutputTokens: 1500 },
   };
 
   if (systemInstruction) {

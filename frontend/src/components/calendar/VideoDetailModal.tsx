@@ -205,6 +205,12 @@ export function VideoDetailModal() {
     try {
       let res;
       const targetModel = cfg.gemini_model || 'gemini-3.8-flash';
+      const systemInstruction = [
+        cfg.gemini_system_prompt || 'Actúa como un experto en copywriting para redes sociales.',
+        `Red Social: ${platform.toUpperCase()}`,
+        `REGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}`,
+        `HASHTAGS OBLIGATORIOS: ${hashtags}`,
+      ].join('\n');
       if (compressedReplacement && compressedReplacement.frames.length > 0) {
         res = await generateDescriptionFromVideo(
           cfg.gemini_api_key,
@@ -214,15 +220,25 @@ export function VideoDetailModal() {
           campaignRules,
           platform,
           hashtags,
-          `${cfg.gemini_system_prompt || 'Experto en redes sociales.'}\nRed Social: ${platform.toUpperCase()}`,
+          systemInstruction,
           cfg.gemini_temperature ?? 0.7
         );
       } else {
+        const userPrompt = [
+          `Escribe la descripción para publicar en ${platform.toUpperCase()} sobre el video titulado "${editTitle}".`,
+          ``,
+          `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPAÑA:`,
+          campaignRules,
+          ``,
+          `HASHTAGS QUE DEBES INCLUIR SIN EXCEPCIÓN: ${hashtags}`,
+          ``,
+          `INSTRUCCIONES: Devuelve ÚNICAMENTE el texto final listo para publicar. Sin encabezados, sin JSON, sin comillas al inicio.`,
+        ].join('\n');
         res = await generateWithGemini(
           cfg.gemini_api_key,
           targetModel,
-          `Genera la descripción para un video titulado "${editTitle}".\n${campaignRules}\nHashtags obligatorios: ${hashtags}.\nDevuelve SOLAMENTE el texto final listo para publicar sin comillas ni encabezados.`,
-          `${cfg.gemini_system_prompt || 'Experto en redes sociales.'}\nRed Social: ${platform.toUpperCase()}`,
+          userPrompt,
+          systemInstruction,
           cfg.gemini_temperature ?? 0.7
         );
       }

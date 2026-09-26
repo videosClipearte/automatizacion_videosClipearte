@@ -262,8 +262,27 @@ export function ScheduleModal() {
 
     const apiKey = cfg.gemini_api_key;
     const model = cfg.gemini_model || 'gemini-3.8-flash';
-    const systemPrompt = `${cfg.gemini_system_prompt || 'Actúa como un experto en copywriting para redes sociales.'}\nRed Social Objetivo: ${platform.toUpperCase()}.\nDirectrices de la plataforma: ${targetRule}`;
-    const userPrompt = `Genera la descripción para un video titulado "${videoTitle}".\n${campaignRules}\nHashtags obligatorios a incluir: ${hashtags}.\nDevuelve SOLAMENTE el texto final listo para publicar sin comillas ni encabezados.`;
+    const systemPrompt = [
+      cfg.gemini_system_prompt || 'Actúa como un experto en copywriting para redes sociales.',
+      `Red Social Objetivo: ${platform.toUpperCase()}.`,
+      `Directrices de la plataforma: ${targetRule}`,
+      `REGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}`,
+      `HASHTAGS OBLIGATORIOS: ${hashtags}`,
+    ].join('\n');
+    const userPrompt = [
+      `Escribe la descripción para publicar en ${platform.toUpperCase()} sobre el video titulado "${videoTitle}".`,
+      ``,
+      `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPAÑA:`,
+      campaignRules,
+      ``,
+      `HASHTAGS QUE DEBES INCLUIR SIN EXCEPCIÓN: ${hashtags}`,
+      ``,
+      `INSTRUCCIONES DE FORMATO:`,
+      `- Devuelve ÚNICAMENTE el texto final listo para publicar`,
+      `- Usa emojis apropiados para ${platform.toUpperCase()}`,
+      `- Incluye los hashtags al final`,
+      `- NO incluyas encabezados, comillas ni bloques de código`,
+    ].join('\n');
 
     if (!apiKey) {
       // Fallback si no hay clave API configurada
