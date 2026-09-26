@@ -56,6 +56,9 @@ export function VideoDetailModal() {
   const [telegramFeedback, setTelegramFeedback] = useState<{ success: boolean; msg: string } | null>(null);
   const [verifyingScraper, setVerifyingScraper] = useState(false);
   const [scraperFeedback, setScraperFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
+  const [confirmFeedback, setConfirmFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+  const [confirmPostUrl, setConfirmPostUrl] = useState('');
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -366,7 +369,7 @@ export function VideoDetailModal() {
         });
         setTelegramFeedback({
           success: true,
-          msg: '🎉 Publicación enviada con éxito a Telegram y marcada como ENVIADO. El scraper comprobará la descripción en redes para pasar a PUBLICADO.'
+          msg: '🎉 Alerta enviada a Telegram con éxito. El estado pasó a ENVIADO. Cuando el equipo publique el video, usa el botón "Confirmar como PUBLICADO" para cerrar el seguimiento.'
         });
         createNotification({
           tipo: 'info',
@@ -432,6 +435,55 @@ export function VideoDetailModal() {
         success: false,
         msg: `Error al ejecutar scraper: ${err?.message || 'Fallo de conexión'}`,
       });
+    }
+  };
+
+  // Confirmar publicación manualmente (flujo correcto para redes que bloquean scrapers)
+  const handleConfirmarPublicado = async () => {
+    if (!video) return;
+    setConfirmando(true);
+    setConfirmFeedback(null);
+
+    try {
+      const res = await fetch(`/api/publicaciones/${video.id}/confirmar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ post_url_publica: confirmPostUrl.trim() }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        await updateVideo(video.id, {
+          estado: 'PUBLICADO',
+          publicado_en: new Date(),
+          ...(confirmPostUrl.trim() ? { post_url_publica: confirmPostUrl.trim() } : {}),
+        });
+        setConfirmFeedback({
+          success: true,
+          msg: '✅ ¡Publicación confirmada! El estado se actualizó a PUBLICADO y se notificó a Telegram.',
+        });
+        setConfirmPostUrl('');
+        createNotification({
+          tipo: 'success',
+          titulo: 'Publicación confirmada manualmente',
+          mensaje: `El equipo confirmó que "${video.titulo}" fue publicado en @${account?.username || 'cuenta'} (${account?.plataforma?.toUpperCase() || 'red'}).`,
+          video_id: video.id,
+          cuenta_id: video.cuenta_id,
+          origen: 'scraper',
+        });
+      } else {
+        setConfirmFeedback({
+          success: false,
+          msg: `❌ Error al confirmar: ${data.error || 'Respuesta inesperada del servidor'}`,
+        });
+      }
+    } catch (err: any) {
+      setConfirmFeedback({
+        success: false,
+        msg: `❌ Error de conexión: ${err?.message || 'Fallo de red'}`,
+      });
+    } finally {
+      setConfirmando(false);
     }
   };
 
@@ -665,32 +717,52 @@ export function VideoDetailModal() {
                     </div>
                   )}
 
-                  {/* Botón de Comprobar con Scraper si está en estado ENVIADO */}
-                  {video.estado === 'ENVIADO' && (
-                    <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25 space-y-2">
-                      <div className="flex items-center gap-1.5 text-cyan-400 text-xs font-semibold">
-                        <Sparkles size={13} />
-                        <span>Estado: ENVIADO a Telegram</span>
+                  {/* Confirmar publicación manualmente — visible para ENVIADO y VERIFICACION_PENDIENTE */}
+                  {(video.estado === 'ENVIADO' || video.estado === 'VERIFICACION_PENDIENTE') && (
+                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 space-y-3">
+                      <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold">
+                        <CheckCircle2 size={13} />
+                        <span>Confirmar publicación manual</span>
                       </div>
                       <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                        El video fue despachado a Telegram. El scraper silencioso analiza las redes y comprueba si la descripción coincide para pasarlo a <b>PUBLICADO</b>.
+                        Cuando el equipo suba el video a la red social, haz clic aquí para registrarlo como <b>PUBLICADO</b> y notificar al grupo de Telegram.
                       </p>
+
+                      {/* URL opcional del post */}
+                      <input
+                        type="url"
+                        value={confirmPostUrl}
+                        onChange={(e) => setConfirmPostUrl(e.target.value)}
+                        placeholder="URL del post (opcional)"
+                        className="w-full px-3 py-1.5 rounded-lg bg-white/[0.05] border border-[var(--border)] text-xs text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:border-emerald-500/50"
+                      />
+
+                      {/* Feedback de confirmación */}
+                      {confirmFeedback && (
+                        <div
+                          className={`p-2 rounded-lg border text-[11px] flex items-start gap-1.5 ${
+                            confirmFeedback.success
+                              ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                              : 'bg-red-500/10 border-red-500/25 text-red-300'
+                          }`}
+                        >
+                          {confirmFeedback.success
+                            ? <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-emerald-400" />
+                            : <AlertCircle size={12} className="shrink-0 mt-0.5 text-red-400" />}
+                          <span>{confirmFeedback.msg}</span>
+                        </div>
+                      )}
+
                       <button
                         type="button"
-                        onClick={handleVerifyWithScraper}
-                        disabled={verifyingScraper}
-                        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/35 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all active:scale-98 disabled:opacity-50"
+                        onClick={handleConfirmarPublicado}
+                        disabled={confirmando}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-bold hover:bg-emerald-500/35 transition-all active:scale-98 disabled:opacity-50"
                       >
-                        {verifyingScraper ? (
-                          <>
-                            <Loader2 size={12} className="animate-spin text-cyan-400" />
-                            <span>Descargando y analizando descripción...</span>
-                          </>
+                        {confirmando ? (
+                          <><Loader2 size={12} className="animate-spin" /><span>Confirmando...</span></>
                         ) : (
-                          <>
-                            <Sparkles size={12} className="text-cyan-400" />
-                            <span>Comprobar con Scraper Ahora (Pasar a PUBLICADO)</span>
-                          </>
+                          <><CheckCircle2 size={12} /><span>✅ Confirmar como PUBLICADO</span></>
                         )}
                       </button>
                     </div>
