@@ -1,14 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/cron/publish",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/scraper",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/cron/daily-report",
       "schedule": "0 23 * * *"
     }
