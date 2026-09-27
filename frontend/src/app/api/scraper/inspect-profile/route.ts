@@ -49,6 +49,7 @@ interface ReelItem {
   views: number;
   likes: number;
   comments: number;
+  shares?: number;
   timestamp?: number;
   coverUrl?: string;
 }
@@ -173,7 +174,6 @@ export async function POST(req: NextRequest) {
               }
 
               // Intentar lista de videos en los scopes del primer fetch
-              // (rara vez presente, pero lo intentamos igual)
               for (const key of Object.keys(scope)) {
                 const sc = scope[key];
                 const items: any[] =
@@ -190,13 +190,14 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Si no encontramos secUid en el JSON, buscarlo como string en el HTML
+          // Extraer secUid/userId del HTML si no los obtuvimos del JSON
           if (!secUid) {
             const secMatch = html.match(/"secUid"\s*:\s*"([^"]+)"/);
             if (secMatch) secUid = secMatch[1];
           }
           if (!userId) {
-            const uidMatch = html.match(/"authorId"\s*:\s*"(\d+)"/) ||
+            const uidMatch =
+              html.match(/"authorId"\s*:\s*"(\d+)"/) ||
               html.match(/"userId"\s*:\s*"(\d+)"/);
             if (uidMatch) userId = uidMatch[1];
           }
@@ -205,8 +206,7 @@ export async function POST(req: NextRequest) {
         console.warn('[inspect-profile] Error al fetch del perfil TikTok:', profileErr?.message);
       }
 
-      // ── 2. Llamar al endpoint interno de TikTok para la lista de videos ──────
-      // Solo si aún no tenemos reels y tenemos secUid
+      // ── 2. Intentar API interna de TikTok (item_list) con secUid ─────────────
       if (result.recentReels.length === 0 && secUid) {
         try {
           const listUrl = new URL('https://www.tiktok.com/api/post/item_list/');
@@ -217,74 +217,111 @@ export async function POST(req: NextRequest) {
           listUrl.searchParams.set('secUid', secUid);
           if (userId) listUrl.searchParams.set('userId', userId);
           listUrl.searchParams.set('sourceType', '8');
-          listUrl.searchParams.set('appId', '1233');
-          listUrl.searchParams.set('region', 'US');
-          listUrl.searchParams.set('language', 'es');
 
           const listRes = await fetch(listUrl.toString(), {
-            headers: {
-              ...API_HEADERS,
-              Referer: `https://www.tiktok.com/@${cleanUser}`,
-            },
-            signal: AbortSignal.timeout(12000),
+            headers: { ...API_HEADERS, Referer: `https://www.tiktok.com/@${cleanUser}` },
+            signal: AbortSignal.timeout(10000),
           });
 
           if (listRes.ok) {
             const listData = await listRes.json();
             const items: any[] = listData?.itemList || listData?.items || [];
             if (Array.isArray(items) && items.length > 0) {
-              result.recentReels = items
-                .slice(0, 10)
-                .map((it) => mapTikTokItem(it, cleanUser));
-            } else {
-              result.debugInfo = `item_list OK pero sin items. Status: ${listRes.status}`;
+              result.recentReels = items.slice(0, 10).map((it) => mapTikTokItem(it, cleanUser));
             }
-          } else {
-            result.debugInfo = `item_list HTTP ${listRes.status}`;
           }
         } catch (listErr: any) {
-          console.warn('[inspect-profile] Error al consultar item_list:', listErr?.message);
-          result.debugInfo = `item_list error: ${listErr?.message}`;
+          console.warn('[inspect-profile] Error item_list:', listErr?.message);
         }
       }
 
-      // ── 3. Fallback: intentar raspar URLs de video del HTML del perfil ───────
-      // TikTok a veces embebe las primeras URLs de video como Open Graph / JSON-LD
-      if (result.recentReels.length === 0) {
+      // ── 3. Extraer IDs de video del HTML y hacer fetch individual de cada reel ─
+      // TikTok embebe los IDs de video en el HTML del perfil como /video/XXXXXX
+      // Luego consultamos cada reel en paralelo para obtener sus métricas reales
+      if (result.recentReels.length === 0 && html.length > 0) {
         try {
-          // Buscar bloques de JSON embebidos que tengan "playCount"
-          const jsonChunks = html?.match(/"playCount"\s*:\s*\d+/g) || [];
-          if (jsonChunks.length > 0) {
-            // Hay datos de videos en el HTML, intentar extraer JSON-LD
-            const jsonLdMatches =
-              html?.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g) || [];
-            for (const block of jsonLdMatches) {
-              try {
-                const innerMatch = block.match(/<script[^>]*>([\s\S]*?)<\/script>/);
-                if (!innerMatch) continue;
-                const ld = JSON.parse(innerMatch[1]);
-                const items = Array.isArray(ld) ? ld : [ld];
-                const videos = items.filter(
-                  (it) => it['@type'] === 'VideoObject' || it.contentUrl
-                );
-                if (videos.length > 0) {
-                  result.recentReels = videos.slice(0, 10).map((v, i) => ({
-                    id: String(i),
-                    url: v.contentUrl || v.url || result.profileUrl,
-                    desc: v.description || v.name || '',
-                    views: 0,
-                    likes: 0,
-                    comments: 0,
-                  }));
-                  break;
-                }
-              } catch {
-                // ignorar bloque JSON-LD inválido
-              }
+          // Buscar todos los IDs únicos de video en el HTML (15-19 dígitos)
+          const videoIdSet = new Set<string>();
+          const idMatches = html.matchAll(/\/video\/(\d{15,20})/g);
+          for (const m of idMatches) {
+            videoIdSet.add(m[1]);
+            if (videoIdSet.size >= 10) break;
+          }
+
+          // También buscar IDs en JSON embebido: "id":"XXXXXXX"
+          if (videoIdSet.size < 10) {
+            const jsonIdMatches = html.matchAll(/"id"\s*:\s*"(\d{15,20})"/g);
+            for (const m of jsonIdMatches) {
+              videoIdSet.add(m[1]);
+              if (videoIdSet.size >= 10) break;
             }
           }
-        } catch {
-          // ignorar errores del fallback
+
+          const videoIds = [...videoIdSet].slice(0, 8); // máximo 8 para no exceder timeout
+
+          if (videoIds.length > 0) {
+            // Fetch paralelo de cada reel individual
+            const reelResults = await Promise.allSettled(
+              videoIds.map(async (vid) => {
+                const videoUrl = `https://www.tiktok.com/@${cleanUser}/video/${vid}`;
+                try {
+                  const vRes = await fetch(videoUrl, {
+                    headers: BROWSER_HEADERS,
+                    signal: AbortSignal.timeout(8000),
+                  });
+                  if (!vRes.ok) return null;
+                  const vHtml = await vRes.text();
+
+                  // Extraer métricas del HTML del reel
+                  const playMatch = vHtml.match(/"playCount"\s*:\s*(\d+)/);
+                  const diggMatch = vHtml.match(/"diggCount"\s*:\s*(\d+)/);
+                  const commentMatch = vHtml.match(/"commentCount"\s*:\s*(\d+)/);
+                  const shareMatch = vHtml.match(/"shareCount"\s*:\s*(\d+)/);
+                  const descMatch = vHtml.match(/"desc"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                  const tsMatch = vHtml.match(/"createTime"\s*:\s*(\d+)/);
+                  const coverMatch = vHtml.match(/"originCover"\s*:\s*"([^"]+)"/);
+
+                  // Si no encontramos playCount, intentar con og:description para la desc
+                  const ogDesc = vHtml.match(/<meta property="og:description" content="([^"]+)"/i);
+
+                  return {
+                    id: vid,
+                    url: videoUrl,
+                    desc: descMatch
+                      ? descMatch[1].replace(/\\n/g, ' ').replace(/\\"/g, '"')
+                      : (ogDesc ? ogDesc[1] : ''),
+                    views: playMatch ? parseInt(playMatch[1], 10) : 0,
+                    likes: diggMatch ? parseInt(diggMatch[1], 10) : 0,
+                    comments: commentMatch ? parseInt(commentMatch[1], 10) : 0,
+                    shares: shareMatch ? parseInt(shareMatch[1], 10) : undefined,
+                    timestamp: tsMatch ? parseInt(tsMatch[1], 10) : undefined,
+                    coverUrl: coverMatch ? coverMatch[1] : undefined,
+                  } as ReelItem;
+                } catch {
+                  return null;
+                }
+              })
+            );
+
+            const validReels: ReelItem[] = [];
+            for (const r of reelResults) {
+              if (r.status === 'fulfilled' && r.value !== null) {
+                validReels.push(r.value as ReelItem);
+              }
+            }
+
+            if (validReels.length > 0) {
+              result.recentReels = validReels;
+              result.debugInfo = `${validReels.length} reels extraídos individualmente del perfil`;
+            } else {
+              result.debugInfo = `Se encontraron ${videoIds.length} IDs en el HTML pero TikTok bloquea los fetches individuales también`;
+            }
+
+          } else {
+            result.debugInfo = `No se encontraron IDs de video en el HTML del perfil (HTTP ${result.httpStatus})`;
+          }
+        } catch (htmlScrapeErr: any) {
+          result.debugInfo = `Error extrayendo IDs del HTML: ${htmlScrapeErr?.message}`;
         }
       }
     } else if (platform === 'instagram') {
