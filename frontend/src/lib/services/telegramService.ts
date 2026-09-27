@@ -245,13 +245,12 @@ ${campaignSection}${horaSection}🎬 <b>Título:</b> ${safeTitle}
 
 📁 <b>Video en Google Drive:</b>
 ${driveUrlText}
+
+📝 <i>A continuación se envía el copy aprobado listo para copiar y pegar.</i>
 `.trim();
 
-  // Mensaje 2: Descripción / Copy exclusivo para copiar y pegar directamente
-  const msg2 = `
-📝 <b>DESCRIPCIÓN / COPY APROBADO (REGLAS DE CAMPAÑA):</b>
-${safeDesc}
-`.trim();
+  // Mensaje 2: Descripción / Copy 100% limpio para copiar y pegar directamente sin cabeceras
+  const msg2 = safeDesc.trim();
 
   // Enviar mensaje 1
   const res1 = await sendTelegramMessage(token, chatId, msg1);

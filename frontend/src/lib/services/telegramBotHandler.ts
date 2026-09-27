@@ -436,14 +436,13 @@ ${campaignSection}🕒 <b>Hora programada:</b> ${horaFormatted}
 
 📁 <b>Video en Google Drive:</b>
 ${driveUrlText}
+
+📝 <i>A continuación se envía el copy aprobado listo para copiar y pegar.</i>
 `.trim();
 
-    // Mensaje 2: Descripción / Copy exclusivo para copiar y pegar directamente
+    // Mensaje 2: Descripción / Copy 100% limpio para copiar y pegar directamente sin cabeceras
     const cleanDescription = (video.descripcion_aprobada_ia || '').trim() || 'Sin descripción asignada aún.';
-    const msg2 = `
-📝 <b>DESCRIPCIÓN / COPY APROBADO (REGLAS DE CAMPAÑA):</b>
-<code>${escapeHtml(cleanDescription)}</code>
-`.trim();
+    const msg2 = escapeHtml(cleanDescription);
 
     // Enviar Mensaje 1
     const res1 = await sendTelegramMessage(botToken, chatId, msg1, 'HTML', {
