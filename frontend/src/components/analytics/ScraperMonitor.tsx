@@ -46,6 +46,17 @@ interface ScrapedReelItem {
   matchedKeywords: string[];
 }
 
+interface LiveReelItem {
+  id: string;
+  url: string;
+  desc: string;
+  views: number;
+  likes: number;
+  comments: number;
+  timestamp?: number;
+  coverUrl?: string;
+}
+
 function extractHashtags(campaignBase?: string, desc?: string): string[] {
   const tags = new Set<string>();
   if (campaignBase) {
@@ -75,6 +86,7 @@ export function ScraperMonitor() {
 
   const [probing, setProbing] = useState(false);
   const [profileData, setProfileData] = useState<ExtractedProfileData | null>(null);
+  const [liveReels, setLiveReels] = useState<LiveReelItem[]>([]);
 
   // Input para inspeccionar / registrar una URL real de reel en vivo
   const [manualReelUrl, setManualReelUrl] = useState('');
@@ -131,6 +143,9 @@ export function ScraperMonitor() {
           message: data.message,
           lastChecked: new Date().toLocaleTimeString(),
         });
+        if (Array.isArray(data.recentReels) && data.recentReels.length > 0) {
+          setLiveReels(data.recentReels);
+        }
       }
     } catch (err: any) {
       console.warn('Error al extraer perfil:', err);
@@ -611,6 +626,103 @@ export function ScraperMonitor() {
             <p className="text-xs text-[var(--text-muted)]">
               No hay publicaciones registradas para <b className="text-white">@{selectedAccount?.username}</b>.
             </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── 5. Últimos Reels de la Cuenta (obtenidos directamente de la red social) ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-violet-400">
+              <Sparkles size={12} />
+            </div>
+            <h4 className="text-xs font-bold text-white tracking-wide uppercase">
+              Últimos Reels de la Cuenta · Desde la Red Social
+            </h4>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/15 border border-violet-500/30 text-violet-300">
+              {liveReels.length > 0 ? `${liveReels.length} extraídos` : 'Sin datos aún'}
+            </span>
+          </div>
+          {liveReels.length > 0 && (
+            <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+              <CheckCircle2 size={10} className="text-emerald-400" />
+              Datos directos de {selectedAccount?.plataforma?.toUpperCase()}
+            </span>
+          )}
+        </div>
+
+        {liveReels.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {liveReels.map((reel, idx) => (
+              <motion.div
+                key={reel.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.04 }}
+                className="relative p-3.5 rounded-2xl bg-gradient-to-b from-violet-500/5 to-transparent border border-violet-500/20 hover:border-violet-500/40 transition-all space-y-2.5 group"
+              >
+                {/* Posición */}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="px-2 py-0.5 rounded-lg bg-violet-500/20 border border-violet-500/40 text-violet-300 font-bold font-mono text-[11px]">
+                    #{idx + 1} {idx === 0 ? '· Más reciente' : ''}
+                  </span>
+                  {reel.timestamp && reel.timestamp > 0 && (
+                    <span className="text-[10px] text-[var(--text-muted)] font-mono">
+                      {new Date(reel.timestamp * 1000).toLocaleDateString('es', { day: '2-digit', month: 'short' })}
+                    </span>
+                  )}
+                </div>
+
+                {/* Métricas en línea */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[11px] font-bold font-mono">
+                    <Eye size={10} />
+                    {reel.views > 0 ? formatViews(reel.views) : '—'}
+                  </span>
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[11px] font-bold font-mono">
+                    <Heart size={10} />
+                    {reel.likes > 0 ? formatViews(reel.likes) : '—'}
+                  </span>
+                  {reel.comments > 0 && (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[11px] font-mono">
+                      <Send size={10} />
+                      {formatViews(reel.comments)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Descripción */}
+                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed line-clamp-3 min-h-[3rem]">
+                  {reel.desc || <span className="italic text-[var(--text-muted)]">Sin descripción</span>}
+                </p>
+
+                {/* Link directo al Reel */}
+                <a
+                  href={reel.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300 text-[11px] font-semibold transition-all hover:text-white w-full justify-center"
+                >
+                  <ExternalLink size={11} />
+                  <span>Ver en {selectedAccount?.plataforma?.toUpperCase()}</span>
+                </a>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-10 gap-3 rounded-2xl border border-dashed border-violet-500/20 bg-violet-500/5">
+            <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
+              <Sparkles size={18} className="text-violet-400 opacity-50" />
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-xs font-semibold text-white/60">
+                Reels de la red social no disponibles aún
+              </p>
+              <p className="text-[11px] text-[var(--text-muted)] max-w-xs">
+                Haz clic en <b className="text-cyan-400">Re-escanear perfil</b> para intentar obtener los últimos reels publicados directamente desde {selectedAccount?.plataforma?.toUpperCase()}.
+              </p>
+            </div>
           </div>
         )}
       </div>

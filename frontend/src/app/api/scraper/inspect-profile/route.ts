@@ -45,6 +45,16 @@ export async function POST(req: NextRequest) {
       videoCount: number;
       heartCount: number;
       followerCount: number;
+      recentReels: {
+        id: string;
+        url: string;
+        desc: string;
+        views: number;
+        likes: number;
+        comments: number;
+        timestamp?: number;
+        coverUrl?: string;
+      }[];
       extractedReel?: {
         url: string;
         id?: string;
@@ -66,6 +76,7 @@ export async function POST(req: NextRequest) {
       videoCount: 0,
       heartCount: 0,
       followerCount: 0,
+      recentReels: [],
       htmlOk: false,
       httpStatus: null,
       message: '',
@@ -90,7 +101,8 @@ export async function POST(req: NextRequest) {
           if (uData) {
             try {
               const parsed = JSON.parse(uData[1]);
-              const userDetail = parsed?.['__DEFAULT_SCOPE__']?.['webapp.user-detail'];
+              const scope = parsed?.['__DEFAULT_SCOPE__'] || {};
+              const userDetail = scope['webapp.user-detail'];
               const u = userDetail?.userInfo?.user;
               const stats = userDetail?.userInfo?.stats;
 
@@ -104,6 +116,47 @@ export async function POST(req: NextRequest) {
                 result.heartCount = stats.heartCount || stats.heart || 0;
                 result.followerCount = stats.followerCount || 0;
               }
+
+              // Intentar extraer lista de videos recientes del perfil
+              const itemListRaw: any[] = [];
+              // Buscar en diferentes scopes donde TikTok puede poner la lista
+              const possibleScopes = [
+                scope['webapp.user-post'],
+                scope['webapp.video-detail'],
+              ];
+              for (const sc of possibleScopes) {
+                if (!sc) continue;
+                const items = sc?.itemList || sc?.items || sc?.videoData?.itemInfos || [];
+                if (Array.isArray(items) && items.length > 0) {
+                  itemListRaw.push(...items);
+                  break;
+                }
+              }
+
+              // Fallback: buscar en queryData dentro de any scope key
+              if (itemListRaw.length === 0) {
+                for (const key of Object.keys(scope)) {
+                  const val = scope[key];
+                  const items = val?.itemList || val?.items || [];
+                  if (Array.isArray(items) && items.length > 0) {
+                    itemListRaw.push(...items);
+                    break;
+                  }
+                }
+              }
+
+              result.recentReels = itemListRaw.slice(0, 10).map((item: any) => {
+                const videoId = item?.id || item?.video?.id || String(Math.random());
+                const desc = item?.desc || item?.description || '';
+                const stats2 = item?.stats || item?.statistics || {};
+                const views = stats2?.playCount || stats2?.viewCount || 0;
+                const likes = stats2?.diggCount || stats2?.likeCount || 0;
+                const comments = stats2?.commentCount || 0;
+                const ts = item?.createTime || item?.timestamp || 0;
+                const coverUrl = item?.video?.cover || item?.video?.originCover || '';
+                const videoUrl = `https://www.tiktok.com/@${cleanUser}/video/${videoId}`;
+                return { id: videoId, url: videoUrl, desc, views, likes, comments, timestamp: ts, coverUrl };
+              });
             } catch (err) {
               console.warn('[inspect-profile] Error parseando JSON de TikTok:', err);
             }
@@ -113,6 +166,8 @@ export async function POST(req: NextRequest) {
           if (title) result.nickname = title[1].replace('Instagram', '').trim();
           const metaDesc = text.match(/<meta property="og:description" content="(.*?)"/i);
           if (metaDesc) result.bio = metaDesc[1];
+          // Instagram no expone lista de reels en HTML público fácilmente
+          // Se deja recentReels vacío para Instagram; se puede añadir scraping adicional si se requiere
         }
       }
     } catch (err: any) {
