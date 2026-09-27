@@ -87,6 +87,8 @@ export function ScraperMonitor() {
   const [probing, setProbing] = useState(false);
   const [profileData, setProfileData] = useState<ExtractedProfileData | null>(null);
   const [liveReels, setLiveReels] = useState<LiveReelItem[]>([]);
+  const [liveReelsStatus, setLiveReelsStatus] = useState<'idle' | 'loading' | 'done' | 'empty'>('idle');
+  const [liveReelsDebug, setLiveReelsDebug] = useState<string>('');
 
   // Input para inspeccionar / registrar una URL real de reel en vivo
   const [manualReelUrl, setManualReelUrl] = useState('');
@@ -114,6 +116,8 @@ export function ScraperMonitor() {
     if (!selectedAccount) return;
     setProbing(true);
     setReelFeedback(null);
+    setLiveReelsStatus('loading');
+    setLiveReelsDebug('');
 
     const platform = (selectedAccount.plataforma || 'tiktok').toLowerCase();
     const username = (selectedAccount.username || '').replace(/^@/, '');
@@ -122,10 +126,7 @@ export function ScraperMonitor() {
       const res = await fetch('/api/scraper/inspect-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username,
-          platform,
-        }),
+        body: JSON.stringify({ username, platform }),
       });
 
       const data = await res.json();
@@ -143,12 +144,24 @@ export function ScraperMonitor() {
           message: data.message,
           lastChecked: new Date().toLocaleTimeString(),
         });
-        if (Array.isArray(data.recentReels) && data.recentReels.length > 0) {
-          setLiveReels(data.recentReels);
-        }
+
+        const reels: LiveReelItem[] = Array.isArray(data.recentReels) ? data.recentReels : [];
+        setLiveReels(reels);
+        setLiveReelsStatus(reels.length > 0 ? 'done' : 'empty');
+        setLiveReelsDebug(
+          data.debugInfo ||
+          (reels.length === 0
+            ? `Sin reels. HTTP perfil: ${data.httpStatus}. ${data.message}`
+            : '')
+        );
+      } else {
+        setLiveReelsStatus('empty');
+        setLiveReelsDebug(`Error: ${data.error || res.status}`);
       }
     } catch (err: any) {
       console.warn('Error al extraer perfil:', err);
+      setLiveReelsStatus('empty');
+      setLiveReelsDebug(`Error de red: ${err?.message}`);
     } finally {
       setProbing(false);
     }
@@ -632,7 +645,8 @@ export function ScraperMonitor() {
 
       {/* ── 5. Últimos Reels de la Cuenta (obtenidos directamente de la red social) ── */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-violet-400">
               <Sparkles size={12} />
@@ -640,19 +654,45 @@ export function ScraperMonitor() {
             <h4 className="text-xs font-bold text-white tracking-wide uppercase">
               Últimos Reels de la Cuenta · Desde la Red Social
             </h4>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/15 border border-violet-500/30 text-violet-300">
-              {liveReels.length > 0 ? `${liveReels.length} extraídos` : 'Sin datos aún'}
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                liveReelsStatus === 'done'
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                  : liveReelsStatus === 'loading'
+                  ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
+                  : liveReelsStatus === 'empty'
+                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                  : 'bg-violet-500/15 border-violet-500/30 text-violet-300'
+              }`}
+            >
+              {liveReelsStatus === 'loading'
+                ? 'Extrayendo...'
+                : liveReelsStatus === 'done'
+                ? `${liveReels.length} reels extraídos`
+                : liveReelsStatus === 'empty'
+                ? 'Sin datos de la red social'
+                : 'Esperando escaneo'}
             </span>
           </div>
-          {liveReels.length > 0 && (
-            <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
-              <CheckCircle2 size={10} className="text-emerald-400" />
+          {liveReelsStatus === 'done' && (
+            <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+              <CheckCircle2 size={10} />
               Datos directos de {selectedAccount?.plataforma?.toUpperCase()}
             </span>
           )}
         </div>
 
-        {liveReels.length > 0 ? (
+        {/* Estados */}
+        {liveReelsStatus === 'loading' && (
+          <div className="flex items-center justify-center py-10 gap-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5">
+            <Loader2 size={20} className="animate-spin text-cyan-400" />
+            <p className="text-xs text-cyan-300 font-semibold">
+              Consultando {selectedAccount?.plataforma?.toUpperCase()} para obtener últimos reels...
+            </p>
+          </div>
+        )}
+
+        {liveReelsStatus === 'done' && liveReels.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {liveReels.map((reel, idx) => (
               <motion.div
@@ -660,12 +700,12 @@ export function ScraperMonitor() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.04 }}
-                className="relative p-3.5 rounded-2xl bg-gradient-to-b from-violet-500/5 to-transparent border border-violet-500/20 hover:border-violet-500/40 transition-all space-y-2.5 group"
+                className="relative p-3.5 rounded-2xl bg-gradient-to-b from-violet-500/5 to-transparent border border-violet-500/20 hover:border-violet-500/40 transition-all space-y-2.5 group flex flex-col"
               >
-                {/* Posición */}
+                {/* Posición + fecha */}
                 <div className="flex items-center justify-between gap-2">
                   <span className="px-2 py-0.5 rounded-lg bg-violet-500/20 border border-violet-500/40 text-violet-300 font-bold font-mono text-[11px]">
-                    #{idx + 1} {idx === 0 ? '· Más reciente' : ''}
+                    #{idx + 1}{idx === 0 ? ' · Más reciente' : ''}
                   </span>
                   {reel.timestamp && reel.timestamp > 0 && (
                     <span className="text-[10px] text-[var(--text-muted)] font-mono">
@@ -674,7 +714,7 @@ export function ScraperMonitor() {
                   )}
                 </div>
 
-                {/* Métricas en línea */}
+                {/* Métricas */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[11px] font-bold font-mono">
                     <Eye size={10} />
@@ -693,16 +733,16 @@ export function ScraperMonitor() {
                 </div>
 
                 {/* Descripción */}
-                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed line-clamp-3 min-h-[3rem]">
+                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed line-clamp-3 min-h-[3rem] flex-1">
                   {reel.desc || <span className="italic text-[var(--text-muted)]">Sin descripción</span>}
                 </p>
 
-                {/* Link directo al Reel */}
+                {/* Link */}
                 <a
                   href={reel.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300 text-[11px] font-semibold transition-all hover:text-white w-full justify-center"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300 text-[11px] font-semibold transition-all hover:text-white w-full justify-center"
                 >
                   <ExternalLink size={11} />
                   <span>Ver en {selectedAccount?.plataforma?.toUpperCase()}</span>
@@ -710,19 +750,57 @@ export function ScraperMonitor() {
               </motion.div>
             ))}
           </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-10 gap-3 rounded-2xl border border-dashed border-violet-500/20 bg-violet-500/5">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-              <Sparkles size={18} className="text-violet-400 opacity-50" />
+        )}
+
+        {(liveReelsStatus === 'empty' || liveReelsStatus === 'idle') && (
+          <div className="rounded-2xl border border-dashed border-amber-500/25 bg-amber-500/5 p-5 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                <AlertCircle size={15} className="text-amber-400" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <p className="text-xs font-bold text-amber-300">
+                  {liveReelsStatus === 'idle'
+                    ? 'Haz clic en "Re-escanear perfil en vivo" para obtener los últimos reels'
+                    : 'No se pudieron obtener reels directamente de la red social'}
+                </p>
+                {liveReelsStatus === 'empty' && (
+                  <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                    TikTok bloquea las IPs de servidores (Vercel) en su API interna.
+                    Esto es normal y no es un error del sistema.
+                  </p>
+                )}
+                {liveReelsDebug && (
+                  <p className="text-[10px] font-mono text-amber-200/60 bg-black/30 rounded px-2 py-1 border border-amber-500/10 break-all">
+                    {liveReelsDebug}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="text-center space-y-1">
-              <p className="text-xs font-semibold text-white/60">
-                Reels de la red social no disponibles aún
-              </p>
-              <p className="text-[11px] text-[var(--text-muted)] max-w-xs">
-                Haz clic en <b className="text-cyan-400">Re-escanear perfil</b> para intentar obtener los últimos reels publicados directamente desde {selectedAccount?.plataforma?.toUpperCase()}.
-              </p>
-            </div>
+
+            {liveReelsStatus === 'empty' && (
+              <div className="pl-11 space-y-1.5">
+                <p className="text-[11px] text-white/50 font-semibold">Alternativas disponibles:</p>
+                <ul className="space-y-1 text-[11px] text-[var(--text-muted)] list-disc list-inside">
+                  <li>
+                    Pega la URL de cada reel en{' '}
+                    <span className="text-cyan-400 font-semibold">Inspeccionar y Enlazar Reel por URL</span>{' '}
+                    (sección de arriba) para registrarlo con sus métricas reales.
+                  </li>
+                  <li>
+                    Visita el perfil directamente:{' '}
+                    <a
+                      href={profileData?.profileUrl || `https://www.tiktok.com/@${selectedAccount?.username?.replace('@','')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-violet-400 underline hover:text-violet-300"
+                    >
+                      @{selectedAccount?.username}
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>
