@@ -21,6 +21,9 @@ import {
   Send,
   Globe,
   Play,
+  ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -41,6 +44,27 @@ import {
   uploadVideoToGoogleDrive,
 } from '@/lib/services/driveService';
 import { createNotification } from '@/lib/services/notificationService';
+
+// Helpers para normalización y tokens (Verificador Anti-Duplicados)
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Quitar tildes
+    .replace(/[^\w\s]/gi, ' ')        // Quitar signos
+    .trim();
+}
+
+function getTokens(text: string): string[] {
+  const stopwords = new Set([
+    'para', 'este', 'esta', 'esto', 'como', 'que', 'los', 'las', 'del',
+    'con', 'una', 'uno', 'por', 'son', 'sus', 'pero', 'todo', 'cada',
+    'the', 'and', 'for', 'are', 'with', 'this', 'from', 'your', 'un', 'el', 'la', 'de', 'en', 'a'
+  ]);
+  return normalizeText(text)
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !stopwords.has(w));
+}
 
 // Helper de icono de plataforma social
 function getPlatformIcon(platform?: string) {
@@ -76,6 +100,9 @@ export function ScheduleModal() {
   } = useAppStore();
 
   const [videoFile, setVideoFile] = useState<File | null>(scheduleModalFile);
+  const [videoTitle, setVideoTitle] = useState<string>(
+    scheduleModalFile ? scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim() : ''
+  );
   const [generatingAI, setGeneratingAI] = useState(false);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
   const [compressedVideo, setCompressedVideo] = useState<VideoAnalysisPayload | null>(null);
@@ -133,13 +160,15 @@ export function ScheduleModal() {
 
       if (scheduleModalFile) {
         setVideoFile(scheduleModalFile);
-        const cleanName = scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+        const cleanName = scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
+        setVideoTitle(cleanName);
         setValue(
           'descripcion',
           `🎬 ${cleanName} - Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
         );
       } else {
         setVideoFile(null);
+        setVideoTitle('');
       }
     }
   }, [isScheduleModalOpen, scheduleModalDate, scheduleModalFile, setValue]);
@@ -182,7 +211,8 @@ export function ScheduleModal() {
         setVideoFile(accepted[0]);
         setDriveSuccessUrl(null);
         setDriveError(null);
-        const cleanName = accepted[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+        const cleanName = accepted[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
+        setVideoTitle(cleanName);
         setValue(
           'descripcion',
           `🎬 ${cleanName} - ¡Nuevo video listo para romperla en redes! 🚀 #tendencia #viral #creadores`
@@ -368,7 +398,7 @@ export function ScheduleModal() {
 
   const onSubmit = async (data: FormData) => {
     const programadoPara = new Date(`${data.fecha}T${data.hora}`);
-    const cleanTitle = videoFile?.name.replace(/\.[^/.]+$/, '') ?? 'Video sin título';
+    const cleanTitle = (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || 'Video sin título').replace(/[_-]/g, ' ');
 
     let driveFileUrl = manualDriveUrl.trim() || '#';
 
@@ -506,6 +536,71 @@ export function ScheduleModal() {
   const totalTarget = accountQuotaStats.reduce((sum, item) => sum + item.target, 0);
   const totalScheduled = accountQuotaStats.reduce((sum, item) => sum + item.count, 0);
   const selectedAccountStat = accountQuotaStats.find(s => s.id === selectedCuentaId);
+
+  // Análisis anti-duplicados en tiempo real (idéntico al Verificador Anti-Duplicados de Títulos)
+  const duplicateAnalysis = useMemo(() => {
+    const query = (videoTitle || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || '').trim();
+    if (!query || !videoFile) {
+      return { status: 'idle', exactMatch: null, matchAccount: null, similarMatches: [], topScore: 0 };
+    }
+
+    const normQuery = normalizeText(query);
+    const queryTokens = getTokens(query);
+
+    // 1. Coincidencia exacta
+    const exact = videos.find(v => v.estado !== 'CANCELADO' && normalizeText(v.titulo) === normQuery);
+    if (exact) {
+      const matchAccount = accounts.find(a => a.id === exact.cuenta_id);
+      return {
+        status: 'exact_duplicate',
+        exactMatch: exact,
+        matchAccount,
+        similarMatches: [{ video: exact, score: 100, account: matchAccount }],
+        topScore: 100,
+      };
+    }
+
+    // 2. Coincidencia por subcadena o tokens
+    if (queryTokens.length === 0) {
+      return { status: 'available', exactMatch: null, matchAccount: null, similarMatches: [], topScore: 0 };
+    }
+
+    const scored = videos
+      .filter(v => v.estado !== 'CANCELADO')
+      .map(v => {
+        const vTokens = getTokens(v.titulo);
+        const vNorm = normalizeText(v.titulo);
+
+        if (normQuery.length > 6 && (vNorm.includes(normQuery) || normQuery.includes(vNorm))) {
+          return { video: v, score: 90, account: accounts.find(a => a.id === v.cuenta_id) };
+        }
+
+        if (vTokens.length === 0) return { video: v, score: 0, account: accounts.find(a => a.id === v.cuenta_id) };
+        const common = queryTokens.filter(t => vTokens.includes(t));
+        const score = Math.round((common.length / Math.max(queryTokens.length, vTokens.length)) * 100);
+        return { video: v, score, account: accounts.find(a => a.id === v.cuenta_id) };
+      })
+      .filter(item => item.score >= 40)
+      .sort((a, b) => b.score - a.score);
+
+    if (scored.length > 0) {
+      return {
+        status: 'similar_found',
+        exactMatch: null,
+        matchAccount: null,
+        similarMatches: scored.slice(0, 3),
+        topScore: scored[0].score,
+      };
+    }
+
+    return {
+      status: 'available',
+      exactMatch: null,
+      matchAccount: null,
+      similarMatches: [],
+      topScore: 0,
+    };
+  }, [videoTitle, videoFile, videos, accounts]);
 
   const cfg = getCachedConfig();
   const folderIdConfigured = cfg.drive_folder_id;
@@ -656,6 +751,97 @@ export function ScheduleModal() {
                 )}
               </div>
 
+              {/* Campo de Título del Video y Verificador Anti-Duplicados */}
+              {videoFile && (
+                <div className="space-y-2">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                        Título del Video
+                      </label>
+                      <span className="text-[10px] text-cyan-400 font-mono">
+                        Anti-Duplicados en tiempo real
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={videoTitle}
+                      onChange={(e) => setVideoTitle(e.target.value)}
+                      placeholder="Título o nombre del video..."
+                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-cyan-400 outline-none bg-black/20"
+                    />
+                  </div>
+
+                  {/* Estado del Verificador Anti-Duplicados */}
+                  {duplicateAnalysis.status === 'exact_duplicate' && duplicateAnalysis.exactMatch && (
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/70 via-rose-950/50 to-red-950/70 border border-red-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(239,68,68,0.18)]">
+                      <div className="flex items-center gap-2 text-red-300 font-bold">
+                        <ShieldAlert size={16} className="text-red-400 shrink-0 animate-pulse" />
+                        <span>🚨 ALERTA: Este video ya fue publicado o programado antes</span>
+                      </div>
+                      <p className="text-[11px] text-red-200/90 leading-relaxed">
+                        El Verificador Anti-Duplicados detectó que ya existe una publicación previa con este mismo título:
+                      </p>
+                      <div className="p-2.5 rounded-xl bg-black/50 border border-red-500/30 text-[11px] space-y-1">
+                        <div className="flex items-center justify-between text-white font-semibold">
+                          <span className="truncate">"{duplicateAnalysis.exactMatch.titulo}"</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-mono uppercase">
+                            {duplicateAnalysis.exactMatch.estado}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-300 pt-0.5">
+                          <span>Cuenta: <b>@{duplicateAnalysis.matchAccount?.username || 'cuenta'}</b> ({duplicateAnalysis.matchAccount?.plataforma})</span>
+                          <span>
+                            {format(new Date(duplicateAnalysis.exactMatch.publicado_en || duplicateAnalysis.exactMatch.programado_para), 'dd/MM/yyyy HH:mm')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {duplicateAnalysis.status === 'similar_found' && (
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-orange-950/40 to-amber-950/60 border border-amber-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
+                      <div className="flex items-center gap-2 text-amber-300 font-bold">
+                        <AlertTriangle size={16} className="text-amber-400 shrink-0" />
+                        <span>⚠️ Posible video duplicado ({duplicateAnalysis.topScore}% de similitud)</span>
+                      </div>
+                      <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                        Se encontraron publicaciones anteriores con títulos muy parecidos. Verifica si no se trata del mismo video:
+                      </p>
+                      <div className="space-y-1.5">
+                        {duplicateAnalysis.similarMatches.map(({ video, score, account }) => (
+                          <div key={video.id} className="p-2 rounded-xl bg-black/40 border border-amber-500/25 text-[10px] flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-white truncate">"{video.titulo}"</p>
+                              <p className="text-[9px] text-slate-400">
+                                @{account?.username} • {format(new Date(video.publicado_en || video.programado_para), 'dd/MM/yyyy')} • {video.estado}
+                              </p>
+                            </div>
+                            <span className="text-[9px] font-mono font-bold text-amber-400 shrink-0 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                              {score}% coincidencia
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {duplicateAnalysis.status === 'available' && (
+                    <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/25 text-xs flex items-center justify-between gap-2 text-emerald-300">
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
+                        <span className="font-medium">
+                          <b>Verificador Anti-Duplicados:</b> Título único. No se encontraron publicaciones previas con este nombre.
+                        </span>
+                      </div>
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
+                        Único
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Sub-card: Estado de Google Drive */}
               {videoFile && (
                 <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 text-xs space-y-2">
@@ -756,115 +942,6 @@ export function ScheduleModal() {
                 </div>
               )}
 
-              {/* ── Widget de Cuotas y Videos Faltantes por Cuenta para este Día ── */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#0e1626] to-[#0a101d] border border-cyan-500/25 shadow-lg space-y-2.5">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-                      <Clock size={14} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                        Videos Faltantes por Cuenta
-                        <span className="text-[10px] font-normal text-cyan-300">
-                          ({format(targetDateObj, "d 'de' MMMM", { locale: es })})
-                        </span>
-                      </h4>
-                      <p className="text-[10px] text-[var(--text-muted)]">
-                        {totalMissing > 0
-                          ? `Faltan ${totalMissing} video(s) para completar las cuotas del día.`
-                          : '¡Todas las cuentas tienen su meta diaria cumplida para este día!'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <span
-                    className={cn(
-                      'text-[10px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1 shrink-0',
-                      totalMissing > 0
-                        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                        : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                    )}
-                  >
-                    {totalMissing > 0 ? (
-                      <>
-                        <AlertCircle size={10} /> {totalMissing} faltante{totalMissing > 1 ? 's' : ''}
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 size={10} /> Metas completas ({totalScheduled}/{totalTarget})
-                      </>
-                    )}
-                  </span>
-                </div>
-
-                {/* Grid interactivo de cuentas para selección rápida y visualización */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {accountQuotaStats.map((stat) => {
-                    const isSelected = selectedCuentaId === stat.id;
-                    return (
-                      <button
-                        key={stat.id}
-                        type="button"
-                        onClick={() => setValue('cuenta_id', stat.id, { shouldValidate: true })}
-                        className={cn(
-                          'p-2.5 rounded-xl border text-left transition-all duration-150 relative overflow-hidden group cursor-pointer',
-                          isSelected
-                            ? 'bg-emerald-500/15 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.18)] ring-1 ring-emerald-400/50'
-                            : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 hover:border-emerald-500/30'
-                        )}
-                        title={`Haz clic para seleccionar @${stat.account.username}`}
-                      >
-                        <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="shrink-0">{getPlatformIcon(stat.account.plataforma)}</span>
-                            <span className="text-xs font-bold text-white truncate">
-                              @{stat.account.username}
-                            </span>
-                          </div>
-                          {isSelected && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/30 text-emerald-300 font-semibold uppercase tracking-wider shrink-0 flex items-center gap-0.5">
-                              <Check size={9} /> Elegida
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Barra de progreso y faltantes */}
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-slate-400">
-                              Programados: <b className="text-white">{stat.count}</b> / {stat.target}
-                            </span>
-                            <span
-                              className={cn(
-                                'font-semibold',
-                                stat.missing > 0 ? 'text-amber-400' : 'text-emerald-400'
-                              )}
-                            >
-                              {stat.missing > 0 ? `⚠️ Faltan ${stat.missing}` : '✅ Meta lista'}
-                            </span>
-                          </div>
-
-                          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
-                            <div
-                              className={cn(
-                                'h-full rounded-full transition-all duration-300',
-                                stat.missing > 0
-                                  ? 'bg-gradient-to-r from-amber-500 to-amber-400'
-                                  : 'bg-gradient-to-r from-emerald-500 to-cyan-400'
-                              )}
-                              style={{
-                                width: `${Math.min(100, Math.round((stat.count / (stat.target || 1)) * 100))}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Account + Campaign */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -894,32 +971,6 @@ export function ScheduleModal() {
                         );
                       })}
                   </select>
-                  {selectedAccountStat && (
-                    <div
-                      className={cn(
-                        'mt-1.5 p-2 rounded-xl text-[10px] flex items-center justify-between border transition-all',
-                        selectedAccountStat.missing > 0
-                          ? 'bg-amber-500/10 border-amber-500/25 text-amber-200'
-                          : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200'
-                      )}
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {selectedAccountStat.missing > 0 ? (
-                          <AlertCircle size={12} className="text-amber-400 shrink-0" />
-                        ) : (
-                          <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
-                        )}
-                        <span className="truncate">
-                          {selectedAccountStat.missing > 0
-                            ? `Faltan ${selectedAccountStat.missing} video(s) para la meta diaria`
-                            : `¡Meta diaria alcanzada para esta cuenta!`}
-                        </span>
-                      </div>
-                      <span className="font-mono font-bold text-white shrink-0 ml-2">
-                        {selectedAccountStat.count} / {selectedAccountStat.target}
-                      </span>
-                    </div>
-                  )}
                   {errors.cuenta_id && (
                     <p className="text-red-400 text-[10px] mt-1">{errors.cuenta_id.message}</p>
                   )}
@@ -949,6 +1000,104 @@ export function ScheduleModal() {
                   )}
                 </div>
               </div>
+
+              {/* ── Tarjeta de Videos Faltantes en la Cuenta Seleccionada para este Día ── */}
+              {selectedAccountStat ? (
+                <div
+                  className={cn(
+                    'p-3.5 rounded-2xl border text-xs space-y-2.5 transition-all',
+                    selectedAccountStat.missing > 0
+                      ? 'bg-gradient-to-r from-amber-950/40 via-[#0e1626] to-[#0a101d] border-amber-500/35 shadow-[0_0_15px_rgba(245,158,11,0.08)]'
+                      : 'bg-gradient-to-r from-emerald-950/40 via-[#0e1626] to-[#0a101d] border-emerald-500/35 shadow-[0_0_15px_rgba(16,185,129,0.08)]'
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className={cn(
+                          'w-8 h-8 rounded-xl border flex items-center justify-center shrink-0',
+                          selectedAccountStat.missing > 0
+                            ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
+                            : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                        )}
+                      >
+                        {getPlatformIcon(selectedAccountStat.account.plataforma)}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                          Videos del día para @{selectedAccountStat.account.username}
+                          <span className="text-[10px] font-normal text-slate-400 capitalize">
+                            ({format(targetDateObj, "d 'de' MMMM", { locale: es })})
+                          </span>
+                        </h4>
+                        <p className="text-[11px] text-[var(--text-muted)] truncate">
+                          {selectedAccountStat.missing > 0
+                            ? `⚠️ Faltan ${selectedAccountStat.missing} video(s) para completar la meta diaria estimada.`
+                            : '🎉 ¡Esta cuenta ya completó su cuota de videos para este día!'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span
+                        className={cn(
+                          'text-xs font-mono font-bold block',
+                          selectedAccountStat.missing > 0 ? 'text-amber-400' : 'text-emerald-400'
+                        )}
+                      >
+                        {selectedAccountStat.count} / {selectedAccountStat.target} videos
+                      </span>
+                      <span
+                        className={cn(
+                          'text-[9px] font-semibold px-2 py-0.5 rounded-full border inline-block mt-0.5',
+                          selectedAccountStat.missing > 0
+                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                            : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        )}
+                      >
+                        {selectedAccountStat.missing > 0
+                          ? `Faltan ${selectedAccountStat.missing}`
+                          : 'Meta lista'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Barra de progreso */}
+                  <div className="space-y-1">
+                    <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className={cn(
+                          'h-full rounded-full transition-all duration-500',
+                          selectedAccountStat.missing > 0
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+                            : 'bg-gradient-to-r from-emerald-500 to-cyan-400'
+                        )}
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.round(
+                              (selectedAccountStat.count / (selectedAccountStat.target || 1)) * 100
+                            )
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{selectedAccountStat.count} programado{selectedAccountStat.count === 1 ? '' : 's'} este día</span>
+                      <span>Meta: {selectedAccountStat.target} videos diarios</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 text-xs flex items-center gap-2 text-[var(--text-muted)]">
+                  <Clock size={14} className="text-cyan-400 shrink-0" />
+                  <span>
+                    Selecciona una cuenta arriba para ver cuántos videos le faltan en este día (
+                    {format(targetDateObj, "d 'de' MMMM", { locale: es })}).
+                  </span>
+                </div>
+              )}
+
 
               {/* Date + Time */}
               <div className="grid grid-cols-2 gap-3">
