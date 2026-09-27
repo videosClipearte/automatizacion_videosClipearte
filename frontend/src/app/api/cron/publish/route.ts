@@ -2,7 +2,7 @@
 // Endpoint para ejecucion automatica en Vercel Cron o disparador externo
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
-import { sendPublicationAlert } from '@/lib/services/telegramService';
+import { sendPublicationAlert, sendConfirmationPoll } from '@/lib/services/telegramService';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 import { format } from 'date-fns';
 
@@ -53,9 +53,13 @@ export async function GET(request: Request) {
     for (const video of dueVideos) {
       const account = cuentas?.find((c: any) => c.id === video.cuenta_id);
       const campaign = campanas?.find((c: any) => c.id === video.campana_id);
+      const horaFormateada = format(new Date(video.programado_para), 'yyyy-MM-dd HH:mm');
 
       let sentTelegram = false;
+      let confirmationMessageId: number | undefined;
+
       if (botToken && targetChat) {
+        // Paso 1: Enviar ficha del video + descripción (2 mensajes)
         const sendRes = await sendPublicationAlert(botToken, targetChat, {
           videoTitle: video.titulo,
           accountUsername: account?.username || 'cuenta',
@@ -63,12 +67,38 @@ export async function GET(request: Request) {
           campaignName: campaign?.nombre,
           driveFileUrl: video.drive_file_url,
           descripcion: video.descripcion_aprobada_ia,
-          programadoPara: format(new Date(video.programado_para), 'yyyy-MM-dd HH:mm'),
+          programadoPara: horaFormateada,
         });
         sentTelegram = sendRes.success;
+
+        // Pausa para garantizar orden de llegada en Telegram
+        await new Promise((r) => setTimeout(r, 600));
+
+        // Paso 2: Enviar encuesta de confirmación Sí/No (inline keyboard)
+        if (sentTelegram) {
+          const pollRes = await sendConfirmationPoll(botToken, targetChat, {
+            publicacionId: video.id,
+            videoTitle: video.titulo,
+            accountUsername: account?.username || 'cuenta',
+            platform: account?.plataforma || 'red',
+            programadoPara: horaFormateada,
+          });
+
+          if (pollRes.success && pollRes.messageId) {
+            confirmationMessageId = pollRes.messageId;
+
+            // Guardar registro de confirmación pendiente en la BD
+            await db.from('confirmaciones_telegram').insert({
+              publicacion_id: video.id,
+              chat_id: String(targetChat),
+              message_id: confirmationMessageId,
+              estado: 'PENDIENTE',
+            });
+          }
+        }
       }
 
-      // Marcar como ENVIADO (esperando confirmación del scraper para pasar a PUBLICADO)
+      // Marcar como ENVIADO (esperando confirmación manual via Telegram)
       await db
         .from('publicaciones')
         .update({
@@ -81,6 +111,7 @@ export async function GET(request: Request) {
         id: video.id,
         titulo: video.titulo,
         enviadoTelegram: sentTelegram,
+        confirmationMessageId,
       });
     }
 

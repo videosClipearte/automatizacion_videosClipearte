@@ -2,7 +2,11 @@
 // Manejador centralizado de comandos del Bot de Telegram en grupos y chats privados.
 
 import { getSupabase } from '@/lib/supabase';
-import { sendTelegramMessage } from '@/lib/services/telegramService';
+import {
+  sendTelegramMessage,
+  editTelegramMessage,
+  answerCallbackQuery,
+} from '@/lib/services/telegramService';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 import { createNotification } from '@/lib/services/notificationService';
 
@@ -58,6 +62,16 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
+/** Detects if a string looks like a URL */
+function isUrl(str: string): boolean {
+  try {
+    const url = new URL(str.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export interface TelegramCommandResult {
   handled: boolean;
   command?: string;
@@ -72,6 +86,39 @@ export async function handleTelegramUpdate(
   update: any,
   botTokenOverride?: string
 ): Promise<TelegramCommandResult> {
+
+  // ──────────────────────────────────────────
+  // 0. Resolución del bot token
+  // ──────────────────────────────────────────
+  const db = getSupabase();
+  let botToken = (botTokenOverride || '').trim();
+
+  if (!botToken) {
+    try {
+      const cfg = await loadAppConfig();
+      botToken = (cfg.telegram_bot_token || '').trim();
+    } catch (e) {
+      console.error('[TelegramBot] Error cargando config de bot desde Supabase:', e);
+    }
+  }
+  if (!botToken && typeof process !== 'undefined') {
+    botToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  }
+  if (!botToken) {
+    console.warn('[TelegramBot] ⚠️ Bot Token no configurado. El bot no puede responder.');
+    return { handled: true, responseSent: false, message: 'Bot Token no configurado' };
+  }
+
+  // ──────────────────────────────────────────
+  // 1. Manejar callback_query (botones inline Sí/No)
+  // ──────────────────────────────────────────
+  if (update.callback_query) {
+    return await handleCallbackQuery(update.callback_query, db, botToken);
+  }
+
+  // ──────────────────────────────────────────
+  // 2. Manejar mensaje de texto normal
+  // ──────────────────────────────────────────
   const message = update?.message || update?.channel_post || update?.edited_message;
   if (!message || !message.text) {
     return { handled: false, message: 'Update sin mensaje de texto' };
@@ -87,32 +134,18 @@ export async function handleTelegramUpdate(
     return { handled: false, message: 'No se detectó chat_id válido' };
   }
 
+  // ──────────────────────────────────────────
+  // 3. Verificar si el mensaje es un link de confirmación
+  //    (el admin responde con el URL del post publicado)
+  // ──────────────────────────────────────────
+  if (isUrl(text)) {
+    const linkHandled = await handleLinkConfirmation(text, chatId, replyToId, threadId, db, botToken);
+    if (linkHandled) return { handled: true, command: 'link_confirmacion', responseSent: true };
+  }
+
   // Parsear comando (soporta /hoy, /hoy@MiBot, /metas, etc.)
   const rawCmd = text.split(/\s+/)[0];
   const command = rawCmd.split('@')[0].toLowerCase();
-
-  // 1. Obtener Token del bot (override > configuracion_app en Supabase > variable de entorno del servidor)
-  const db = getSupabase();
-  let botToken = (botTokenOverride || '').trim();
-
-  if (!botToken) {
-    try {
-      const cfg = await loadAppConfig();
-      botToken = (cfg.telegram_bot_token || '').trim();
-    } catch (e) {
-      console.error('[TelegramBot] Error cargando config de bot desde Supabase:', e);
-    }
-  }
-
-  // Última alternativa: variable de entorno del servidor (Vercel / Railway / etc.)
-  if (!botToken && typeof process !== 'undefined') {
-    botToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
-  }
-
-  if (!botToken) {
-    console.warn('[TelegramBot] ⚠️ Bot Token no configurado en ninguna fuente. El bot no puede responder.');
-    return { handled: true, command, responseSent: false, message: 'Bot Token no configurado' };
-  }
 
   // Si no empieza por '/', solo responder con menú de ayuda si es un chat privado directo
   if (!text.startsWith('/')) {
@@ -125,13 +158,12 @@ export async function handleTelegramUpdate(
 
   console.log(`[TelegramBot] 📩 Ejecutando comando "${command}" en chat ${chatId} (Usuario: ${message.from?.username || message.from?.first_name || 'anónimo'})...`);
 
-  // 2. Procesar según el comando
+  // 4. Procesar según el comando
   switch (command) {
     case '/hoy':
     case '/programados':
     case '/agenda':
     case '/lista': {
-      // COMANDO 1: Lista de videos programados para hoy (SOLO fecha/hora, campaña, título y cuenta. SIN link ni descripción)
       const res = await handleCommandHoy(db, botToken, chatId, replyToId, threadId);
       return { handled: true, command, responseSent: res.success, message: res.message };
     }
@@ -140,7 +172,6 @@ export async function handleTelegramUpdate(
     case '/faltantes':
     case '/cuotas':
     case '/pendientes': {
-      // COMANDO 2: Cantidad de videos que faltan publicar en cada red social
       const res = await handleCommandMetas(db, botToken, chatId, replyToId, threadId);
       return { handled: true, command, responseSent: res.success, message: res.message };
     }
@@ -148,7 +179,6 @@ export async function handleTelegramUpdate(
     case '/siguiente':
     case '/proximo':
     case '/next': {
-      // COMANDO 3: Próximo video programado más cercano (CON link de Drive y descripción en 2 mensajes separados)
       const res = await handleCommandSiguiente(db, botToken, chatId, replyToId, threadId);
       return { handled: true, command, responseSent: res.success, message: res.message };
     }
@@ -157,7 +187,6 @@ export async function handleTelegramUpdate(
     case '/help':
     case '/comandos':
     case '/start': {
-      // COMANDO 4: Menú de ayuda interactivo
       const res = await sendHelpMenu(botToken, chatId, replyToId, threadId);
       return { handled: true, command, responseSent: res.success, message: res.message };
     }
@@ -169,18 +198,198 @@ export async function handleTelegramUpdate(
       }
       return { handled: false, command, message: `Comando desconocido: ${command}` };
   }
+}
 
-  // Notificar al Centro de Avisos
+// ──────────────────────────────────────────────────────────────────────────────
+// HANDLER: callback_query (botones inline Sí / No de confirmación)
+// ──────────────────────────────────────────────────────────────────────────────
+async function handleCallbackQuery(
+  cbq: any,
+  db: any,
+  botToken: string
+): Promise<TelegramCommandResult> {
+  const callbackId = cbq.id;
+  const callbackData: string = cbq.data || '';
+  const chatId = cbq.message?.chat?.id;
+  const messageId: number = cbq.message?.message_id;
+  const originalText: string = cbq.message?.text || '';
+
+  if (!chatId) {
+    return { handled: false, message: 'callback_query sin chat_id' };
+  }
+
+  // ── Confirmar publicación (Sí) ──
+  if (callbackData.startsWith('confirm_pub:')) {
+    const publicacionId = callbackData.replace('confirm_pub:', '').trim();
+
+    // 1. Confirmar callbackQuery para quitar el reloj del botón
+    await answerCallbackQuery(botToken, callbackId, '✅ ¡Confirmado!', false);
+
+    // 2. Marcar confirmación como ESPERANDO_LINK
+    await db
+      .from('confirmaciones_telegram')
+      .update({ estado: 'ESPERANDO_LINK', respondido_en: new Date().toISOString() })
+      .eq('publicacion_id', publicacionId)
+      .eq('estado', 'PENDIENTE');
+
+    // 3. Actualizar el mensaje de la encuesta para mostrar que fue confirmado
+    const confirmedText = [
+      `✅ <b>PUBLICACIÓN CONFIRMADA</b>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      originalText.split('\n').slice(2, 4).join('\n'), // Título y cuenta
+      ``,
+      `⏳ <i>Ahora envía el <b>link del post publicado</b> en la red social para registrar las estadísticas.</i>`,
+      `<code>Ejemplo: https://www.instagram.com/reel/ABC123/</code>`,
+    ].join('\n');
+
+    await editTelegramMessage(botToken, chatId, messageId, confirmedText);
+
+    // 4. Enviar mensaje separado pidiendo el link
+    await sendTelegramMessage(
+      botToken,
+      chatId,
+      [
+        `🔗 <b>ENLACE DEL POST PUBLICADO</b>`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Por favor, envía en este chat el <b>link directo del post</b> para registrar las estadísticas del video.`,
+        ``,
+        `💡 <i>Simplemente pega la URL completa del reel/post publicado y el bot la guardará automáticamente.</i>`,
+      ].join('\n'),
+      'HTML'
+    );
+
+    return { handled: true, command: 'confirm_pub', responseSent: true };
+  }
+
+  // ── Rechazar publicación (No) ──
+  if (callbackData.startsWith('reject_pub:')) {
+    const publicacionId = callbackData.replace('reject_pub:', '').trim();
+
+    await answerCallbackQuery(botToken, callbackId, '❌ Marcado como no publicado.', false);
+
+    // Actualizar confirmación como RECHAZADO
+    await db
+      .from('confirmaciones_telegram')
+      .update({ estado: 'RECHAZADO', respondido_en: new Date().toISOString() })
+      .eq('publicacion_id', publicacionId)
+      .eq('estado', 'PENDIENTE');
+
+    // El video queda en estado ENVIADO (no cambia a PUBLICADO)
+    const rejectedText = [
+      `❌ <b>PUBLICACIÓN NO CONFIRMADA</b>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      originalText.split('\n').slice(2, 4).join('\n'),
+      ``,
+      `⚠️ <i>El video permanece en estado <b>ENVIADO</b>. Cuando lo publiques, podrás confirmarlo manualmente desde la aplicación o reenviar el video.</i>`,
+    ].join('\n');
+
+    await editTelegramMessage(botToken, chatId, messageId, rejectedText);
+
+    return { handled: true, command: 'reject_pub', responseSent: true };
+  }
+
+  return { handled: false, message: `callback_data desconocido: ${callbackData}` };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// HANDLER: Link de confirmación enviado como mensaje de texto
+// ──────────────────────────────────────────────────────────────────────────────
+async function handleLinkConfirmation(
+  url: string,
+  chatId: string | number,
+  replyToId: number | undefined,
+  threadId: number | undefined,
+  db: any,
+  botToken: string
+): Promise<boolean> {
+  // Buscar si hay alguna confirmación en estado ESPERANDO_LINK para este chat
+  const { data: pendingConf, error } = await db
+    .from('confirmaciones_telegram')
+    .select('*, publicaciones(*)')
+    .eq('chat_id', String(chatId))
+    .eq('estado', 'ESPERANDO_LINK')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error || !pendingConf || pendingConf.length === 0) {
+    return false; // No hay confirmación esperando link — no manejar
+  }
+
+  const conf = pendingConf[0];
+  const video = conf.publicaciones;
+  const now = new Date().toISOString();
+
+  // 1. Actualizar confirmación como CONFIRMADO con el link
+  await db
+    .from('confirmaciones_telegram')
+    .update({
+      estado: 'CONFIRMADO',
+      post_url: url.trim(),
+      respondido_en: now,
+      updated_at: now,
+    })
+    .eq('id', conf.id);
+
+  // 2. Marcar el video como PUBLICADO y guardar el link del post
+  await db
+    .from('publicaciones')
+    .update({
+      estado: 'PUBLICADO',
+      publicado_en: now,
+      post_url_publica: url.trim(),
+      updated_at: now,
+    })
+    .eq('id', conf.publicacion_id);
+
+  // 3. Registrar estadísticas iniciales en metricas_extraidas_scraper
+  await db.from('metricas_extraidas_scraper').insert({
+    publicacion_id: conf.publicacion_id,
+    cuenta_id: video?.cuenta_id || null,
+    vistas: 0,
+    likes: 0,
+    comentarios: 0,
+    compartidos: 0,
+    guardados: 0,
+    alcance: 0,
+    post_url: url.trim(),
+    fuente: 'telegram',
+    estado_confirmado: true,
+    fecha_extraccion: now,
+  });
+
+  // 4. Crear notificación en la app
   try {
     await createNotification({
-      tipo: 'info',
-      titulo: `Comando ${command} ejecutado`,
-      mensaje: `Bot de Telegram respondió comando en chat ${chatId}.`,
+      tipo: 'success',
+      titulo: `Video publicado confirmado`,
+      mensaje: `"${video?.titulo || conf.publicacion_id}" fue confirmado como PUBLICADO. Link: ${url}`,
       origen: 'telegram',
     });
   } catch {}
+
+  // 5. Responder al admin en Telegram
+  const safeTitle = escapeHtml(video?.titulo || 'Video');
+  const successMsg = [
+    `🎉 <b>PUBLICACIÓN REGISTRADA EXITOSAMENTE</b>`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `🎬 <b>Video:</b> ${safeTitle}`,
+    `🔗 <b>Link guardado:</b> ${escapeHtml(url.trim())}`,
+    `📊 <b>Estado:</b> <b>PUBLICADO</b> ✅`,
+    ``,
+    `<i>Las estadísticas iniciales han sido creadas. El scraper actualizará las vistas y métricas automáticamente.</i>`,
+  ].join('\n');
+
+  await sendTelegramMessage(botToken, chatId, successMsg, 'HTML', {
+    reply_to_message_id: replyToId,
+    message_thread_id: threadId,
+  });
+
+  return true;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Helpers: menú de ayuda
+// ──────────────────────────────────────────────────────────────────────────────
 async function sendHelpMenu(
   botToken: string,
   chatId: string | number,

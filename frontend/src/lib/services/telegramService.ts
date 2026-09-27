@@ -276,3 +276,148 @@ ${driveUrlText}
     };
   }
 }
+
+/**
+ * Envía un mensaje con inline keyboard Sí / No al grupo de Telegram
+ * para confirmar si el video fue publicado.
+ * El callback_data incluye el publicacion_id para identificar el video.
+ *
+ * Retorna el message_id del mensaje de confirmación (para guardarlo en la BD).
+ */
+export async function sendConfirmationPoll(
+  token: string,
+  chatId: string | number,
+  data: {
+    publicacionId: string;
+    videoTitle: string;
+    accountUsername: string;
+    platform: string;
+    programadoPara?: string;
+  }
+): Promise<{ success: boolean; message: string; messageId?: number }> {
+  const cleanToken = token.trim();
+  const cleanChatId = String(chatId).trim();
+
+  if (!cleanToken || !cleanChatId) {
+    return { success: false, message: 'Token y ChatId son obligatorios.' };
+  }
+
+  const hora = data.programadoPara ? ` (${escapeHtml(data.programadoPara)})` : '';
+  const text = [
+    `✅ <b>CONFIRMACIÓN DE PUBLICACIÓN</b>`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `🎬 <b>Título:</b> ${escapeHtml(data.videoTitle)}`,
+    `👤 <b>Cuenta:</b> @${escapeHtml(data.accountUsername)} (<b>${escapeHtml(data.platform.toUpperCase())}</b>)${hora}`,
+    ``,
+    `❓ <i>¿Confirmás que este video fue publicado correctamente en la red social?</i>`,
+  ].join('\n');
+
+  const payload = {
+    chat_id: cleanChatId,
+    text,
+    parse_mode: 'HTML',
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: '✅ Sí, fue publicado',
+            callback_data: `confirm_pub:${data.publicacionId}`,
+          },
+          {
+            text: '❌ No, no fue publicado',
+            callback_data: `reject_pub:${data.publicacionId}`,
+          },
+        ],
+      ],
+    },
+  };
+
+  try {
+    // Usar proxy si estamos en el navegador
+    if (typeof window !== 'undefined') {
+      const res = await fetch('/api/telegram/send-inline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cleanToken, chatId: cleanChatId, payload }),
+      });
+      const d = await res.json();
+      return d;
+    }
+
+    const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+
+    if (result.ok) {
+      return {
+        success: true,
+        message: 'Encuesta de confirmación enviada.',
+        messageId: result.result?.message_id,
+      };
+    }
+    return { success: false, message: `Error Telegram (${result.error_code}): ${result.description}` };
+  } catch (err: any) {
+    return { success: false, message: `Error de red: ${err?.message}` };
+  }
+}
+
+/**
+ * Edita un mensaje existente (por ejemplo la encuesta de Sí/No)
+ * para mostrar que ya fue respondido (quita el teclado inline).
+ */
+export async function editTelegramMessage(
+  token: string,
+  chatId: string | number,
+  messageId: number,
+  newText: string
+): Promise<{ success: boolean; message: string }> {
+  const url = `https://api.telegram.org/bot${token.trim()}/editMessageText`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: String(chatId),
+        message_id: messageId,
+        text: newText,
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [] }, // quitar botones
+      }),
+    });
+    const result = await res.json();
+    return result.ok
+      ? { success: true, message: 'Mensaje editado.' }
+      : { success: false, message: result.description || 'Error editando mensaje' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Error de red' };
+  }
+}
+
+/**
+ * Responde a un callback_query de Telegram (necesario para quitar el "reloj" del botón)
+ */
+export async function answerCallbackQuery(
+  token: string,
+  callbackQueryId: string,
+  text?: string,
+  showAlert = false
+): Promise<void> {
+  try {
+    await fetch(`https://api.telegram.org/bot${token.trim()}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text || '',
+        show_alert: showAlert,
+      }),
+    });
+  } catch {
+    // silent
+  }
+}
+
