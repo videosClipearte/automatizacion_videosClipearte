@@ -2,7 +2,7 @@
 // src/components/analytics/AccountMetrics.tsx
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Eye, DollarSign, ChevronDown, Check, Globe, Send, Play, BarChart2, Video as VideoIcon } from 'lucide-react';
+import { Eye, DollarSign, ChevronDown, Check, Globe, Send, Play, BarChart2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -78,105 +78,114 @@ export function AccountMetrics() {
 
   return (
     <GlassCard className="h-full flex flex-col justify-between p-4">
-      {/* Header: Title & Dropdown without wrapping */}
       <div>
-        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[var(--border)]">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-              <BarChart2 size={14} />
-            </div>
-            <h3 className="text-xs font-bold text-white tracking-wide whitespace-nowrap">
+        {/* Título ubicado estrictamente ENCIMA del selector para evitar colisiones */}
+        <div className="flex items-center gap-2 pb-2">
+          <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+            <BarChart2 size={14} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white tracking-wide">
               Métricas por Cuenta
             </h3>
-          </div>
-
-          {/* Selector de cuenta compacto */}
-          <div className="relative shrink-0" ref={dropdownRef}>
-            <button
-              type="button"
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg glass border border-[var(--border)] hover:border-emerald-500/40 text-[11px] text-white transition-all shadow-sm active:scale-95"
-            >
-              <div
-                className="w-4 h-4 rounded-md flex items-center justify-center shrink-0"
-                style={{ backgroundColor: `${platformColor}33` }}
-              >
-                <SelectedIcon size={10} style={{ color: platformColor }} />
-              </div>
-              <span className="font-semibold truncate max-w-[85px]">
-                @{account?.username ?? 'Cuenta'}
-              </span>
-              <ChevronDown
-                size={11}
-                className={`text-[var(--text-muted)] transition-transform duration-200 ${
-                  isDropdownOpen ? 'rotate-180 text-emerald-400' : ''
-                }`}
-              />
-            </button>
-
-            {/* Dropdown Menu */}
-            <AnimatePresence>
-              {isDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 4, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-1.5 w-56 glass-strong border border-[var(--border-strong)] rounded-xl shadow-2xl p-1 z-50 backdrop-blur-xl"
-                >
-                  <div className="px-2 py-1 border-b border-[var(--border)] mb-1">
-                    <p className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                      Seleccionar Cuenta
-                    </p>
-                  </div>
-
-                  <div className="space-y-0.5 max-h-48 overflow-y-auto">
-                    {accounts.map((acc) => {
-                      const isSelected = acc.id === currentAccountId;
-                      const Icon = PLATFORM_ICONS[acc.plataforma] ?? Send;
-                      const color = getPlatformColor(acc.plataforma);
-                      const vCount = videos.filter(v => v.cuenta_id === acc.id).length;
-
-                      return (
-                        <button
-                          key={acc.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedAccountId(acc.id);
-                            setIsDropdownOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between p-1.5 rounded-lg text-[11px] transition-all ${
-                            isSelected
-                              ? 'bg-emerald-500/15 border border-emerald-500/30 text-white'
-                              : 'hover:bg-white/5 text-[var(--text-secondary)] hover:text-white border border-transparent'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div
-                              className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
-                              style={{ backgroundColor: `${color}25` }}
-                            >
-                              <Icon size={11} style={{ color }} />
-                            </div>
-                            <span className="font-semibold text-white truncate text-[11px]">@{acc.username}</span>
-                            <span className="text-[9px] text-[var(--text-muted)]">({vCount})</span>
-                          </div>
-
-                          {isSelected && (
-                            <Check size={12} className="text-emerald-400 shrink-0 ml-1" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <p className="text-[10px] text-[var(--text-muted)]">Rendimiento por red social</p>
           </div>
         </div>
 
+        {/* Selector de cuenta ubicado DEBAJO del título */}
+        <div className="relative w-full mb-3" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl glass border border-[var(--border)] hover:border-emerald-500/40 text-xs text-white transition-all shadow-sm active:scale-[0.99]"
+          >
+            <div className="flex items-center gap-2.5 truncate">
+              <div
+                className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                style={{ backgroundColor: `${platformColor}33` }}
+              >
+                <SelectedIcon size={12} style={{ color: platformColor }} />
+              </div>
+              <span className="font-semibold text-white truncate text-xs">
+                @{account?.username ?? 'Seleccionar cuenta'}
+              </span>
+              <span className="text-[10px] text-[var(--text-muted)] capitalize">
+                ({account?.plataforma})
+              </span>
+            </div>
+            <ChevronDown
+              size={13}
+              className={`text-[var(--text-muted)] transition-transform duration-200 shrink-0 ${
+                isDropdownOpen ? 'rotate-180 text-emerald-400' : ''
+              }`}
+            />
+          </button>
+
+          {/* Dropdown Menu */}
+          <AnimatePresence>
+            {isDropdownOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                className="absolute left-0 right-0 mt-1.5 glass-strong border border-[var(--border-strong)] rounded-xl shadow-2xl p-1 z-50 backdrop-blur-xl"
+              >
+                <div className="px-2 py-1 border-b border-[var(--border)] mb-1">
+                  <p className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                    Seleccionar Cuenta de Redes
+                  </p>
+                </div>
+
+                <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                  {accounts.map((acc) => {
+                    const isSelected = acc.id === currentAccountId;
+                    const Icon = PLATFORM_ICONS[acc.plataforma] ?? Send;
+                    const color = getPlatformColor(acc.plataforma);
+                    const vCount = videos.filter(v => v.cuenta_id === acc.id).length;
+
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAccountId(acc.id);
+                          setIsDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-lg text-xs transition-all ${
+                          isSelected
+                            ? 'bg-emerald-500/15 border border-emerald-500/30 text-white'
+                            : 'hover:bg-white/5 text-[var(--text-secondary)] hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                            style={{ backgroundColor: `${color}25` }}
+                          >
+                            <Icon size={12} style={{ color }} />
+                          </div>
+                          <span className="font-semibold text-white truncate text-xs">@{acc.username}</span>
+                          <span className="text-[10px] text-[var(--text-muted)] capitalize">({acc.plataforma})</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-[var(--text-muted)]">{vCount} vids</span>
+                          {isSelected && (
+                            <Check size={13} className="text-emerald-400 shrink-0" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         {/* Tarjetas de métricas compactas */}
-        <div className="grid grid-cols-2 gap-2 my-2.5">
+        <div className="grid grid-cols-2 gap-2 mb-2.5">
           <div
             className="p-2.5 rounded-xl border shadow-sm"
             style={{
@@ -224,7 +233,7 @@ export function AccountMetrics() {
       </div>
 
       {/* Donut Chart / Distribución */}
-      <div className="pt-1 border-t border-[var(--border)]">
+      <div className="pt-1.5 border-t border-[var(--border)]">
         <div className="flex items-center justify-between mb-1">
           <span className="text-[11px] font-semibold text-white">Distribución de Videos</span>
           <span className="text-[9px] text-[var(--text-muted)] font-mono">{accountVideos.length} videos</span>
