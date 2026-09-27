@@ -57,6 +57,20 @@ interface LiveReelItem {
   coverUrl?: string;
 }
 
+interface TrackedReel {
+  id: string;
+  cuenta_id: string;
+  url: string;
+  titulo?: string;
+  descripcion?: string;
+  vistas: number;
+  likes: number;
+  comentarios: number;
+  plataforma: string;
+  fecha_publicacion?: string;
+  fecha_registro: string;
+}
+
 function extractHashtags(campaignBase?: string, desc?: string): string[] {
   const tags = new Set<string>();
   if (campaignBase) {
@@ -89,6 +103,13 @@ export function ScraperMonitor() {
   const [liveReels, setLiveReels] = useState<LiveReelItem[]>([]);
   const [liveReelsStatus, setLiveReelsStatus] = useState<'idle' | 'loading' | 'done' | 'empty'>('idle');
   const [liveReelsDebug, setLiveReelsDebug] = useState<string>('');
+
+  // Sistema de reels rastreados manualmente (persistidos en Supabase)
+  const [trackedReels, setTrackedReels] = useState<TrackedReel[]>([]);
+  const [trackedLoading, setTrackedLoading] = useState(false);
+  const [bulkUrlsInput, setBulkUrlsInput] = useState('');
+  const [importingBulk, setImportingBulk] = useState(false);
+  const [importFeedback, setImportFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Input para inspeccionar / registrar una URL real de reel en vivo
   const [manualReelUrl, setManualReelUrl] = useState('');
@@ -171,6 +192,78 @@ export function ScraperMonitor() {
   useEffect(() => {
     handleInspectSocialProfile();
   }, [selectedAccount?.id, handleInspectSocialProfile]);
+
+  // Cargar reels rastreados desde Supabase al cambiar de cuenta
+  useEffect(() => {
+    if (!selectedAccount?.id) return;
+    setTrackedLoading(true);
+    fetch(`/api/reels-rastreados?cuenta_id=${selectedAccount.id}`)
+      .then((r) => r.json())
+      .then((d) => setTrackedReels(d.reels || []))
+      .catch(() => {})
+      .finally(() => setTrackedLoading(false));
+  }, [selectedAccount?.id]);
+
+  // Importar múltiples URLs en bulk
+  const handleBulkImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const urls = bulkUrlsInput
+      .split('\n')
+      .map((u) => u.trim())
+      .filter(Boolean);
+    if (urls.length === 0) return;
+
+    setImportingBulk(true);
+    setImportFeedback(null);
+    try {
+      const res = await fetch('/api/reels-rastreados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cuenta_id: selectedAccount?.id,
+          urls,
+          plataforma: selectedAccount?.plataforma || 'tiktok',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTrackedReels((prev) => {
+          const existingUrls = new Set(prev.map((r) => r.url));
+          const nuevos = (data.reels as TrackedReel[]).filter((r) => !existingUrls.has(r.url));
+          const actualizados = prev.map((r) => {
+            const found = (data.reels as TrackedReel[]).find((nr) => nr.url === r.url);
+            return found || r;
+          });
+          return [...nuevos, ...actualizados].sort(
+            (a, b) => new Date(b.fecha_registro).getTime() - new Date(a.fecha_registro).getTime()
+          );
+        });
+        setBulkUrlsInput('');
+        setImportFeedback({
+          success: true,
+          msg: `✅ ${data.guardados} reel${data.guardados !== 1 ? 's' : ''} guardado${data.guardados !== 1 ? 's' : ''} en la base de datos.`,
+        });
+      } else {
+        setImportFeedback({ success: false, msg: data.error || 'Error al importar' });
+      }
+    } catch (err: any) {
+      setImportFeedback({ success: false, msg: `Error: ${err?.message}` });
+    } finally {
+      setImportingBulk(false);
+    }
+  };
+
+  // Eliminar un reel rastreado
+  const handleDeleteTracked = async (id: string) => {
+    try {
+      await fetch('/api/reels-rastreados', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      setTrackedReels((prev) => prev.filter((r) => r.id !== id));
+    } catch {}
+  };
 
   // Extrae y valida un Reel directamente por su URL
   const handleExtractReelByUrl = async (e: React.FormEvent) => {
@@ -643,8 +736,8 @@ export function ScraperMonitor() {
         )}
       </div>
 
-      {/* ── 5. Últimos Reels de la Cuenta (obtenidos directamente de la red social) ── */}
-      <div className="space-y-3">
+      {/* ── 5. Últimos Reels de la Cuenta · Rastreados Manualmente ── */}
+      <div className="space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
@@ -652,49 +745,81 @@ export function ScraperMonitor() {
               <Sparkles size={12} />
             </div>
             <h4 className="text-xs font-bold text-white tracking-wide uppercase">
-              Últimos Reels de la Cuenta · Desde la Red Social
+              Últimos Reels de la Cuenta
             </h4>
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                liveReelsStatus === 'done'
-                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                  : liveReelsStatus === 'loading'
-                  ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
-                  : liveReelsStatus === 'empty'
-                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-                  : 'bg-violet-500/15 border-violet-500/30 text-violet-300'
-              }`}
-            >
-              {liveReelsStatus === 'loading'
-                ? 'Extrayendo...'
-                : liveReelsStatus === 'done'
-                ? `${liveReels.length} reels extraídos`
-                : liveReelsStatus === 'empty'
-                ? 'Sin datos de la red social'
-                : 'Esperando escaneo'}
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/15 border border-violet-500/30 text-violet-300">
+              {trackedReels.length > 0 ? `${trackedReels.length} guardados` : 'Sin reels aún'}
             </span>
           </div>
-          {liveReelsStatus === 'done' && (
+          {trackedReels.length > 0 && (
             <span className="text-[10px] text-emerald-400 flex items-center gap-1">
-              <CheckCircle2 size={10} />
-              Datos directos de {selectedAccount?.plataforma?.toUpperCase()}
+              <CheckCircle2 size={10} /> Guardados en base de datos
             </span>
           )}
         </div>
 
-        {/* Estados */}
-        {liveReelsStatus === 'loading' && (
-          <div className="flex items-center justify-center py-10 gap-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5">
-            <Loader2 size={20} className="animate-spin text-cyan-400" />
-            <p className="text-xs text-cyan-300 font-semibold">
-              Consultando {selectedAccount?.plataforma?.toUpperCase()} para obtener últimos reels...
+        {/* Formulario de importación bulk */}
+        <div className="p-4 rounded-2xl bg-violet-500/5 border border-violet-500/20 space-y-3">
+          <div className="flex items-center gap-2">
+            <Link2 size={13} className="text-violet-400" />
+            <p className="text-xs font-bold text-white">
+              Pegar URLs de TikTok/Instagram (hasta 10, una por línea)
             </p>
           </div>
-        )}
+          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+            Ve al perfil en TikTok, copia la URL de cada reel y pégalos aquí. El sistema intentará
+            extraer las métricas automáticamente y los guardará permanentemente.
+          </p>
 
-        {liveReelsStatus === 'done' && liveReels.length > 0 && (
+          <form onSubmit={handleBulkImport} className="space-y-2">
+            <textarea
+              value={bulkUrlsInput}
+              onChange={(e) => setBulkUrlsInput(e.target.value)}
+              placeholder={`https://www.tiktok.com/@cuenta/video/7XXXXXXXXXXXXXXXXX\nhttps://www.tiktok.com/@cuenta/video/7XXXXXXXXXXXXXXXXX\n...`}
+              rows={4}
+              className="w-full px-3 py-2.5 rounded-xl bg-black/40 border border-violet-500/20 text-xs text-white placeholder-[var(--text-muted)] focus:outline-none focus:border-violet-500/50 resize-none font-mono leading-relaxed"
+            />
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[10px] text-[var(--text-muted)]">
+                {bulkUrlsInput.split('\n').filter((l) => l.trim().startsWith('http')).length} URLs detectadas
+              </span>
+              <button
+                type="submit"
+                disabled={importingBulk || !bulkUrlsInput.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-500/20 border border-violet-500/40 text-violet-300 text-xs font-bold hover:bg-violet-500/30 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {importingBulk ? (
+                  <><Loader2 size={12} className="animate-spin" /><span>Importando...</span></>
+                ) : (
+                  <><PlusCircle size={12} /><span>Importar y guardar reels</span></>
+                )}
+              </button>
+            </div>
+          </form>
+
+          {importFeedback && (
+            <div className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${
+              importFeedback.success
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-red-500/10 border-red-500/30 text-red-300'
+            }`}>
+              {importFeedback.success
+                ? <CheckCircle2 size={13} className="shrink-0" />
+                : <AlertCircle size={13} className="shrink-0" />}
+              <span>{importFeedback.msg}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Grid de reels guardados */}
+        {trackedLoading ? (
+          <div className="flex items-center justify-center py-8 gap-2">
+            <Loader2 size={16} className="animate-spin text-violet-400" />
+            <span className="text-xs text-[var(--text-muted)]">Cargando reels guardados...</span>
+          </div>
+        ) : trackedReels.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {liveReels.map((reel, idx) => (
+            {trackedReels.map((reel, idx) => (
               <motion.div
                 key={reel.id}
                 initial={{ opacity: 0, y: 8 }}
@@ -702,42 +827,52 @@ export function ScraperMonitor() {
                 transition={{ delay: idx * 0.04 }}
                 className="relative p-3.5 rounded-2xl bg-gradient-to-b from-violet-500/5 to-transparent border border-violet-500/20 hover:border-violet-500/40 transition-all space-y-2.5 group flex flex-col"
               >
+                {/* Botón eliminar */}
+                <button
+                  type="button"
+                  onClick={() => handleDeleteTracked(reel.id)}
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-400 transition-all"
+                  title="Eliminar reel"
+                >
+                  <X size={11} />
+                </button>
+
                 {/* Posición + fecha */}
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 pr-6">
                   <span className="px-2 py-0.5 rounded-lg bg-violet-500/20 border border-violet-500/40 text-violet-300 font-bold font-mono text-[11px]">
                     #{idx + 1}{idx === 0 ? ' · Más reciente' : ''}
                   </span>
-                  {reel.timestamp && reel.timestamp > 0 && (
+                  {reel.fecha_publicacion && (
                     <span className="text-[10px] text-[var(--text-muted)] font-mono">
-                      {new Date(reel.timestamp * 1000).toLocaleDateString('es', { day: '2-digit', month: 'short' })}
+                      {new Date(reel.fecha_publicacion).toLocaleDateString('es', { day: '2-digit', month: 'short' })}
                     </span>
                   )}
                 </div>
 
                 {/* Métricas */}
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[11px] font-bold font-mono">
                     <Eye size={10} />
-                    {reel.views > 0 ? formatViews(reel.views) : '—'}
+                    {reel.vistas > 0 ? formatViews(reel.vistas) : '—'}
                   </span>
                   <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[11px] font-bold font-mono">
                     <Heart size={10} />
                     {reel.likes > 0 ? formatViews(reel.likes) : '—'}
                   </span>
-                  {reel.comments > 0 && (
+                  {reel.comentarios > 0 && (
                     <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[11px] font-mono">
                       <Send size={10} />
-                      {formatViews(reel.comments)}
+                      {formatViews(reel.comentarios)}
                     </span>
                   )}
                 </div>
 
                 {/* Descripción */}
-                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed line-clamp-3 min-h-[3rem] flex-1">
-                  {reel.desc || <span className="italic text-[var(--text-muted)]">Sin descripción</span>}
+                <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed line-clamp-3 min-h-[2.5rem] flex-1">
+                  {reel.descripcion || <span className="italic text-[var(--text-muted)]">Sin descripción extraída</span>}
                 </p>
 
-                {/* Link */}
+                {/* Link directo */}
                 <a
                   href={reel.url}
                   target="_blank"
@@ -745,65 +880,21 @@ export function ScraperMonitor() {
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300 text-[11px] font-semibold transition-all hover:text-white w-full justify-center"
                 >
                   <ExternalLink size={11} />
-                  <span>Ver en {selectedAccount?.plataforma?.toUpperCase()}</span>
+                  <span>Ver en {reel.plataforma?.toUpperCase()}</span>
                 </a>
               </motion.div>
             ))}
           </div>
-        )}
-
-        {(liveReelsStatus === 'empty' || liveReelsStatus === 'idle') && (
-          <div className="rounded-2xl border border-dashed border-amber-500/25 bg-amber-500/5 p-5 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                <AlertCircle size={15} className="text-amber-400" />
-              </div>
-              <div className="space-y-1 min-w-0">
-                <p className="text-xs font-bold text-amber-300">
-                  {liveReelsStatus === 'idle'
-                    ? 'Haz clic en "Re-escanear perfil en vivo" para obtener los últimos reels'
-                    : 'No se pudieron obtener reels directamente de la red social'}
-                </p>
-                {liveReelsStatus === 'empty' && (
-                  <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                    TikTok bloquea las IPs de servidores (Vercel) en su API interna.
-                    Esto es normal y no es un error del sistema.
-                  </p>
-                )}
-                {liveReelsDebug && (
-                  <p className="text-[10px] font-mono text-amber-200/60 bg-black/30 rounded px-2 py-1 border border-amber-500/10 break-all">
-                    {liveReelsDebug}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {liveReelsStatus === 'empty' && (
-              <div className="pl-11 space-y-1.5">
-                <p className="text-[11px] text-white/50 font-semibold">Alternativas disponibles:</p>
-                <ul className="space-y-1 text-[11px] text-[var(--text-muted)] list-disc list-inside">
-                  <li>
-                    Pega la URL de cada reel en{' '}
-                    <span className="text-cyan-400 font-semibold">Inspeccionar y Enlazar Reel por URL</span>{' '}
-                    (sección de arriba) para registrarlo con sus métricas reales.
-                  </li>
-                  <li>
-                    Visita el perfil directamente:{' '}
-                    <a
-                      href={profileData?.profileUrl || `https://www.tiktok.com/@${selectedAccount?.username?.replace('@','')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-violet-400 underline hover:text-violet-300"
-                    >
-                      @{selectedAccount?.username}
-                    </a>
-                  </li>
-                </ul>
-              </div>
-            )}
+        ) : (
+          <div className="flex flex-col items-center justify-center py-8 gap-2 rounded-2xl border border-dashed border-violet-500/15">
+            <Sparkles size={20} className="text-violet-400 opacity-30" />
+            <p className="text-xs text-[var(--text-muted)] text-center max-w-xs">
+              Pega las URLs de los últimos reels de la cuenta arriba para verlos aquí.
+            </p>
           </div>
         )}
       </div>
     </GlassCard>
   );
 }
+
