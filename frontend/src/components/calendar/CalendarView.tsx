@@ -44,9 +44,23 @@ interface DragOverlayProps {
 }
 
 function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOverlayProps) {
+  const { accounts, videos } = useAppStore();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedHour, setSelectedHour] = useState<number>(14);
   const [calDate, setCalDate] = useState<Date>(new Date()); // nav del mini-calendario
+
+  const overlayQuotaStats = useMemo(() => {
+    const activeAccounts = accounts.filter(a => a.activo);
+    return activeAccounts.map(account => {
+      const dayVideos = videos.filter(
+        v => v.cuenta_id === account.id && v.estado !== 'CANCELADO' && isSameDay(new Date(v.programado_para), selectedDate)
+      );
+      const count = dayVideos.length;
+      const target = account.publicaciones_estimadas_diarias ?? 3;
+      const missing = Math.max(0, target - count);
+      return { account, count, target, missing };
+    });
+  }, [accounts, videos, selectedDate]);
 
   const miniMonthDays = useMemo(() => {
     const start = startOfWeek(startOfMonth(calDate), { weekStartsOn: 0 });
@@ -282,6 +296,28 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
                     {selectedHour.toString().padStart(2, '0')}:00 hs
                   </span>
                 </div>
+
+                {/* Resumen de cuotas de las cuentas para el día seleccionado */}
+                {overlayQuotaStats.length > 0 && (
+                  <div className="pt-2 border-t border-white/10 space-y-1">
+                    <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider block">
+                      Videos faltantes este día:
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {overlayQuotaStats.map(s => (
+                        <span
+                          key={s.account.id}
+                          className={cn(
+                            'text-[9px] px-1.5 py-0.5 rounded-md border font-medium flex items-center gap-1',
+                            s.missing > 0 ? 'bg-amber-500/10 border-amber-500/20 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                          )}
+                        >
+                          @{s.account.username}: {s.count}/{s.target} {s.missing > 0 ? `(faltan ${s.missing})` : '✓'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
             </div>
@@ -412,6 +448,34 @@ export function CalendarView() {
       sent:       dv.filter(v => v.estado === 'ENVIADO').length,
       published:  dv.filter(v => v.estado === 'PUBLICADO').length,
     };
+  };
+
+  const getDayMissingSummary = (day: Date) => {
+    const activeAccounts = accounts.filter(a => a.activo);
+    if (activeAccounts.length === 0) return { missing: 0, count: 0, target: 0 };
+    const dayVideos = getVideosForDay(day);
+    let missing = 0;
+    let count = 0;
+    let target = 0;
+    for (const a of activeAccounts) {
+      const aTarget = a.publicaciones_estimadas_diarias ?? 3;
+      const aCount = dayVideos.filter(v => v.cuenta_id === a.id && v.estado !== 'CANCELADO').length;
+      target += aTarget;
+      count += aCount;
+      missing += Math.max(0, aTarget - aCount);
+    }
+    return { missing, count, target };
+  };
+
+  const getDayQuotaStats = (day: Date) => {
+    const activeAccounts = accounts.filter(a => a.activo);
+    const dayVideos = getVideosForDay(day);
+    return activeAccounts.map(account => {
+      const count = dayVideos.filter(v => v.cuenta_id === account.id && v.estado !== 'CANCELADO').length;
+      const target = account.publicaciones_estimadas_diarias ?? 3;
+      const missing = Math.max(0, target - count);
+      return { account, count, target, missing };
+    });
   };
 
   const getPlatformIcon = (platform?: string) => {
@@ -594,6 +658,7 @@ export function CalendarView() {
               {monthDays.map((day) => {
                 const dayVideos = getVideosForDay(day);
                 const metrics  = getDayMetrics(day);
+                const daySummary = getDayMissingSummary(day);
                 const dayKey   = format(day, 'yyyy-MM-dd');
                 const isCurrentMonth = isSameMonth(day, currentDate);
                 const isHovered      = hoveredDay === dayKey;
@@ -615,7 +680,7 @@ export function CalendarView() {
                     )}
                     title="Haz clic para ver el cronograma completo de este día"
                   >
-                    {/* Day number */}
+                    {/* Day number & Quota indicator */}
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={cn(
                         'text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full',
@@ -627,16 +692,37 @@ export function CalendarView() {
                       )}>
                         {format(day, 'd')}
                       </span>
-                      {isHovered && isCurrentMonth && (
-                        <motion.button
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
-                          className="w-5 h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-colors"
-                        >
-                          <Plus size={10} />
-                        </motion.button>
-                      )}
+
+                      <div className="flex items-center gap-1">
+                        {isCurrentMonth && daySummary.target > 0 && (
+                          <span
+                            className={cn(
+                              'text-[9px] font-mono px-1 py-0.2 rounded font-medium transition-colors',
+                              daySummary.missing > 0
+                                ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                                : 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                            )}
+                            title={
+                              daySummary.missing > 0
+                                ? `Faltan ${daySummary.missing} video(s) para las cuotas de hoy (${daySummary.count}/${daySummary.target})`
+                                : `Metas completadas (${daySummary.count}/${daySummary.target})`
+                            }
+                          >
+                            {daySummary.missing > 0 ? `-${daySummary.missing}` : '✓'}
+                          </span>
+                        )}
+                        {isHovered && isCurrentMonth && (
+                          <motion.button
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
+                            className="w-5 h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                            title={`Programar video en este día (Faltan ${daySummary.missing} videos)`}
+                          >
+                            <Plus size={10} />
+                          </motion.button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Video chips */}
@@ -700,6 +786,7 @@ export function CalendarView() {
             <div className="grid grid-cols-7 gap-2 flex-1 overflow-y-auto">
               {weekDays.map(day => {
                 const dayVideos    = getVideosForDay(day);
+                const daySummary   = getDayMissingSummary(day);
                 const isCurrentDay = isToday(day);
                 const dayKey       = format(day, 'yyyy-MM-dd');
 
@@ -722,13 +809,32 @@ export function CalendarView() {
                         <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                           {format(day, 'EEEE', { locale: es })}
                         </p>
-                        <p className={cn('text-base font-bold', isCurrentDay ? 'text-emerald-400' : 'text-white')}>
-                          {format(day, 'd MMM')}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className={cn('text-base font-bold', isCurrentDay ? 'text-emerald-400' : 'text-white')}>
+                            {format(day, 'd MMM')}
+                          </p>
+                          {daySummary.target > 0 && (
+                            <span
+                              className={cn(
+                                'text-[9px] font-mono px-1 py-0.2 rounded font-semibold',
+                                daySummary.missing > 0
+                                  ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                                  : 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                              )}
+                              title={
+                                daySummary.missing > 0
+                                  ? `Faltan ${daySummary.missing} video(s) para las metas (${daySummary.count}/${daySummary.target})`
+                                  : `Metas completas (${daySummary.count}/${daySummary.target})`
+                              }
+                            >
+                              {daySummary.missing > 0 ? `-${daySummary.missing}` : '✓'}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <button onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
                         className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/25 transition-colors"
-                        title="Programar nuevo video"
+                        title={`Programar video en este día (${daySummary.missing > 0 ? `Faltan ${daySummary.missing}` : 'Metas cumplidas'})`}
                       >
                         <Plus size={12} />
                       </button>
@@ -790,7 +896,7 @@ export function CalendarView() {
         {/* ─────────────────── DAY VIEW ─────────────────── */}
         {calendarView === 'day' && (
           <div className="flex-1 flex flex-col glass rounded-2xl border border-[var(--border)] p-4 overflow-hidden h-full">
-            <div className="flex items-center justify-between pb-3 mb-3 border-b border-[var(--border)]">
+            <div className="flex items-center justify-between pb-3 mb-2 border-b border-[var(--border)]">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   Cronograma por Horas
@@ -810,6 +916,37 @@ export function CalendarView() {
                 <Plus size={13} /> Programar Video
               </button>
             </div>
+
+            {/* Barra de cuotas de las cuentas del día */}
+            {getDayQuotaStats(currentDate).length > 0 && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-2.5 mb-2.5 border-b border-white/[0.06] pt-0.5">
+                <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider shrink-0">
+                  Cuotas del día:
+                </span>
+                {getDayQuotaStats(currentDate).map(stat => (
+                  <button
+                    key={stat.account.id}
+                    onClick={() => openScheduleModal(currentDate)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] border shrink-0 transition-all cursor-pointer',
+                      stat.missing > 0
+                        ? 'bg-amber-500/10 border-amber-500/25 text-amber-300 hover:bg-amber-500/20'
+                        : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/20'
+                    )}
+                    title={`Clic para programar en este día. @${stat.account.username}: ${stat.count}/${stat.target} videos`}
+                  >
+                    <span className="shrink-0">{getPlatformIcon(stat.account.plataforma)}</span>
+                    <span className="font-semibold text-white">@{stat.account.username}</span>
+                    <span className="font-mono text-[10px] opacity-80">
+                      ({stat.count}/{stat.target})
+                    </span>
+                    <span className={cn('font-semibold text-[10px]', stat.missing > 0 ? 'text-amber-400' : 'text-emerald-400')}>
+                      {stat.missing > 0 ? `· Faltan ${stat.missing}` : '· Completo'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
               {HOURS.map(hour => {

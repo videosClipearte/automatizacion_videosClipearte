@@ -17,12 +17,15 @@ import {
   Check,
   ExternalLink,
   FileText,
-  Code
+  Code,
+  Send,
+  Globe,
+  Play,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -38,6 +41,16 @@ import {
   uploadVideoToGoogleDrive,
 } from '@/lib/services/driveService';
 import { createNotification } from '@/lib/services/notificationService';
+
+// Helper de icono de plataforma social
+function getPlatformIcon(platform?: string) {
+  switch (platform?.toLowerCase()) {
+    case 'instagram': return <Globe size={13} className="text-pink-400" />;
+    case 'tiktok':    return <Send  size={13} className="text-cyan-400" />;
+    case 'youtube':   return <Play  size={13} className="text-red-400" />;
+    default:          return <Globe size={13} className="text-blue-400" />;
+  }
+}
 
 const schema = z.object({
   cuenta_id: z.string().min(1, 'Selecciona una cuenta de publicación'),
@@ -58,6 +71,7 @@ export function ScheduleModal() {
     scheduleModalFile,
     accounts,
     campaigns,
+    videos,
     addVideo,
   } = useAppStore();
 
@@ -444,9 +458,54 @@ export function ScheduleModal() {
   };
 
   const currentFecha = watch('fecha');
-  const displayDateStr = scheduleModalDate
-    ? format(scheduleModalDate, "EEEE, d 'de' MMMM yyyy", { locale: es })
-    : currentFecha;
+  const targetDateObj = useMemo(() => {
+    if (currentFecha) {
+      const parts = currentFecha.split('-').map(Number);
+      if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+        return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+      }
+    }
+    return scheduleModalDate ? new Date(scheduleModalDate) : new Date();
+  }, [currentFecha, scheduleModalDate]);
+
+  const displayDateStr = format(targetDateObj, "EEEE, d 'de' MMMM yyyy", { locale: es });
+
+  const accountQuotaStats = useMemo(() => {
+    const targetDateStr = currentFecha || (scheduleModalDate ? format(scheduleModalDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
+    const activeAccounts = accounts.filter(a => a.activo);
+
+    return activeAccounts.map(account => {
+      const dayVideos = videos.filter(v => {
+        if (v.cuenta_id !== account.id) return false;
+        if (v.estado === 'CANCELADO') return false;
+        try {
+          const vDateStr = format(new Date(v.programado_para), 'yyyy-MM-dd');
+          return vDateStr === targetDateStr;
+        } catch {
+          return false;
+        }
+      });
+
+      const count = dayVideos.length;
+      const target = account.publicaciones_estimadas_diarias ?? 3;
+      const missing = Math.max(0, target - count);
+
+      return {
+        id: account.id,
+        account,
+        count,
+        target,
+        missing,
+        isCompleted: count >= target,
+        isOver: count > target,
+      };
+    });
+  }, [accounts, videos, currentFecha, scheduleModalDate]);
+
+  const totalMissing = accountQuotaStats.reduce((sum, item) => sum + item.missing, 0);
+  const totalTarget = accountQuotaStats.reduce((sum, item) => sum + item.target, 0);
+  const totalScheduled = accountQuotaStats.reduce((sum, item) => sum + item.count, 0);
+  const selectedAccountStat = accountQuotaStats.find(s => s.id === selectedCuentaId);
 
   const cfg = getCachedConfig();
   const folderIdConfigured = cfg.drive_folder_id;
@@ -697,6 +756,115 @@ export function ScheduleModal() {
                 </div>
               )}
 
+              {/* ── Widget de Cuotas y Videos Faltantes por Cuenta para este Día ── */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#0e1626] to-[#0a101d] border border-cyan-500/25 shadow-lg space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                      <Clock size={14} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        Videos Faltantes por Cuenta
+                        <span className="text-[10px] font-normal text-cyan-300">
+                          ({format(targetDateObj, "d 'de' MMMM", { locale: es })})
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-[var(--text-muted)]">
+                        {totalMissing > 0
+                          ? `Faltan ${totalMissing} video(s) para completar las cuotas del día.`
+                          : '¡Todas las cuentas tienen su meta diaria cumplida para este día!'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span
+                    className={cn(
+                      'text-[10px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1 shrink-0',
+                      totalMissing > 0
+                        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                        : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                    )}
+                  >
+                    {totalMissing > 0 ? (
+                      <>
+                        <AlertCircle size={10} /> {totalMissing} faltante{totalMissing > 1 ? 's' : ''}
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={10} /> Metas completas ({totalScheduled}/{totalTarget})
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                {/* Grid interactivo de cuentas para selección rápida y visualización */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {accountQuotaStats.map((stat) => {
+                    const isSelected = selectedCuentaId === stat.id;
+                    return (
+                      <button
+                        key={stat.id}
+                        type="button"
+                        onClick={() => setValue('cuenta_id', stat.id, { shouldValidate: true })}
+                        className={cn(
+                          'p-2.5 rounded-xl border text-left transition-all duration-150 relative overflow-hidden group cursor-pointer',
+                          isSelected
+                            ? 'bg-emerald-500/15 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.18)] ring-1 ring-emerald-400/50'
+                            : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 hover:border-emerald-500/30'
+                        )}
+                        title={`Haz clic para seleccionar @${stat.account.username}`}
+                      >
+                        <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="shrink-0">{getPlatformIcon(stat.account.plataforma)}</span>
+                            <span className="text-xs font-bold text-white truncate">
+                              @{stat.account.username}
+                            </span>
+                          </div>
+                          {isSelected && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/30 text-emerald-300 font-semibold uppercase tracking-wider shrink-0 flex items-center gap-0.5">
+                              <Check size={9} /> Elegida
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Barra de progreso y faltantes */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-slate-400">
+                              Programados: <b className="text-white">{stat.count}</b> / {stat.target}
+                            </span>
+                            <span
+                              className={cn(
+                                'font-semibold',
+                                stat.missing > 0 ? 'text-amber-400' : 'text-emerald-400'
+                              )}
+                            >
+                              {stat.missing > 0 ? `⚠️ Faltan ${stat.missing}` : '✅ Meta lista'}
+                            </span>
+                          </div>
+
+                          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all duration-300',
+                                stat.missing > 0
+                                  ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+                                  : 'bg-gradient-to-r from-emerald-500 to-cyan-400'
+                              )}
+                              style={{
+                                width: `${Math.min(100, Math.round((stat.count / (stat.target || 1)) * 100))}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Account + Campaign */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -712,12 +880,46 @@ export function ScheduleModal() {
                     </option>
                     {accounts
                       .filter((a) => a.activo)
-                      .map((a) => (
-                        <option key={a.id} value={a.id} className="bg-[#0d0d1a]">
-                          @{a.username} ({a.plataforma})
-                        </option>
-                      ))}
+                      .map((a) => {
+                        const stat = accountQuotaStats.find((s) => s.id === a.id);
+                        const suffix = stat
+                          ? stat.missing > 0
+                            ? ` — ⚠️ Faltan ${stat.missing} (${stat.count}/${stat.target})`
+                            : ` — ✅ Meta cumplida (${stat.count}/${stat.target})`
+                          : '';
+                        return (
+                          <option key={a.id} value={a.id} className="bg-[#0d0d1a]">
+                            @{a.username} ({a.plataforma}){suffix}
+                          </option>
+                        );
+                      })}
                   </select>
+                  {selectedAccountStat && (
+                    <div
+                      className={cn(
+                        'mt-1.5 p-2 rounded-xl text-[10px] flex items-center justify-between border transition-all',
+                        selectedAccountStat.missing > 0
+                          ? 'bg-amber-500/10 border-amber-500/25 text-amber-200'
+                          : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200'
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {selectedAccountStat.missing > 0 ? (
+                          <AlertCircle size={12} className="text-amber-400 shrink-0" />
+                        ) : (
+                          <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+                        )}
+                        <span className="truncate">
+                          {selectedAccountStat.missing > 0
+                            ? `Faltan ${selectedAccountStat.missing} video(s) para la meta diaria`
+                            : `¡Meta diaria alcanzada para esta cuenta!`}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-white shrink-0 ml-2">
+                        {selectedAccountStat.count} / {selectedAccountStat.target}
+                      </span>
+                    </div>
+                  )}
                   {errors.cuenta_id && (
                     <p className="text-red-400 text-[10px] mt-1">{errors.cuenta_id.message}</p>
                   )}
