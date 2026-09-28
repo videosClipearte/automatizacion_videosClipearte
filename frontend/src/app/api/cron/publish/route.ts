@@ -1,13 +1,29 @@
 // src/app/api/cron/publish/route.ts
-// Endpoint para ejecucion automatica en Vercel Cron o disparador externo
+// Endpoint para ejecucion automatica en Vercel Cron o disparador externo.
+// NOTA: El PublicationScheduler del frontend es el disparador principal.
+// Este cron actúa como respaldo para cuando la app no está abierta en el navegador.
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { sendPublicationAlert, sendConfirmationPoll } from '@/lib/services/telegramService';
 import { loadAppConfig } from '@/lib/services/appConfigService';
-import { format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+// UTC offset local: -4 (Venezuela / Bolivia / Chile / Caribe)
+const TZ_OFFSET = -4;
+
+/** Formatea una fecha ISO a 'yyyy-MM-dd HH:mm' en UTC-4 (sin dependencias de date-fns) */
+function formatLocalDateTime(isoOrDate: string | Date): string {
+  const d = new Date(isoOrDate);
+  const shifted = new Date(d.getTime() + TZ_OFFSET * 3_600_000);
+  const yyyy = shifted.getUTCFullYear();
+  const MM = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(shifted.getUTCDate()).padStart(2, '0');
+  const hh = String(shifted.getUTCHours()).padStart(2, '0');
+  const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
+  return `${yyyy}-${MM}-${dd} ${hh}:${mm}`;
+}
 
 export async function GET(request: Request) {
   // Verificar que la llamada viene de Vercel Cron o es interna autorizada
@@ -26,7 +42,7 @@ export async function GET(request: Request) {
     const botToken = cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
     const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id || process.env.TELEGRAM_GROUP_ID || '').trim();
 
-    // 2. Buscar videos listos para publicar
+    // 2. Buscar videos listos para publicar (solo los que siguen en PROGRAMADO)
     const nowIso = new Date().toISOString();
     const { data: dueVideos, error: vidErr } = await db
       .from('publicaciones')
@@ -51,9 +67,25 @@ export async function GET(request: Request) {
     const results = [];
 
     for (const video of dueVideos) {
+      // ── Actualización atómica: solo procesar si el video SIGUE en PROGRAMADO ──
+      // Esto evita el doble envío si el PublicationScheduler del frontend ya lo tomó.
+      const { data: updatedRows } = await db
+        .from('publicaciones')
+        .update({ estado: 'ENVIADO', enviado_en: new Date().toISOString() })
+        .eq('id', video.id)
+        .eq('estado', 'PROGRAMADO') // condición atómica
+        .select('id');
+
+      // Si no retornó filas significa que otro proceso ya lo cambió → saltar
+      if (!updatedRows || updatedRows.length === 0) {
+        results.push({ id: video.id, titulo: video.titulo, skipped: true, reason: 'Ya procesado por otro mecanismo' });
+        continue;
+
+      }
+
       const account = cuentas?.find((c: any) => c.id === video.cuenta_id);
       const campaign = campanas?.find((c: any) => c.id === video.campana_id);
-      const horaFormateada = format(new Date(video.programado_para), 'yyyy-MM-dd HH:mm');
+      const horaLocal = formatLocalDateTime(video.programado_para);
 
       let sentTelegram = false;
       let confirmationMessageId: number | undefined;
@@ -67,7 +99,7 @@ export async function GET(request: Request) {
           campaignName: campaign?.nombre,
           driveFileUrl: video.drive_file_url,
           descripcion: video.descripcion_aprobada_ia,
-          programadoPara: horaFormateada,
+          programadoPara: horaLocal,
         });
         sentTelegram = sendRes.success;
 
@@ -81,7 +113,7 @@ export async function GET(request: Request) {
             videoTitle: video.titulo,
             accountUsername: account?.username || 'cuenta',
             platform: account?.plataforma || 'red',
-            programadoPara: horaFormateada,
+            programadoPara: horaLocal,
           });
 
           if (pollRes.success && pollRes.messageId) {
@@ -98,26 +130,19 @@ export async function GET(request: Request) {
         }
       }
 
-      // Marcar como ENVIADO (esperando confirmación manual via Telegram)
-      await db
-        .from('publicaciones')
-        .update({
-          estado: 'ENVIADO',
-          enviado_en: new Date().toISOString(),
-        })
-        .eq('id', video.id);
-
       results.push({
         id: video.id,
         titulo: video.titulo,
         enviadoTelegram: sentTelegram,
         confirmationMessageId,
+        skipped: false,
       });
     }
 
     return NextResponse.json({
       success: true,
-      processed: results.length,
+      processed: results.filter((r: any) => !r.skipped).length,
+      skipped: results.filter((r: any) => r.skipped).length,
       videos: results,
     });
   } catch (error: any) {

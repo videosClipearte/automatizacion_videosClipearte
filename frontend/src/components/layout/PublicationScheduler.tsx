@@ -2,17 +2,35 @@
 // src/components/layout/PublicationScheduler.tsx
 // Planificador automático en primer plano: monitorea cada 15s si alguna publicación
 // programada llegó a su hora, despacha el mensaje a Telegram con el video de Drive
-// y la descripción respetando la campaña, y actualiza el estado a PUBLICADO en Supabase.
+// y la descripción respetando la campaña, y actualiza el estado a ENVIADO en Supabase.
 
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
-import { sendPublicationAlert, sendTelegramMessage } from '@/lib/services/telegramService';
-import { handleTelegramUpdate } from '@/lib/services/telegramBotHandler';
-import { getStoredSupabaseConfig } from '@/lib/supabase';
+import {
+  sendPublicationAlert,
+  sendTelegramMessage,
+  sendConfirmationPoll,
+} from '@/lib/services/telegramService';
+import { getStoredSupabaseConfig, getSupabase } from '@/lib/supabase';
 import { createNotification } from '@/lib/services/notificationService';
 import { verifyScraperPost } from '@/lib/services/scraperService';
-import { format, isToday } from 'date-fns';
+import { isToday } from 'date-fns';
+
+// UTC offset local (-4 para VE/BOL/CHI/CL)
+const TZ_OFFSET = -4;
+
+/** Formatea una fecha ISO a 'yyyy-MM-dd HH:mm' en UTC-4 */
+function formatLocalDateTime(isoOrDate: string | Date): string {
+  const d = new Date(isoOrDate);
+  const shifted = new Date(d.getTime() + TZ_OFFSET * 3_600_000);
+  const yyyy = shifted.getUTCFullYear();
+  const MM = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(shifted.getUTCDate()).padStart(2, '0');
+  const hh = String(shifted.getUTCHours()).padStart(2, '0');
+  const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
+  return `${yyyy}-${MM}-${dd} ${hh}:${mm}`;
+}
 
 export function PublicationScheduler() {
   const { videos, accounts, campaigns, updateVideo } = useAppStore();
@@ -37,11 +55,38 @@ export function PublicationScheduler() {
 
       if (dueVideos.length === 0) return;
 
+      const db = getSupabase();
+
       for (const video of dueVideos) {
-        // Bloquear ID para no enviar duplicados
+        // Bloquear ID inmediatamente para no procesar en paralelo
         processingRef.current.add(video.id);
 
         try {
+          // ── IMPORTANTE: Marcar como ENVIADO en Supabase ANTES de enviar a Telegram ──
+          // Esto evita que el cron del servidor lo tome también (double-dispatch).
+          const { data: freshVideo, error: fetchErr } = await db
+            .from('publicaciones')
+            .select('id, estado')
+            .eq('id', video.id)
+            .single();
+
+          // Si en la BD ya está ENVIADO/PUBLICADO (procesado por el cron), saltar.
+          if (fetchErr || !freshVideo || freshVideo.estado !== 'PROGRAMADO') {
+            console.log(`[PublicationScheduler] Video "${video.titulo}" ya fue procesado por otro mecanismo (estado actual: ${freshVideo?.estado}). Saltando.`);
+            // Sincronizar store local
+            if (freshVideo && freshVideo.estado !== video.estado) {
+              await updateVideo(video.id, { estado: freshVideo.estado });
+            }
+            continue;
+          }
+
+          // Marcar ENVIADO en BD primero (bloqueo contra el cron)
+          await db
+            .from('publicaciones')
+            .update({ estado: 'ENVIADO', enviado_en: new Date().toISOString() })
+            .eq('id', video.id)
+            .eq('estado', 'PROGRAMADO'); // condición atómica: solo si sigue PROGRAMADO
+
           // Obtener configuración fresca de Telegram desde Supabase
           let cfg = getCachedConfig();
           if (!cfg.telegram_bot_token) {
@@ -54,11 +99,16 @@ export function PublicationScheduler() {
           const account = accounts.find((a) => a.id === video.cuenta_id);
           const campaign = campaigns.find((c) => c.id === video.campana_id);
 
+          const horaLocal = formatLocalDateTime(video.programado_para);
+
           console.log(
             `[PublicationScheduler] Publicación alcanzada para "${video.titulo}". Despachando a Telegram...`
           );
 
+          let sentTelegram = false;
+
           if (botToken && targetChat) {
+            // Paso 1: ficha del video + descripción (2 mensajes)
             const sendRes = await sendPublicationAlert(botToken, targetChat, {
               videoTitle: video.titulo,
               accountUsername: account?.username || 'cuenta',
@@ -66,17 +116,42 @@ export function PublicationScheduler() {
               campaignName: campaign?.nombre,
               driveFileUrl: video.drive_file_url,
               descripcion: video.descripcion_aprobada_ia,
-              programadoPara: format(new Date(video.programado_para), 'yyyy-MM-dd HH:mm'),
+              programadoPara: horaLocal,
             });
 
-            if (sendRes.success) {
+            sentTelegram = sendRes.success;
+
+            if (sentTelegram) {
               console.log(
                 `[PublicationScheduler] ✅ Alerta de publicación enviada a Telegram para "${video.titulo}".`
               );
+
+              // Pausa para garantizar orden
+              await new Promise((r) => setTimeout(r, 600));
+
+              // Paso 2: encuesta de confirmación Sí/No
+              const pollRes = await sendConfirmationPoll(botToken, targetChat, {
+                publicacionId: video.id,
+                videoTitle: video.titulo,
+                accountUsername: account?.username || 'cuenta',
+                platform: account?.plataforma || 'red',
+                programadoPara: horaLocal,
+              });
+
+              if (pollRes.success && pollRes.messageId) {
+                // Guardar registro de confirmación pendiente en la BD
+                await db.from('confirmaciones_telegram').insert({
+                  publicacion_id: video.id,
+                  chat_id: String(targetChat),
+                  message_id: pollRes.messageId,
+                  estado: 'PENDIENTE',
+                });
+              }
+
               await createNotification({
                 tipo: 'info',
                 titulo: 'Publicación enviada a Telegram',
-                mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'red').toUpperCase()}) despachado a Telegram. Estado: ENVIADO (a la espera de comprobación del scraper).`,
+                mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'red').toUpperCase()}) despachado a Telegram. Encuesta de confirmación enviada.`,
                 video_id: video.id,
                 cuenta_id: video.cuenta_id,
                 origen: 'programador',
@@ -108,7 +183,7 @@ export function PublicationScheduler() {
             });
           }
 
-          // Marcar como ENVIADO en Supabase y store (NO como PUBLICADO, que requiere scraper)
+          // Sincronizar store local
           await updateVideo(video.id, {
             estado: 'ENVIADO',
             enviado_en: new Date(),
@@ -141,8 +216,12 @@ export function PublicationScheduler() {
         const targetHour = settings.dailyQuotaAlertHour || '19:00';
 
         const now = new Date();
-        const currentHourStr = format(now, 'HH:mm');
-        const todayDateStr = format(now, 'yyyy-MM-dd');
+        // Hora local en UTC-4
+        const shifted = new Date(now.getTime() + TZ_OFFSET * 3_600_000);
+        const hh = String(shifted.getUTCHours()).padStart(2, '0');
+        const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
+        const currentHourStr = `${hh}:${mm}`;
+        const todayDateStr = `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
 
         // Solo disparar una vez al día cuando el reloj coincida con la hora configurada
         if (currentHourStr === targetHour && lastDailyAlertDateRef.current !== todayDateStr) {
@@ -226,7 +305,7 @@ export function PublicationScheduler() {
           await createNotification({
             tipo: 'warning',
             titulo: 'Tolerancia de tiempo excedida',
-            mensaje: `El video "${ov.titulo}" para @${acc?.username || 'cuenta'} programado para las ${format(new Date(ov.programado_para), 'HH:mm')} lleva ${diffMins} min de retraso.`,
+            mensaje: `El video "${ov.titulo}" para @${acc?.username || 'cuenta'} programado para las ${formatLocalDateTime(ov.programado_para).split(' ')[1]} lleva ${diffMins} min de retraso.`,
             video_id: ov.id,
             cuenta_id: ov.cuenta_id,
             origen: 'scraper',
