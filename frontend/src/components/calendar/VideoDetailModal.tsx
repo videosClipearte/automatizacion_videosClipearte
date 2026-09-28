@@ -859,17 +859,17 @@ export function VideoDetailModal() {
                             <span className="text-[10px] text-[var(--text-muted)] underline">Cambiar</span>
                           </div>
 
-                          {/* Badge de optimización para IA */}
+                          {/* Badge de estado de audio para IA */}
                           <div className="p-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-between text-[10px]">
-                            {compressingReplacement ? (
+                            {extractingReplacementAudio ? (
                               <span className="text-amber-300 flex items-center gap-1 font-medium">
                                 <Loader2 size={10} className="animate-spin text-amber-400" />
-                                Comprimiendo proxy para IA...
+                                Extrayendo audio para IA...
                               </span>
-                            ) : compressedReplacement ? (
+                            ) : extractedReplacementAudio ? (
                               <span className="text-emerald-300 flex items-center gap-1 font-semibold">
                                 <Sparkles size={10} className="text-cyan-400" />
-                                Proxy IA listo: {(compressedReplacement.totalPayloadBytes / 1024).toFixed(0)} KB ({compressedReplacement.frames.length} fts)
+                                Audio listo: {extractedReplacementAudio.durationSeconds}s — IA usara subtitulos
                               </span>
                             ) : (
                               <span className="text-[var(--text-muted)]">Listo para reemplazo</span>
@@ -1023,8 +1023,8 @@ export function VideoDetailModal() {
                         <span>
                           {generatingAI
                             ? 'Analizando...'
-                            : compressedReplacement
-                            ? 'Analizar Video con IA 🎬✨'
+                            : extractedReplacementAudio
+                            ? 'Generar con Subtitulos IA '
                             : 'Regenerar con IA'}
                         </span>
                       </button>
