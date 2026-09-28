@@ -89,6 +89,12 @@ export function VideoDetailModal() {
     ? calcGanancias(video.vistas_obtenidas, campaign.tasa_pago_por_mil_vistas)
     : '0.00';
 
+  // Cuentas filtradas según la campaña en edición
+  const editingCampaign = campaigns.find(c => c.id === editCampanaId);
+  const filteredEditAccounts = editingCampaign
+    ? accounts.filter(a => editingCampaign.cuentas_ids.includes(a.id))
+    : accounts;
+
   // Sincronizar campos de edición cuando se selecciona un video
   useEffect(() => {
     if (video) {
@@ -928,8 +934,32 @@ export function VideoDetailModal() {
                     </p>
                   </div>
 
-                  {/* Cuenta y Campaña */}
+                  {/* Cuenta y Campaña — la campaña filtra las cuentas disponibles */}
                   <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+                        Campaña
+                      </label>
+                      <select
+                        value={editCampanaId}
+                        onChange={(e) => {
+                          const newCampanaId = e.target.value;
+                          setEditCampanaId(newCampanaId);
+                          // Si la cuenta actual no pertenece a la nueva campaña, limpiarla
+                          const newCampaign = campaigns.find(c => c.id === newCampanaId);
+                          if (newCampaign && editCuentaId && !newCampaign.cuentas_ids.includes(editCuentaId)) {
+                            setEditCuentaId('');
+                          }
+                        }}
+                        className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d0d1a] border border-[var(--border)] focus:border-purple-500/50 outline-none"
+                      >
+                        <option value="" className="bg-[#0d0d1a]">Seleccionar campaña...</option>
+                        {campaigns.map(c => (
+                          <option key={c.id} value={c.id}>{c.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     <div>
                       <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
                         Cuenta
@@ -937,26 +967,20 @@ export function VideoDetailModal() {
                       <select
                         value={editCuentaId}
                         onChange={(e) => setEditCuentaId(e.target.value)}
-                        className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d0d1a] border border-[var(--border)] focus:border-emerald-500/50 outline-none"
+                        disabled={!editCampanaId}
+                        className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d0d1a] border border-[var(--border)] focus:border-emerald-500/50 outline-none disabled:opacity-50"
                       >
-                        {accounts.map(a => (
+                        <option value="" className="bg-[#0d0d1a]">
+                          {editCampanaId ? 'Seleccionar cuenta...' : 'Primero selecciona campaña'}
+                        </option>
+                        {filteredEditAccounts.map(a => (
                           <option key={a.id} value={a.id}>@{a.username} ({a.plataforma})</option>
                         ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
-                        Campaña
-                      </label>
-                      <select
-                        value={editCampanaId}
-                        onChange={(e) => setEditCampanaId(e.target.value)}
-                        className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d0d1a] border border-[var(--border)] focus:border-emerald-500/50 outline-none"
-                      >
-                        {campaigns.map(c => (
-                          <option key={c.id} value={c.id}>{c.nombre}</option>
-                        ))}
+                        {editCampanaId && filteredEditAccounts.length === 0 && (
+                          <option value="" disabled className="bg-[#0d0d1a] text-red-400">
+                            Sin cuentas enlazadas a esta campaña
+                          </option>
+                        )}
                       </select>
                     </div>
                   </div>

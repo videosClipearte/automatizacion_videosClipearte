@@ -145,6 +145,21 @@ export function ScheduleModal() {
   const selectedCuentaId = watch('cuenta_id');
   const selectedCampanaId = watch('campana_id');
 
+  // Cuentas filtradas según la campaña seleccionada
+  const selectedCampaignForFilter = campaigns.find(c => c.id === selectedCampanaId);
+  const filteredAccounts = selectedCampaignForFilter
+    ? accounts.filter(a => a.activo && selectedCampaignForFilter.cuentas_ids.includes(a.id))
+    : accounts.filter(a => a.activo);
+
+  // Si la cuenta seleccionada no pertenece a la nueva campaña, limpiarla
+  useEffect(() => {
+    if (!selectedCampanaId) return;
+    const campaign = campaigns.find(c => c.id === selectedCampanaId);
+    if (campaign && selectedCuentaId && !campaign.cuentas_ids.includes(selectedCuentaId)) {
+      setValue('cuenta_id', '');
+    }
+  }, [selectedCampanaId]);
+
   // Cargar token existente de Google Drive al montar o abrir modal
   useEffect(() => {
     if (isScheduleModalOpen) {
@@ -948,15 +963,15 @@ export function ScheduleModal() {
                   <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
                     Cuenta de Red Social
                   </label>
-                  <select
+                   <select
                     {...register('cuenta_id')}
                     className="w-full glass rounded-xl px-3 py-2 text-xs text-white bg-transparent border border-[var(--border)] focus:border-emerald-500/50 outline-none"
+                    disabled={!selectedCampanaId}
                   >
                     <option value="" className="bg-[#0d0d1a]">
-                      Seleccionar cuenta...
+                      {selectedCampanaId ? 'Seleccionar cuenta...' : 'Primero selecciona una campaña'}
                     </option>
-                    {accounts
-                      .filter((a) => a.activo)
+                    {filteredAccounts
                       .map((a) => {
                         const stat = accountQuotaStats.find((s) => s.id === a.id);
                         const suffix = stat
@@ -970,6 +985,11 @@ export function ScheduleModal() {
                           </option>
                         );
                       })}
+                    {selectedCampanaId && filteredAccounts.length === 0 && (
+                      <option value="" disabled className="bg-[#0d0d1a] text-red-400">
+                        Sin cuentas enlazadas a esta campaña
+                      </option>
+                    )}
                   </select>
                   {errors.cuenta_id && (
                     <p className="text-red-400 text-[10px] mt-1">{errors.cuenta_id.message}</p>
