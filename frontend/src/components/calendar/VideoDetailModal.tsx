@@ -247,6 +247,7 @@ export function VideoDetailModal() {
           systemInstruction,
           cfg.gemini_temperature ?? 0.7
         );
+      }
 
       if (res.success && res.text) {
         setEditDescripcion(res.text);
