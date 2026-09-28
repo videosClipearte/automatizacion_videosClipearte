@@ -9,6 +9,7 @@ import {
 } from '@/lib/services/telegramService';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 import { createNotification } from '@/lib/services/notificationService';
+import { confirmPublicationAndProcessMetrics } from '@/lib/services/publicationConfirmationService';
 
 // Zona horaria por defecto: UTC-4 (América / Venezuela / Chile / Bolivia / Caribe)
 const DEFAULT_TZ_OFFSET_HOURS = -4;
@@ -62,14 +63,11 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
-/** Detects if a string looks like a URL */
-function isUrl(str: string): boolean {
-  try {
-    const url = new URL(str.trim());
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
+/** Extrae una URL válida si existe dentro de un texto */
+function extractUrl(str: string): string | null {
+  if (!str) return null;
+  const match = str.match(/https?:\/\/[^\s<>"')]+/i);
+  return match ? match[0].trim() : null;
 }
 
 export interface TelegramCommandResult {
@@ -135,11 +133,12 @@ export async function handleTelegramUpdate(
   }
 
   // ──────────────────────────────────────────
-  // 3. Verificar si el mensaje es un link de confirmación
+  // 3. Verificar si el mensaje contiene un link de confirmación
   //    (el admin responde con el URL del post publicado)
   // ──────────────────────────────────────────
-  if (isUrl(text)) {
-    const linkHandled = await handleLinkConfirmation(text, chatId, replyToId, threadId, db, botToken);
+  const detectedUrl = extractUrl(text);
+  if (detectedUrl) {
+    const linkHandled = await handleLinkConfirmation(detectedUrl, chatId, replyToId, threadId, db, botToken);
     if (linkHandled) return { handled: true, command: 'link_confirmacion', responseSent: true };
   }
 
@@ -223,37 +222,48 @@ async function handleCallbackQuery(
     const publicacionId = callbackData.replace('confirm_pub:', '').trim();
 
     // 1. Confirmar callbackQuery para quitar el reloj del botón
-    await answerCallbackQuery(botToken, callbackId, '✅ ¡Confirmado!', false);
+    await answerCallbackQuery(botToken, callbackId, '✅ ¡Confirmado como publicado!', false);
 
-    // 2. Marcar confirmación como ESPERANDO_LINK
+    // 2. Procesar confirmación directa en BD: marcar PUBLICADO, publicado_en = now(),
+    //    y registrar en reels_rastreados y metricas_extraidas_scraper
+    await confirmPublicationAndProcessMetrics({
+      publicacionId,
+      fuente: 'telegram',
+    });
+
+    // 3. Marcar confirmación como ESPERANDO_LINK en confirmaciones_telegram
     await db
       .from('confirmaciones_telegram')
-      .update({ estado: 'ESPERANDO_LINK', respondido_en: new Date().toISOString() })
-      .eq('publicacion_id', publicacionId)
-      .eq('estado', 'PENDIENTE');
+      .update({
+        estado: 'ESPERANDO_LINK',
+        respondido_en: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('publicacion_id', publicacionId);
 
-    // 3. Actualizar el mensaje de la encuesta para mostrar que fue confirmado
+    // 4. Actualizar el mensaje de la encuesta para mostrar que fue confirmado
     const confirmedText = [
       `✅ <b>PUBLICACIÓN CONFIRMADA</b>`,
       `━━━━━━━━━━━━━━━━━━━━`,
       originalText.split('\n').slice(2, 4).join('\n'), // Título y cuenta
       ``,
-      `⏳ <i>Ahora envía el <b>link del post publicado</b> en la red social para registrar las estadísticas.</i>`,
+      `📈 <b>Estado:</b> Registrado como <b>PUBLICADO</b> en el sistema ✅`,
+      `⏳ <i>Envía el <b>enlace directo del reel</b> (Instagram/TikTok) para extraer vistas, likes y alimentar las gráficas de analíticas automáticamente.</i>`,
       `<code>Ejemplo: https://www.instagram.com/reel/ABC123/</code>`,
     ].join('\n');
 
     await editTelegramMessage(botToken, chatId, messageId, confirmedText);
 
-    // 4. Enviar mensaje separado pidiendo el link
+    // 5. Enviar mensaje separado pidiendo el link
     await sendTelegramMessage(
       botToken,
       chatId,
       [
-        `🔗 <b>ENLACE DEL POST PUBLICADO</b>`,
+        `🔗 <b>ENLACE DEL REEL PUBLICADO</b>`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `Por favor, envía en este chat el <b>link directo del post</b> para registrar las estadísticas del video.`,
+        `El video ya fue marcado como <b>PUBLICADO</b> en el calendario y analíticas.`,
         ``,
-        `💡 <i>Simplemente pega la URL completa del reel/post publicado y el bot la guardará automáticamente.</i>`,
+        `💡 <i>Pega aquí el enlace directo del reel publicado (Instagram o TikTok) para que el monitor del scraper extraiga las reproducciones reales y actualice las gráficas automáticamente.</i>`,
       ].join('\n'),
       'HTML'
     );
@@ -330,79 +340,35 @@ async function handleLinkConfirmation(
     })
     .eq('id', conf.id);
 
-  // 2. Llamar a la API interna confirm-publication que:
-  //    - Extrae métricas reales del post (vistas, likes, comentarios, etc.)
-  //    - Actualiza publicaciones a PUBLICADO + vistas_obtenidas
-  //    - Inserta en metricas_extraidas_scraper con métricas reales
-  //    - Registra en reels_rastreados para que aparezca en Analíticas
-  let scraped = false;
-  let metricsMsg = '';
+  // 2. Procesar métricas DIRECTAMENTE con el scraper centralizado (sin llamadas HTTP a sí mismo)
+  const confirmResult = await confirmPublicationAndProcessMetrics({
+    publicacionId: conf.publicacion_id,
+    postUrl: url.trim(),
+    cuentaId: video?.cuenta_id,
+    fuente: 'telegram',
+  });
 
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
-                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+  const scraped = confirmResult.scraped;
+  const metrics = confirmResult.metrics;
 
-    const confirmRes = await fetch(`${baseUrl}/api/telegram/confirm-publication`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        publicacion_id: conf.publicacion_id,
-        post_url: url.trim(),
-        cuenta_id: video?.cuenta_id,
-      }),
-    });
-
-    const confirmData = await confirmRes.json();
-    scraped = confirmData.scraped || false;
-    metricsMsg = confirmData.message || '';
-
-    if (!confirmRes.ok || !confirmData.success) {
-      console.warn('[TelegramBot] confirm-publication API error:', confirmData.error);
-      // Fallback mínimo si la API falla: al menos marcar como PUBLICADO
-      await db.from('publicaciones').update({
-        estado: 'PUBLICADO',
-        publicado_en: now,
-        post_url_publica: url.trim(),
-        updated_at: now,
-      }).eq('id', conf.publicacion_id);
-    }
-  } catch (apiErr: any) {
-    console.error('[TelegramBot] Error llamando a confirm-publication:', apiErr?.message);
-    // Fallback mínimo
-    await db.from('publicaciones').update({
-      estado: 'PUBLICADO',
-      publicado_en: now,
-      post_url_publica: url.trim(),
-      updated_at: now,
-    }).eq('id', conf.publicacion_id);
-  }
-
-  // 3. Crear notificación en la app
-  try {
-    await createNotification({
-      tipo: 'success',
-      titulo: `Video publicado confirmado`,
-      mensaje: `"${video?.titulo || conf.publicacion_id}" fue confirmado como PUBLICADO. ${metricsMsg}`,
-      origen: 'telegram',
-    });
-  } catch {}
-
-  // 4. Responder al admin en Telegram con resultado de la extracción
+  // 3. Responder al admin en Telegram con resultado de la extracción
   const safeTitle = escapeHtml(video?.titulo || 'Video');
   const statsLine = scraped
-    ? `📊 <i>Métricas extraídas automáticamente y guardadas en Analíticas.</i>`
-    : `📊 <i>Las métricas se actualizarán manualmente en Analíticas (no se pudieron extraer automáticamente).</i>`;
+    ? `📊 <b>Métricas extraídas del scraper:</b>\n` +
+      `• 👁️ Reproducciones: <b>${metrics.vistas.toLocaleString()}</b>\n` +
+      `• ❤️ Me gusta: <b>${metrics.likes.toLocaleString()}</b>\n` +
+      `• 💬 Comentarios: <b>${metrics.comentarios.toLocaleString()}</b>\n` +
+      `<i>Datos enlazados al Monitor del Scraper y gráficas de Analíticas.</i>`
+    : `📊 <i>Enlace guardado y verificado. Si el post es reciente, las métricas se actualizarán automáticamente desde el Monitor del Scraper.</i>`;
 
   const successMsg = [
-    `🎉 <b>PUBLICACIÓN REGISTRADA EXITOSAMENTE</b>`,
+    `🎉 <b>REEL ENLAZADO Y CONFIRMADO EXITOSAMENTE</b>`,
     `━━━━━━━━━━━━━━━━━━━━`,
     `🎬 <b>Video:</b> ${safeTitle}`,
-    `🔗 <b>Link guardado:</b> ${escapeHtml(url.trim())}`,
+    `🔗 <b>Link verificado:</b> ${escapeHtml(url.trim())}`,
     `📈 <b>Estado:</b> <b>PUBLICADO</b> ✅`,
     ``,
     statsLine,
-    ``,
-    `<i>Puedes ver las estadísticas en la sección <b>Analíticas</b> de la app.</i>`,
   ].join('\n');
 
   await sendTelegramMessage(botToken, chatId, successMsg, 'HTML', {

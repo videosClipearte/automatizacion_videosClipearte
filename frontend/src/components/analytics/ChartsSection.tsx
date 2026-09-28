@@ -82,9 +82,11 @@ export function ChartsSection() {
       const d = subDays(new Date(), 13 - i);
       const dayStr = format(d, 'yyyy-MM-dd');
       const label = format(d, 'dd MMM', { locale: es });
-      const publishedThatDay = accountVideos.filter(
-        (v) => v.publicado_en && format(new Date(v.publicado_en), 'yyyy-MM-dd') === dayStr
-      );
+      const publishedThatDay = accountVideos.filter((v) => {
+        if (v.estado !== 'PUBLICADO') return false;
+        const targetDate = v.publicado_en || v.programado_para;
+        return targetDate && format(new Date(targetDate), 'yyyy-MM-dd') === dayStr;
+      });
       const Vistas = publishedThatDay.reduce((sum, v) => sum + (v.vistas_obtenidas ?? 0), 0);
       const Publicaciones = publishedThatDay.length;
       return { label, Vistas, Publicaciones };

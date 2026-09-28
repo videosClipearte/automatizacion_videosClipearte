@@ -69,6 +69,7 @@ interface TrackedReel {
   plataforma: string;
   fecha_publicacion?: string;
   fecha_registro: string;
+  publicacion_id?: string;
 }
 
 function extractHashtags(campaignBase?: string, desc?: string): string[] {
@@ -321,6 +322,30 @@ export function ScraperMonitor() {
     }
   };
 
+  // Sincronizar automáticamente métricas de reels_rastreados hacia publicaciones para actualizar las gráficas
+  useEffect(() => {
+    if (!trackedReels || trackedReels.length === 0 || !videos || videos.length === 0) return;
+
+    for (const tr of trackedReels) {
+      if (!tr.publicacion_id) continue;
+      const vid = videos.find((v) => v.id === tr.publicacion_id);
+      if (vid) {
+        const needsViewSync = tr.vistas > (vid.vistas_obtenidas || 0);
+        const needsUrlSync = !vid.post_url_publica && tr.url && !tr.url.includes('#pub_');
+        if (needsViewSync || needsUrlSync) {
+          const payload: Record<string, any> = {};
+          if (needsViewSync) payload.vistas_obtenidas = tr.vistas;
+          if (needsUrlSync) payload.post_url_publica = tr.url;
+
+          const db = getSupabase();
+          db.from('publicaciones').update(payload).eq('id', vid.id).then(() => {
+            updateVideo(vid.id, payload);
+          });
+        }
+      }
+    }
+  }, [trackedReels, videos, updateVideo]);
+
   // Guardar vistas manualmente
   const handleSaveViews = async (videoId: string) => {
     const num = parseInt(editViewsInput, 10);
@@ -331,6 +356,17 @@ export function ScraperMonitor() {
       const db = getSupabase();
       await db.from('publicaciones').update({ vistas_obtenidas: num }).eq('id', videoId);
       await updateVideo(videoId, { vistas_obtenidas: num });
+
+      // También actualizar en reels_rastreados si está vinculado
+      await db
+        .from('reels_rastreados')
+        .update({ vistas: num, fecha_actualizacion: new Date().toISOString() })
+        .eq('publicacion_id', videoId);
+
+      setTrackedReels((prev) =>
+        prev.map((tr) => (tr.publicacion_id === videoId ? { ...tr, vistas: num } : tr))
+      );
+
       setEditingReelId(null);
       setEditViewsInput('');
     } catch (err: any) {
@@ -340,7 +376,7 @@ export function ScraperMonitor() {
     }
   };
 
-  // Lista de Reels procesados: prioriza publicaciones con enlace real a la red social
+  // Lista de Reels procesados: enlaza publicaciones con los datos de reels_rastreados
   const displayReels = useMemo<ScrapedReelItem[]>(() => {
     if (!selectedAccount) return [];
 
@@ -358,17 +394,33 @@ export function ScraperMonitor() {
       const campaignName = camp?.nombre || 'Campaña General';
       const campaignHashtags = extractHashtags(camp?.hashtags_base, video.descripcion_aprobada_ia);
 
-      const hasValidUrl = video.post_url_publica && video.post_url_publica.startsWith('http') && video.post_url_publica !== '#';
-      const reelUrl = hasValidUrl
+      // Buscar si este video está enlazado a algún reel de reels_rastreados
+      const matchedTracked = trackedReels.find(
+        (tr) => (tr.publicacion_id && tr.publicacion_id === video.id) ||
+                (video.post_url_publica && tr.url === video.post_url_publica)
+      );
+
+      const effectiveViews = Math.max(video.vistas_obtenidas || 0, matchedTracked?.vistas || 0);
+
+      const hasValidUrl =
+        (video.post_url_publica && video.post_url_publica.startsWith('http') && video.post_url_publica !== '#') ||
+        (matchedTracked?.url && matchedTracked.url.startsWith('http') && !matchedTracked.url.includes('#pub_'));
+
+      const reelUrl = (video.post_url_publica && video.post_url_publica.startsWith('http') && video.post_url_publica !== '#')
         ? video.post_url_publica!
+        : (matchedTracked?.url && !matchedTracked.url.includes('#pub_'))
+        ? matchedTracked.url
         : `${profileData?.profileUrl || `https://${selectedAccount.plataforma}.com/@${selectedAccount.username.replace('@', '')}`}`;
 
       return {
         id: video.id,
         posicion: index + 1,
         titulo: video.titulo,
-        descripcionReal: video.descripcion_aprobada_ia || 'Sin descripción extraída',
-        vistas: video.vistas_obtenidas || 0,
+        descripcionReal: (matchedTracked?.descripcion && matchedTracked.descripcion.length > 5)
+          ? matchedTracked.descripcion
+          : (video.descripcion_aprobada_ia || 'Sin descripción extraída'),
+        vistas: effectiveViews,
+        likes: matchedTracked?.likes || 0,
         postUrl: reelUrl,
         fecha: video.publicado_en ? new Date(video.publicado_en) : new Date(video.programado_para),
         origen: hasValidUrl ? 'registrado_con_url' : 'pendiente_url',
@@ -377,7 +429,7 @@ export function ScraperMonitor() {
         matchedKeywords: campaignHashtags,
       };
     });
-  }, [accountVideos, selectedAccount, campaigns, profileData]);
+  }, [accountVideos, selectedAccount, campaigns, profileData, trackedReels]);
 
   return (
     <GlassCard className="p-5 w-full space-y-4">

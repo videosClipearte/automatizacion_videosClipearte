@@ -3,9 +3,9 @@
 // Llamado desde la UI cuando el equipo hace clic en "Confirmar publicado".
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabase } from '@/lib/supabase';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 import { sendTelegramMessage } from '@/lib/services/telegramService';
+import { confirmPublicationAndProcessMetrics } from '@/lib/services/publicationConfirmationService';
 import { format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
@@ -21,76 +21,52 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
-    const postUrlPublica: string = body.post_url_publica || '';
+    const postUrlPublica: string = (body.post_url_publica || '').trim();
     const vistasObtenidas = body.vistas_obtenidas !== undefined && body.vistas_obtenidas !== ''
       ? Number(body.vistas_obtenidas)
       : undefined;
 
-    const db = getSupabase();
-    const now = new Date();
-    const nowIso = now.toISOString();
+    // Ejecutar lógica centralizada: actualiza publicaciones, extrae métricas en vivo,
+    // guarda en metricas_extraidas_scraper y en reels_rastreados
+    const result = await confirmPublicationAndProcessMetrics({
+      publicacionId: videoId,
+      postUrl: postUrlPublica || undefined,
+      vistas: vistasObtenidas,
+      fuente: 'manual',
+    });
 
-    // 1. Obtener el video actual
-    const { data: video, error: fetchErr } = await db
-      .from('publicaciones')
-      .select('*, cuentas(*)')
-      .eq('id', videoId)
-      .maybeSingle();
-
-    if (fetchErr || !video) {
-      return NextResponse.json({ error: 'Video no encontrado' }, { status: 404 });
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
-    // 2. Marcar como PUBLICADO con confirmación manual
-    const updatePayload: any = {
-      estado: 'PUBLICADO',
-      publicado_en: nowIso,
-      confirmado_manualmente: true,
-    };
-    if (postUrlPublica) {
-      updatePayload.post_url_publica = postUrlPublica;
-    }
-    if (vistasObtenidas !== undefined && !isNaN(vistasObtenidas)) {
-      updatePayload.vistas_obtenidas = Math.max(0, vistasObtenidas);
-    }
+    // Notificar a Telegram que fue confirmado manualmente
+    try {
+      const cfg = await loadAppConfig();
+      const botToken = cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || '';
+      const groupChatId = (cfg.telegram_group_id || process.env.TELEGRAM_GROUP_ID || '').trim();
 
-    const { error: updateErr } = await db
-      .from('publicaciones')
-      .update(updatePayload)
-      .eq('id', videoId);
+      if (botToken && groupChatId) {
+        const now = new Date();
+        const msg = [
+          `✅ <b>PUBLICACIÓN CONFIRMADA MANUALMENTE</b>`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `🕒 <b>Confirmado a las:</b> ${format(now, 'HH:mm')} UTC`,
+          postUrlPublica ? `🔗 <b>URL del post:</b> ${postUrlPublica}` : '',
+          result.metrics.vistas > 0 ? `👁️ <b>Vistas detectadas:</b> ${result.metrics.vistas.toLocaleString()}` : '',
+          ``,
+          `👍 <i>Estado actualizado a <b>PUBLICADO</b> y registrado en Analíticas.</i>`,
+        ].filter(Boolean).join('\n');
 
-    if (updateErr) {
-      return NextResponse.json({ error: updateErr.message }, { status: 500 });
-    }
-
-    // 3. Notificar a Telegram que fue confirmado manualmente
-    const cfg = await loadAppConfig();
-    const botToken = cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || '';
-    const groupChatId = (cfg.telegram_group_id || process.env.TELEGRAM_GROUP_ID || '').trim();
-
-    const account = video.cuentas;
-    const platform = (account?.plataforma || 'red social').toUpperCase();
-    const username = (account?.username || 'cuenta').replace(/^@/, '');
-
-    if (botToken && groupChatId) {
-      const msg = `
-✅ <b>PUBLICACIÓN CONFIRMADA MANUALMENTE</b>
-━━━━━━━━━━━━━━━━━━━━
-🎬 <b>Video:</b> ${video.titulo}
-👤 <b>Cuenta:</b> @${username} (<b>${platform}</b>)
-🕒 <b>Confirmado a las:</b> ${format(now, 'HH:mm')} UTC
-${postUrlPublica ? `🔗 <b>URL del post:</b> ${postUrlPublica}` : ''}
-
-👍 <i>Estado actualizado a PUBLICADO en el sistema.</i>
-`.trim();
-      await sendTelegramMessage(botToken, groupChatId, msg);
-    }
+        await sendTelegramMessage(botToken, groupChatId, msg);
+      }
+    } catch {}
 
     return NextResponse.json({
       success: true,
-      message: 'Video confirmado como publicado.',
+      message: result.message,
       videoId,
-      publicado_en: nowIso,
+      metrics: result.metrics,
+      scraped: result.scraped,
     });
   } catch (error: any) {
     console.error('[confirmar] Error:', error);
