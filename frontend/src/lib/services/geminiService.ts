@@ -78,8 +78,32 @@ function cleanCopyText(raw: string): string {
 }
 
 /**
+ * Obtiene la lista de modelos disponibles para esta API key.
+ * Devuelve nombres de modelos que soporten generateContent.
+ */
+async function listAvailableModels(apiKey: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=50`,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    if (!res.ok) return [];
+    const json = await res.json();
+    const models: string[] = (json.models ?? [])
+      .filter((m: any) =>
+        Array.isArray(m.supportedGenerationMethods) &&
+        m.supportedGenerationMethods.includes('generateContent')
+      )
+      .map((m: any) => (m.name as string).replace('models/', ''));
+    return models;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Ejecuta una petición directa a Google Gemini API.
- * Prueba el modelo configurado + fallbacks, en ambos endpoints v1 y v1beta.
+ * Prueba el modelo configurado, luego descubre dinámicamente los disponibles.
  */
 async function callGoogleGeminiDirect(
   apiKey: string,
@@ -98,19 +122,27 @@ async function callGoogleGeminiDirect(
   const rawModel = (modelName || 'gemini-2.0-flash-latest').replace(/^models\//, '').trim();
   const resolvedModel = RETIRED_MODEL_MAP[rawModel] ?? rawModel;
 
-  // Modelos en orden de preferencia (sin duplicados)
-  const modelsToTry: string[] = [];
-  for (const m of [
+  // Lista inicial hardcodeada — modelos activos confirmados (orden de preferencia)
+  const KNOWN_MODELS = [
     resolvedModel,
     'gemini-2.0-flash-latest',
-    'gemini-2.0-flash-exp',
-  ]) {
-    if (!modelsToTry.includes(m)) modelsToTry.push(m);
+    'gemini-2.0-flash',
+    'gemini-2.5-flash-preview-05-20',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro-latest',
+  ];
+
+  // Eliminar duplicados manteniendo orden
+  const modelsToTry: string[] = [];
+  for (const m of KNOWN_MODELS) {
+    if (m && !modelsToTry.includes(m)) modelsToTry.push(m);
   }
 
-  // Probar cada modelo en v1 y v1beta
-  const apiVersions = ['v1', 'v1beta'];
+  // Probar solo v1beta (más modelos disponibles)
+  const apiVersions = ['v1beta', 'v1'];
   let lastErrorMessage = '';
+  let allModelsNotFound = true;
 
   for (const currentModel of modelsToTry) {
     for (const apiVersion of apiVersions) {
@@ -141,7 +173,7 @@ async function callGoogleGeminiDirect(
 
         const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
 
-        // API Key inválida → parar
+        // API Key inválida → parar inmediatamente
         if (response.status === 403 || (response.status === 400 && errMsg.toLowerCase().includes('api key not valid'))) {
           return {
             success: false,
@@ -150,12 +182,55 @@ async function callGoogleGeminiDirect(
           };
         }
 
+        // Si el modelo existe pero hay otro error → ya no todos son "not found"
+        const isNotFound = response.status === 404 || errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('no longer available');
+        if (!isNotFound) allModelsNotFound = false;
+
         lastErrorMessage = errMsg;
         console.warn(`[Gemini] ${currentModel} (${apiVersion}): ${errMsg.slice(0, 120)}`);
       } catch (err: any) {
         lastErrorMessage = err?.message || 'Error de conexión';
         console.warn(`[Gemini] ${currentModel} (${apiVersion}) excepción: ${lastErrorMessage}`);
       }
+    }
+  }
+
+  // Si todos fallaron por "not found", intentar descubrir modelos dinámicamente
+  if (allModelsNotFound) {
+    console.warn('[Gemini] Todos los modelos conocidos fallaron. Consultando lista dinámica...');
+    const availableModels = await listAvailableModels(cleanKey);
+    // Preferir modelos flash disponibles
+    const flashModels = availableModels.filter(m => m.includes('flash'));
+    const dynamicList = flashModels.length > 0 ? flashModels : availableModels.slice(0, 3);
+
+    for (const currentModel of dynamicList) {
+      if (modelsToTry.includes(currentModel)) continue; // ya se intentó
+      for (const apiVersion of ['v1beta', 'v1']) {
+        const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/models/${currentModel}:generateContent?key=${cleanKey}`;
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          let responseJson: any = null;
+          try { responseJson = JSON.parse(await response.text()); } catch { continue; }
+          if (response.ok) {
+            const candidateText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (candidateText) {
+              return { success: true, text: cleanCopyText(candidateText), usedModel: currentModel };
+            }
+          }
+          const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
+          lastErrorMessage = errMsg;
+        } catch (err: any) {
+          lastErrorMessage = err?.message || 'Error de conexión';
+        }
+      }
+    }
+
+    if (dynamicList.length === 0) {
+      lastErrorMessage = 'No se encontraron modelos disponibles para tu API Key. Verifica los permisos en aistudio.google.com.';
     }
   }
 
