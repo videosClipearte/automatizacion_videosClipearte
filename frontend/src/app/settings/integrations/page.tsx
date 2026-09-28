@@ -97,13 +97,13 @@ export default function IntegrationsPage() {
       setGeminiApiKey(cfg.gemini_api_key);
       // Migrar modelos retirados al sucesor oficial
       const retiredMap: Record<string,string> = {
-        'gemini-1.5-flash': 'gemini-3.5-flash',
-        'gemini-1.5-flash-latest': 'gemini-3.5-flash',
-        'gemini-1.5-pro': 'gemini-3.8-flash',
-        'gemini-2.0-flash': 'gemini-3.8-flash',
-        'gemini-2.0-flash-lite': 'gemini-3.5-flash-lite',
-        'gemini-2.5-flash': 'gemini-3.8-flash',
-        'gemini-2.5-flash-lite-preview-06-17': 'gemini-3.5-flash-lite',
+        'gemini-2.0-flash': 'gemini-2.0-flash-latest',
+        'gemini-2.0-flash-lite': 'gemini-2.0-flash-latest',
+        'gemini-2.5-flash': 'gemini-2.0-flash-latest',
+        'gemini-2.5-flash-lite-preview-06-17': 'gemini-2.0-flash-latest',
+        'gemini-3.8-flash': 'gemini-2.0-flash-latest',
+        'gemini-3.5-flash': 'gemini-2.0-flash-latest',
+        'gemini-3.5-flash-lite': 'gemini-2.0-flash-latest',
       };
       const rawModel = cfg.gemini_model || 'gemini-3.8-flash';
       setGeminiModel(retiredMap[rawModel] || rawModel);
@@ -1077,10 +1077,8 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
               onChange={(e) => setGeminiModel(e.target.value)}
               className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-purple-500/50 outline-none bg-transparent"
             >
-              <option value="gemini-3.8-flash" className="bg-[#12121e]">⭐ gemini-3.8-flash — Última generación (Recomendado)</option>
-              <option value="gemini-3.5-flash" className="bg-[#12121e]">gemini-3.5-flash — Flash estable 2025</option>
-              <option value="gemini-3.5-flash-lite" className="bg-[#12121e]">gemini-3.5-flash-lite — Ultrarrápido y ligero</option>
-              <option value="gemini-2.0-flash" className="bg-[#12121e]">gemini-2.0-flash — Flash anterior (fallback)</option>
+              <option value="gemini-2.0-flash-latest" className="bg-[#12121e]">⭐ gemini-2.0-flash-latest — Flash activo (Recomendado)</option>
+              <option value="gemini-2.0-flash-exp" className="bg-[#12121e]">gemini-2.0-flash-exp — Flash experimental</option>
             </select>
           </div>
         </div>

@@ -49,7 +49,7 @@ const DEFAULT_CONFIG: AppConfig = {
   drive_auto_delete_after_verify: false,
   drive_retention_hours: 24,
   gemini_api_key: '',
-  gemini_model: 'gemini-3.8-flash',
+  gemini_model: 'gemini-2.0-flash-latest',
   gemini_system_prompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas y llamativas con hashtags de tendencia.',
   gemini_temperature: 0.7,
   alerta_tolerancia_minutos: 60,
@@ -96,10 +96,22 @@ export async function loadAppConfig(): Promise<AppConfig> {
       return DEFAULT_CONFIG;
     }
 
-    // Migrar modelos retirados a gemini-3.8-flash (modelo activo recomendado por Google)
-    const rawModel = data.gemini_model ?? 'gemini-3.8-flash';
-    const retiredModels = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite-preview-06-17'];
-    const activeModel = retiredModels.includes(rawModel) ? 'gemini-3.8-flash' : rawModel;
+    // Migrar modelos retirados al sucesor activo oficial
+    const rawModel = data.gemini_model ?? 'gemini-2.0-flash-latest';
+    const retiredModelMap: Record<string, string> = {
+      'gemini-2.0-flash':                    'gemini-2.0-flash-latest',
+      'gemini-2.0-flash-lite':               'gemini-2.0-flash-latest',
+      'gemini-2.5-flash':                    'gemini-2.0-flash-latest',
+      'gemini-2.5-flash-lite-preview-06-17': 'gemini-2.0-flash-latest',
+      'gemini-1.5-flash':                    'gemini-2.0-flash-latest',
+      'gemini-1.5-flash-latest':             'gemini-2.0-flash-latest',
+      'gemini-1.5-pro':                      'gemini-2.0-flash-latest',
+      'gemini-3.8-flash':                    'gemini-2.0-flash-latest',
+      'gemini-3.5-flash':                    'gemini-2.0-flash-latest',
+      'gemini-3.5-flash-lite':               'gemini-2.0-flash-latest',
+    };
+    const activeModel = retiredModelMap[rawModel] ?? rawModel;
+
 
     const config: AppConfig = {
       telegram_bot_token: data.telegram_bot_token ?? '',

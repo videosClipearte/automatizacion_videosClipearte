@@ -35,7 +35,7 @@ export function getStoredGeminiConfig(): GeminiConfig {
   }
   return {
     apiKey: '',
-    model: 'gemini-3.8-flash',
+    model: 'gemini-2.0-flash-latest',
     systemPrompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas, juveniles y llamativas con hashtags de tendencia.',
     temperature: 0.7,
   };
@@ -47,14 +47,18 @@ export function saveStoredGeminiConfig(config: GeminiConfig): void {
   }
 }
 
-// Mapa de modelos retirados → sucesor activo oficial (basado en mensajes de error de Google 2025)
+// Mapa de modelos retirados → sucesor activo oficial
 const RETIRED_MODEL_MAP: Record<string, string> = {
-  'gemini-2.0-flash-lite':               'gemini-3.5-flash-lite',
-  'gemini-2.5-flash':                    'gemini-3.8-flash',
-  'gemini-2.5-flash-lite-preview-06-17': 'gemini-3.5-flash-lite',
-  'gemini-1.5-flash':                    'gemini-3.5-flash',
-  'gemini-1.5-flash-latest':             'gemini-3.5-flash',
-  'gemini-1.5-pro':                      'gemini-3.8-flash',
+  'gemini-2.0-flash':                    'gemini-2.0-flash-latest',
+  'gemini-2.0-flash-lite':               'gemini-2.0-flash-latest',
+  'gemini-2.5-flash':                    'gemini-2.0-flash-latest',
+  'gemini-2.5-flash-lite-preview-06-17': 'gemini-2.0-flash-latest',
+  'gemini-1.5-flash':                    'gemini-2.0-flash-latest',
+  'gemini-1.5-flash-latest':             'gemini-2.0-flash-latest',
+  'gemini-1.5-pro':                      'gemini-2.0-flash-latest',
+  'gemini-3.8-flash':                    'gemini-2.0-flash-latest',
+  'gemini-3.5-flash':                    'gemini-2.0-flash-latest',
+  'gemini-3.5-flash-lite':               'gemini-2.0-flash-latest',
 };
 
 /**
@@ -91,17 +95,15 @@ async function callGoogleGeminiDirect(
     };
   }
 
-  const rawModel = (modelName || 'gemini-3.8-flash').replace(/^models\//, '').trim();
-  const resolvedModel = RETIRED_MODEL_MAP[rawModel] || rawModel;
+  const rawModel = (modelName || 'gemini-2.0-flash-latest').replace(/^models\//, '').trim();
+  const resolvedModel = RETIRED_MODEL_MAP[rawModel] ?? rawModel;
 
   // Modelos en orden de preferencia (sin duplicados)
   const modelsToTry: string[] = [];
   for (const m of [
     resolvedModel,
-    'gemini-3.8-flash',
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-2.0-flash',
+    'gemini-2.0-flash-latest',
+    'gemini-2.0-flash-exp',
   ]) {
     if (!modelsToTry.includes(m)) modelsToTry.push(m);
   }
