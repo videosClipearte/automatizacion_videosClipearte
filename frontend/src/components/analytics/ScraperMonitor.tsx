@@ -216,35 +216,31 @@ export function ScraperMonitor() {
     }
   }, [selectedAccount, refreshData]);
 
-  // Carga inicial y refresco al seleccionar cuenta
+  const selectedAccId = selectedAccount?.id;
+
+  // Cargar reels rastreados desde Supabase solo al cambiar de cuenta
   useEffect(() => {
-    if (!selectedAccount?.id) return;
-    refreshData();
-    fetch(`/api/reels-rastreados?cuenta_id=${selectedAccount.id}`)
+    if (!selectedAccId) return;
+    fetch(`/api/reels-rastreados?cuenta_id=${selectedAccId}`)
       .then((r) => r.json())
       .then((d) => setTrackedReels(d.reels || []))
       .catch(() => {});
-    handleInspectSocialProfile();
-  }, [selectedAccount?.id, refreshData, handleInspectSocialProfile]);
+  }, [selectedAccId]);
 
-  // Refrescar automáticamente cuando el usuario regresa a la pestaña (p.ej. tras confirmar en Telegram)
+  // Refrescar automáticamente cada 5 minutos (300,000 ms) en segundo plano
   useEffect(() => {
-    function onFocus() {
-      if (selectedAccount?.id) {
-        refreshData();
-        fetch(`/api/reels-rastreados?cuenta_id=${selectedAccount.id}`)
-          .then((r) => r.json())
-          .then((d) => setTrackedReels(d.reels || []))
-          .catch(() => {});
-      }
-    }
-    window.addEventListener('focus', onFocus);
-    const interval = setInterval(onFocus, 30000); // Polling ligero en segundo plano
-    return () => {
-      window.removeEventListener('focus', onFocus);
-      clearInterval(interval);
-    };
-  }, [selectedAccount?.id, refreshData]);
+    if (!selectedAccId) return;
+    const FIVE_MINUTES_MS = 5 * 60 * 1000;
+    const interval = setInterval(() => {
+      refreshData();
+      fetch(`/api/reels-rastreados?cuenta_id=${selectedAccId}`)
+        .then((r) => r.json())
+        .then((d) => setTrackedReels(d.reels || []))
+        .catch(() => {});
+    }, FIVE_MINUTES_MS);
+
+    return () => clearInterval(interval);
+  }, [selectedAccId, refreshData]);
 
   // Importar múltiples URLs en bulk
   const handleBulkImport = async (e: React.FormEvent) => {
@@ -363,29 +359,6 @@ export function ScraperMonitor() {
     }
   };
 
-  // Sincronizar automáticamente métricas de reels_rastreados hacia publicaciones para actualizar las gráficas
-  useEffect(() => {
-    if (!trackedReels || trackedReels.length === 0 || !videos || videos.length === 0) return;
-
-    for (const tr of trackedReels) {
-      if (!tr.publicacion_id) continue;
-      const vid = videos.find((v) => v.id === tr.publicacion_id);
-      if (vid) {
-        const needsViewSync = tr.vistas > (vid.vistas_obtenidas || 0);
-        const needsUrlSync = !vid.post_url_publica && tr.url && !tr.url.includes('#pub_');
-        if (needsViewSync || needsUrlSync) {
-          const payload: Record<string, any> = {};
-          if (needsViewSync) payload.vistas_obtenidas = tr.vistas;
-          if (needsUrlSync) payload.post_url_publica = tr.url;
-
-          const db = getSupabase();
-          db.from('publicaciones').update(payload).eq('id', vid.id).then(() => {
-            updateVideo(vid.id, payload);
-          });
-        }
-      }
-    }
-  }, [trackedReels, videos, updateVideo]);
 
   // Guardar vistas manualmente
   const handleSaveViews = async (videoId: string) => {

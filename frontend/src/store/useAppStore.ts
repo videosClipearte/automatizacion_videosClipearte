@@ -232,18 +232,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   refreshData: async () => {
     try {
       const db = getSupabase();
-      const [accRes, campRes, vidRes] = await Promise.all([
-        db.from('cuentas').select('*').order('created_at', { ascending: true }),
-        db.from('campanas').select('*').order('created_at', { ascending: true }),
-        db.from('publicaciones').select('*').order('programado_para', { ascending: true }),
-      ]);
-      if (!accRes.error && !campRes.error && !vidRes.error) {
-        const accounts = (accRes.data ?? []).map(mapAccount);
-        const campaigns = (campRes.data ?? []).map(mapCampaign);
-        const videos = (vidRes.data ?? []).map(mapVideo);
+      const { data, error } = await db
+        .from('publicaciones')
+        .select('*')
+        .order('programado_para', { ascending: true });
+
+      if (!error && data) {
+        const videos = data.map(mapVideo);
         set({
-          accounts,
-          campaigns,
           videos,
           metrics: computeMetrics(videos),
         });
