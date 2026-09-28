@@ -35,8 +35,8 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-import { generateWithGemini, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
-import { extractVideoStoryboard, VideoAnalysisPayload } from '@/lib/services/videoCompressorService';
+import { generateWithGemini, generateDescriptionFromAudio, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
+import { extractAudioFromVideo, VideoAudioPayload } from '@/lib/services/videoAudioExtractorService';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import {
   getGoogleDriveToken,
@@ -105,8 +105,8 @@ export function ScheduleModal() {
   );
   const [generatingAI, setGeneratingAI] = useState(false);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
-  const [compressedVideo, setCompressedVideo] = useState<VideoAnalysisPayload | null>(null);
-  const [compressingVideo, setCompressingVideo] = useState(false);
+  const [extractedAudio, setExtractedAudio] = useState<VideoAudioPayload | null>(null);
+  const [extractingAudio, setExtractingAudio] = useState(false);
   const [extractedSubtitles, setExtractedSubtitles] = useState<ExtractedSubtitlesJson | null>(null);
   const [showSubtitlesJson, setShowSubtitlesJson] = useState(false);
 
@@ -188,36 +188,34 @@ export function ScheduleModal() {
     }
   }, [isScheduleModalOpen, scheduleModalDate, scheduleModalFile, setValue]);
 
-  // Extraer fotogramas comprimidos (proxy ultraligero) para análisis multimodal con Gemini IA
+  // Extraer audio del video para analisis con Gemini (mas rapido que fotogramas)
   useEffect(() => {
     setExtractedSubtitles(null);
     setShowSubtitlesJson(false);
     if (!videoFile) {
-      setCompressedVideo(null);
-      setCompressingVideo(false);
+      setExtractedAudio(null);
+      setExtractingAudio(false);
       return;
     }
 
     let active = true;
-    setCompressingVideo(true);
+    setExtractingAudio(true);
 
-    extractVideoStoryboard(videoFile, 7, 512)
+    extractAudioFromVideo(videoFile, 25)
       .then((payload) => {
         if (active) {
-          setCompressedVideo(payload);
-          setCompressingVideo(false);
+          setExtractedAudio(payload);
+          setExtractingAudio(false);
         }
       })
       .catch((err) => {
         if (active) {
-          console.warn('Compresión visual ligera en segundo plano omitida:', err);
-          setCompressingVideo(false);
+          console.warn('Extraccion de audio omitida:', err);
+          setExtractingAudio(false);
         }
       });
 
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [videoFile]);
 
   const onDrop = useCallback(
@@ -363,13 +361,14 @@ export function ScheduleModal() {
 
     try {
       let res;
-      // Si tenemos fotogramas comprimidos extraídos en el navegador, usar análisis multimodal con Gemini
-      if (compressedVideo && compressedVideo.frames.length > 0) {
-        setAiFeedback(`🤖 Analizando video con ${model}...`);
-        res = await generateDescriptionFromVideo(
+      if (extractedAudio) {
+        // RUTA PRINCIPAL: audio -> Gemini transcribe + genera descripcion en 1 llamada
+        setAiFeedback(`🎙️ Extrayendo subtitulos y generando descripcion con ${model}...`);
+        res = await generateDescriptionFromAudio(
           apiKey,
           model,
-          compressedVideo,
+          extractedAudio.audioBase64,
+          extractedAudio.mimeType,
           videoTitle,
           campaignRules,
           platform,
@@ -378,7 +377,7 @@ export function ScheduleModal() {
           cfg.gemini_temperature ?? 0.7
         );
       } else {
-        // Fallback a generación textual estándar
+        // FALLBACK: solo texto si no hay audio
         setAiFeedback(`🤖 Generando copy con ${model}...`);
         res = await generateWithGemini(
           apiKey,
@@ -395,10 +394,10 @@ export function ScheduleModal() {
           setExtractedSubtitles(res.subtitlesJson);
         }
         const usedName = res.usedModel || model;
-        if (compressedVideo) {
-          setAiFeedback(`✨ Subtítulos y diálogo extraídos en JSON. Copy generado con éxito usando ${usedName}.`);
+        if (extractedAudio) {
+          setAiFeedback(`✨ Subtitulos extraidos y descripcion generada con ${usedName}.`);
         } else {
-          setAiFeedback(`✨ Descripción generada con éxito usando ${usedName}.`);
+          setAiFeedback(`✨ Descripcion generada con exito usando ${usedName}.`);
         }
       } else {
         setAiFeedback(`⚠️ ${res.error || 'No se pudo generar con Gemini'}`);
@@ -720,24 +719,24 @@ export function ScheduleModal() {
                       </span>
                     </div>
 
-                    {/* Badge de optimización para Gemini IA */}
+                    {/* Badge de estado de extraccion de audio */}
                     <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-between gap-2 text-[10px]">
-                      {compressingVideo ? (
+                      {extractingAudio ? (
                         <div className="flex items-center gap-1.5 text-amber-300 font-medium">
                           <Loader2 size={12} className="animate-spin text-amber-400" />
-                          <span>Comprimiendo proxy visual para análisis de IA...</span>
+                          <span>Extrayendo audio para analisis IA...</span>
                         </div>
-                      ) : compressedVideo ? (
+                      ) : extractedAudio ? (
                         <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">
                           <Sparkles size={12} className="text-cyan-400" />
                           <span>
-                            Proxy IA listo: {(compressedVideo.totalPayloadBytes / 1024).toFixed(0)} KB ({compressedVideo.frames.length} fotogramas · {compressedVideo.aspectRatio})
+                            Audio listo: {extractedAudio.durationSeconds}s capturados — IA usara subtitulos del habla
                           </span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
                           <FileVideo size={12} />
-                          <span>Video cargado listo para Drive</span>
+                          <span>Video cargado listo para Drive (sin audio capturable)</span>
                         </div>
                       )}
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-[var(--text-secondary)] font-mono">
@@ -1170,9 +1169,9 @@ export function ScheduleModal() {
                     <span>
                       {generatingAI
                         ? 'Analizando con Gemini...'
-                        : compressedVideo
-                        ? 'Analizar Video con Gemini IA 🎬✨'
-                        : 'Redactar con Gemini IA'}
+                        : extractedAudio
+                        ? 'Generar Descripcion con Subtitulos IA 🎙️✨'
+                        : 'Generar Descripcion con IA ✨'}
                     </span>
                   </button>
                 </div>

@@ -35,8 +35,8 @@ import {
   uploadVideoToGoogleDrive,
   requestGoogleDriveOAuthToken
 } from '@/lib/services/driveService';
-import { generateWithGemini, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
-import { extractVideoStoryboard, VideoAnalysisPayload } from '@/lib/services/videoCompressorService';
+import { generateWithGemini, generateDescriptionFromAudio, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
+import { extractAudioFromVideo, VideoAudioPayload } from '@/lib/services/videoAudioExtractorService';
 import { format } from 'date-fns';
 import { createNotification } from '@/lib/services/notificationService';
 import { verifyScraperPost } from '@/lib/services/scraperService';
@@ -71,8 +71,8 @@ export function VideoDetailModal() {
   const [editDescripcion, setEditDescripcion] = useState('');
   const [editDriveUrl, setEditDriveUrl] = useState('');
   const [replacementFile, setReplacementFile] = useState<File | null>(null);
-  const [compressedReplacement, setCompressedReplacement] = useState<VideoAnalysisPayload | null>(null);
-  const [compressingReplacement, setCompressingReplacement] = useState(false);
+  const [extractedReplacementAudio, setExtractedReplacementAudio] = useState<VideoAudioPayload | null>(null);
+  const [extractingReplacementAudio, setExtractingReplacementAudio] = useState(false);
   const [extractedSubtitles, setExtractedSubtitles] = useState<ExtractedSubtitlesJson | null>(null);
   const [showSubtitlesJson, setShowSubtitlesJson] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -107,8 +107,8 @@ export function VideoDetailModal() {
       setEditDescripcion(video.descripcion_aprobada_ia || '');
       setEditDriveUrl(video.drive_file_url || '');
       setReplacementFile(null);
-      setCompressedReplacement(null);
-      setCompressingReplacement(false);
+      setExtractedReplacementAudio(null);
+      setExtractingReplacementAudio(false);
       setExtractedSubtitles(null);
       setShowSubtitlesJson(false);
       setIsEditing(false);
@@ -118,34 +118,32 @@ export function VideoDetailModal() {
     }
   }, [video]);
 
-  // Extraer fotogramas comprimidos del video de reemplazo para Gemini IA
+  // Extraer audio del video de reemplazo para Gemini IA (mas rapido que fotogramas)
   useEffect(() => {
     if (!replacementFile) {
-      setCompressedReplacement(null);
-      setCompressingReplacement(false);
+      setExtractedReplacementAudio(null);
+      setExtractingReplacementAudio(false);
       return;
     }
 
     let active = true;
-    setCompressingReplacement(true);
+    setExtractingReplacementAudio(true);
 
-    extractVideoStoryboard(replacementFile, 7, 512)
+    extractAudioFromVideo(replacementFile, 25)
       .then((payload) => {
         if (active) {
-          setCompressedReplacement(payload);
-          setCompressingReplacement(false);
+          setExtractedReplacementAudio(payload);
+          setExtractingReplacementAudio(false);
         }
       })
       .catch((err) => {
         if (active) {
-          console.warn('Compresión ligera de reemplazo omitida:', err);
-          setCompressingReplacement(false);
+          console.warn('Extraccion de audio de reemplazo omitida:', err);
+          setExtractingReplacementAudio(false);
         }
       });
 
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [replacementFile]);
 
   // Dropzone para reemplazar video
@@ -221,11 +219,12 @@ export function VideoDetailModal() {
         `REGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}`,
         `HASHTAGS OBLIGATORIOS: ${hashtags}`,
       ].join('\n');
-      if (compressedReplacement && compressedReplacement.frames.length > 0) {
-        res = await generateDescriptionFromVideo(
+      if (extractedReplacementAudio) {
+        res = await generateDescriptionFromAudio(
           cfg.gemini_api_key,
           targetModel,
-          compressedReplacement,
+          extractedReplacementAudio.audioBase64,
+          extractedReplacementAudio.mimeType,
           editTitle,
           campaignRules,
           platform,
@@ -235,14 +234,11 @@ export function VideoDetailModal() {
         );
       } else {
         const userPrompt = [
-          `Escribe la descripción para publicar en ${platform.toUpperCase()} sobre el video titulado "${editTitle}".`,
-          ``,
-          `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPAÑA:`,
+          `Escribe la descripcion para publicar en ${platform.toUpperCase()} sobre el video titulado "${editTitle}".`,
+          `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPANA:`,
           campaignRules,
-          ``,
-          `HASHTAGS QUE DEBES INCLUIR SIN EXCEPCIÓN: ${hashtags}`,
-          ``,
-          `INSTRUCCIONES: Devuelve ÚNICAMENTE el texto final listo para publicar. Sin encabezados, sin JSON, sin comillas al inicio.`,
+          `HASHTAGS QUE DEBES INCLUIR SIN EXCEPCION: ${hashtags}`,
+          `INSTRUCCIONES: Devuelve UNICAMENTE el texto final listo para publicar. Sin encabezados, sin JSON, sin comillas al inicio.`,
         ].join('\n');
         res = await generateWithGemini(
           cfg.gemini_api_key,
@@ -251,7 +247,6 @@ export function VideoDetailModal() {
           systemInstruction,
           cfg.gemini_temperature ?? 0.7
         );
-      }
 
       if (res.success && res.text) {
         setEditDescripcion(res.text);
@@ -260,12 +255,12 @@ export function VideoDetailModal() {
         }
         setEditFeedback({
           success: true,
-          msg: compressedReplacement
-            ? '✨ Subtítulos y diálogo extraídos en JSON. Copy generado con éxito según las reglas de campaña.'
-            : '✨ Copy regenerado con éxito respetando las reglas de la campaña.',
+          msg: extractedReplacementAudio
+            ? `Subtitulos extraidos y descripcion generada usando ${res.usedModel || targetModel}.`
+            : `Copy regenerado con exito respetando las reglas de la campana.`,
         });
       } else {
-        setEditFeedback({ success: false, msg: `⚠️ ${res.error || 'No se pudo generar'}` });
+        setEditFeedback({ success: false, msg: `Aviso: ${res.error || 'No se pudo generar'}` });
       }
     } catch {
       setEditFeedback({ success: false, msg: 'Error de conexión con Gemini.' });

@@ -1,4 +1,4 @@
-// src/lib/services/geminiService.ts
+﻿// src/lib/services/geminiService.ts
 import { VideoAnalysisPayload } from './videoCompressorService';
 
 export interface GeminiConfig {
@@ -36,7 +36,7 @@ export function getStoredGeminiConfig(): GeminiConfig {
   return {
     apiKey: '',
     model: 'gemini-2.0-flash-latest',
-    systemPrompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas, juveniles y llamativas con hashtags de tendencia.',
+    systemPrompt: 'Actua como un experto en copywriting para redes sociales. Genera descripciones dinamicas, juveniles y llamativas con hashtags de tendencia.',
     temperature: 0.7,
   };
 }
@@ -47,7 +47,7 @@ export function saveStoredGeminiConfig(config: GeminiConfig): void {
   }
 }
 
-// Mapa de modelos retirados → sucesor activo oficial
+// Mapa de modelos retirados -> sucesor activo oficial
 const RETIRED_MODEL_MAP: Record<string, string> = {
   'gemini-2.0-flash':                    'gemini-2.0-flash-latest',
   'gemini-2.0-flash-lite':               'gemini-2.0-flash-latest',
@@ -62,24 +62,22 @@ const RETIRED_MODEL_MAP: Record<string, string> = {
 };
 
 /**
- * Limpia el texto devuelto por Gemini de cualquier JSON, bloques de código o encabezados.
- * Garantiza que el campo descripción siempre muestre texto publicable.
+ * Limpia el texto devuelto por Gemini de JSON, bloques de codigo o encabezados.
  */
 function cleanCopyText(raw: string): string {
   return raw
-    .replace(/```json[\s\S]*?```/gi, '')           // eliminar bloques ```json ... ```
-    .replace(/```[\s\S]*?```/g, '')                 // eliminar otros bloques de código
-    .replace(/^\s*\{[\s\S]*?\}\s*\n?/gm, '')        // eliminar objetos JSON inline
-    .replace(/^---COPY---\s*/gm, '')                // eliminar separador ---COPY---
+    .replace(/```json[\s\S]*?```/gi, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/^\s*\{[\s\S]*?\}\s*\n?/gm, '')
+    .replace(/^---COPY---\s*/gm, '')
     .replace(/^\s*"?(gancho_inicial|subtitulos_detectados|tema_principal|llamado_a_la_accion)"?\s*[:\[{].*/gim, '')
-    .replace(/^\s*(Descripci[oó]n|Copy|Resultado|Respuesta)\s*:\s*/gim, '')
-    .replace(/\n{3,}/g, '\n\n')                     // máximo 2 saltos de línea consecutivos
+    .replace(/^\s*(Descripci[oo]n|Copy|Resultado|Respuesta)\s*:\s*/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
 /**
  * Obtiene la lista de modelos disponibles para esta API key.
- * Devuelve nombres de modelos que soporten generateContent.
  */
 async function listAvailableModels(apiKey: string): Promise<string[]> {
   try {
@@ -102,8 +100,8 @@ async function listAvailableModels(apiKey: string): Promise<string[]> {
 }
 
 /**
- * Ejecuta una petición directa a Google Gemini API.
- * Prueba el modelo configurado, luego descubre dinámicamente los disponibles.
+ * Ejecuta una peticion directa a Google Gemini API.
+ * Prueba el modelo configurado, luego descubre dinamicamente los disponibles.
  */
 async function callGoogleGeminiDirect(
   apiKey: string,
@@ -115,14 +113,13 @@ async function callGoogleGeminiDirect(
     return {
       success: false,
       text: '',
-      error: 'La API Key de Gemini es obligatoria. Ingrésala en Settings → Integraciones.',
+      error: 'La API Key de Gemini es obligatoria. Ingresala en Settings -> Integraciones.',
     };
   }
 
   const rawModel = (modelName || 'gemini-2.0-flash-latest').replace(/^models\//, '').trim();
   const resolvedModel = RETIRED_MODEL_MAP[rawModel] ?? rawModel;
 
-  // Lista inicial hardcodeada — modelos activos confirmados (orden de preferencia)
   const KNOWN_MODELS = [
     resolvedModel,
     'gemini-2.0-flash-latest',
@@ -133,13 +130,11 @@ async function callGoogleGeminiDirect(
     'gemini-1.5-pro-latest',
   ];
 
-  // Eliminar duplicados manteniendo orden
   const modelsToTry: string[] = [];
   for (const m of KNOWN_MODELS) {
     if (m && !modelsToTry.includes(m)) modelsToTry.push(m);
   }
 
-  // Probar solo v1beta (más modelos disponibles)
   const apiVersions = ['v1beta', 'v1'];
   let lastErrorMessage = '';
   let allModelsNotFound = true;
@@ -156,7 +151,7 @@ async function callGoogleGeminiDirect(
 
         let responseJson: any = null;
         try { responseJson = JSON.parse(await response.text()); } catch (e: any) {
-          lastErrorMessage = `Respuesta no válida de la API (${response.status})`;
+          lastErrorMessage = `Respuesta no valida de la API (${response.status})`;
           continue;
         }
 
@@ -173,38 +168,34 @@ async function callGoogleGeminiDirect(
 
         const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
 
-        // API Key inválida → parar inmediatamente
         if (response.status === 403 || (response.status === 400 && errMsg.toLowerCase().includes('api key not valid'))) {
           return {
             success: false,
             text: '',
-            error: 'Clave API de Gemini inválida. Genera una nueva en aistudio.google.com/app/apikey.',
+            error: 'Clave API de Gemini invalida. Genera una nueva en aistudio.google.com/app/apikey.',
           };
         }
 
-        // Si el modelo existe pero hay otro error → ya no todos son "not found"
         const isNotFound = response.status === 404 || errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('no longer available');
         if (!isNotFound) allModelsNotFound = false;
 
         lastErrorMessage = errMsg;
         console.warn(`[Gemini] ${currentModel} (${apiVersion}): ${errMsg.slice(0, 120)}`);
       } catch (err: any) {
-        lastErrorMessage = err?.message || 'Error de conexión';
-        console.warn(`[Gemini] ${currentModel} (${apiVersion}) excepción: ${lastErrorMessage}`);
+        lastErrorMessage = err?.message || 'Error de conexion';
+        console.warn(`[Gemini] ${currentModel} (${apiVersion}) excepcion: ${lastErrorMessage}`);
       }
     }
   }
 
-  // Si todos fallaron por "not found", intentar descubrir modelos dinámicamente
   if (allModelsNotFound) {
-    console.warn('[Gemini] Todos los modelos conocidos fallaron. Consultando lista dinámica...');
+    console.warn('[Gemini] Todos los modelos conocidos fallaron. Consultando lista dinamica...');
     const availableModels = await listAvailableModels(cleanKey);
-    // Preferir modelos flash disponibles
     const flashModels = availableModels.filter(m => m.includes('flash'));
     const dynamicList = flashModels.length > 0 ? flashModels : availableModels.slice(0, 3);
 
     for (const currentModel of dynamicList) {
-      if (modelsToTry.includes(currentModel)) continue; // ya se intentó
+      if (modelsToTry.includes(currentModel)) continue;
       for (const apiVersion of ['v1beta', 'v1']) {
         const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/models/${currentModel}:generateContent?key=${cleanKey}`;
         try {
@@ -224,7 +215,7 @@ async function callGoogleGeminiDirect(
           const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
           lastErrorMessage = errMsg;
         } catch (err: any) {
-          lastErrorMessage = err?.message || 'Error de conexión';
+          lastErrorMessage = err?.message || 'Error de conexion';
         }
       }
     }
@@ -237,12 +228,12 @@ async function callGoogleGeminiDirect(
   return {
     success: false,
     text: '',
-    error: `Error Gemini (${resolvedModel}): ${lastErrorMessage || 'Ningún modelo respondió. Verifica tu API Key en aistudio.google.com.'}`,
+    error: `Error Gemini (${resolvedModel}): ${lastErrorMessage || 'Ningun modelo respondio. Verifica tu API Key en aistudio.google.com.'}`,
   };
 }
 
 /**
- * Genera copy textual estándar (sin video) con Gemini.
+ * Genera copy textual estandar (sin video) con Gemini.
  */
 export async function generateWithGemini(
   apiKey: string,
@@ -253,7 +244,7 @@ export async function generateWithGemini(
 ): Promise<GeminiAnalysisResult> {
   const body: any = {
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    generationConfig: { temperature, maxOutputTokens: 1500 },
+    generationConfig: { temperature, maxOutputTokens: 500 },
   };
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
@@ -262,9 +253,60 @@ export async function generateWithGemini(
 }
 
 /**
- * Analiza fotogramas del video con Gemini Vision y genera el copy LIMPIO
- * listo para publicar según las reglas de campaña y plataforma.
- * Solo devuelve texto — sin JSON, sin separadores, sin encabezados.
+ * NUEVO (rapido): Envia el audio del video a Gemini.
+ * Gemini transcribe el habla y genera la descripcion con las reglas de campana
+ * en UNA SOLA llamada API. Sin fotogramas. Tiempo estimado: 1.5-4 segundos.
+ */
+export async function generateDescriptionFromAudio(
+  apiKey: string,
+  model: string,
+  audioBase64: string,
+  audioMimeType: string,
+  videoTitle: string,
+  campaignRules: string,
+  platform: string,
+  hashtags: string,
+  systemInstruction?: string,
+  temperature: number = 0.7
+): Promise<GeminiAnalysisResult> {
+  const userPrompt = `Escucha el audio de este video titulado "${videoTitle}".
+
+1. Identifica el dialogo o subtitulos hablados (maximo 3 lineas de contexto).
+2. Usando esa transcripcion como contexto, redacta la descripcion final para publicar en ${platform.toUpperCase()}.
+
+REGLAS OBLIGATORIAS DE CAMPANA:
+${campaignRules}
+
+Hashtags OBLIGATORIOS: ${hashtags}
+
+FORMATO DE RESPUESTA:
+Devuelve UNICAMENTE el texto de la descripcion lista para publicar.
+Usa emojis apropiados para ${platform.toUpperCase()}.
+Incluye los hashtags al final.
+NO pongas "Transcripcion:", "Descripcion:", JSON, ni bloques de codigo.
+NO pongas comillas al inicio o al final.`.trim();
+
+  const body: any = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { inline_data: { mime_type: audioMimeType, data: audioBase64 } },
+        { text: userPrompt },
+      ],
+    }],
+    generationConfig: { temperature, maxOutputTokens: 500 },
+  };
+
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  return callGoogleGeminiDirect(apiKey, model, body);
+}
+
+/**
+ * LEGACY: Analiza fotogramas del video con Gemini Vision.
+ * Fallback si el audio no esta disponible.
  */
 export async function generateDescriptionFromVideo(
   apiKey: string,
@@ -281,29 +323,17 @@ export async function generateDescriptionFromVideo(
     inline_data: { mime_type: 'image/jpeg', data: frameBase64 },
   }));
 
-  const userPrompt = `Analiza los fotogramas de este video (duración: ${videoPayload.durationSeconds}s, formato: ${videoPayload.aspectRatio}, título: "${videoTitle}").
-
-Observa el contenido visual, los textos en pantalla, el estilo y el mensaje del video.
-
-Escribe la descripción final para publicar en ${platform.toUpperCase()} siguiendo ESTRICTAMENTE estas reglas de campaña:
+  const userPrompt = `Analiza los fotogramas del video titulado "${videoTitle}".
+Escribe la descripcion para publicar en ${platform.toUpperCase()} siguiendo ESTAS REGLAS:
 ${campaignRules}
-
-Hashtags OBLIGATORIOS a incluir: ${hashtags}
-
-INSTRUCCIONES DE FORMATO — SEGUIR AL PIE DE LA LETRA:
-✅ Devuelve ÚNICAMENTE el texto de la descripción, listo para copiar y pegar
-✅ Usa emojis apropiados para ${platform.toUpperCase()}
-✅ Incluye los hashtags al final
-✅ Adapta el tono y estilo a ${platform.toUpperCase()}
-❌ NO incluyas JSON, llaves, corchetes ni bloques de código
-❌ NO incluyas encabezados como "Descripción:", "Copy:", "Aquí está:" ni similares
-❌ NO incluyas comillas al inicio o al final del texto`.trim();
+Hashtags OBLIGATORIOS: ${hashtags}
+Devuelve UNICAMENTE el texto listo para publicar, sin encabezados, sin comillas, sin JSON.`.trim();
 
   imageParts.push({ text: userPrompt });
 
   const body: any = {
     contents: [{ role: 'user', parts: imageParts }],
-    generationConfig: { temperature, maxOutputTokens: 1500 },
+    generationConfig: { temperature, maxOutputTokens: 500 },
   };
 
   if (systemInstruction) {
