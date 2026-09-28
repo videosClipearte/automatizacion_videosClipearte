@@ -319,7 +319,7 @@ async function handleLinkConfirmation(
   const video = conf.publicaciones;
   const now = new Date().toISOString();
 
-  // 1. Actualizar confirmación como CONFIRMADO con el link
+  // 1. Marcar confirmación como CONFIRMADO
   await db
     .from('confirmaciones_telegram')
     .update({
@@ -330,53 +330,79 @@ async function handleLinkConfirmation(
     })
     .eq('id', conf.id);
 
-  // 2. Marcar el video como PUBLICADO y guardar el link del post
-  await db
-    .from('publicaciones')
-    .update({
+  // 2. Llamar a la API interna confirm-publication que:
+  //    - Extrae métricas reales del post (vistas, likes, comentarios, etc.)
+  //    - Actualiza publicaciones a PUBLICADO + vistas_obtenidas
+  //    - Inserta en metricas_extraidas_scraper con métricas reales
+  //    - Registra en reels_rastreados para que aparezca en Analíticas
+  let scraped = false;
+  let metricsMsg = '';
+
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
+                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+
+    const confirmRes = await fetch(`${baseUrl}/api/telegram/confirm-publication`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicacion_id: conf.publicacion_id,
+        post_url: url.trim(),
+        cuenta_id: video?.cuenta_id,
+      }),
+    });
+
+    const confirmData = await confirmRes.json();
+    scraped = confirmData.scraped || false;
+    metricsMsg = confirmData.message || '';
+
+    if (!confirmRes.ok || !confirmData.success) {
+      console.warn('[TelegramBot] confirm-publication API error:', confirmData.error);
+      // Fallback mínimo si la API falla: al menos marcar como PUBLICADO
+      await db.from('publicaciones').update({
+        estado: 'PUBLICADO',
+        publicado_en: now,
+        post_url_publica: url.trim(),
+        updated_at: now,
+      }).eq('id', conf.publicacion_id);
+    }
+  } catch (apiErr: any) {
+    console.error('[TelegramBot] Error llamando a confirm-publication:', apiErr?.message);
+    // Fallback mínimo
+    await db.from('publicaciones').update({
       estado: 'PUBLICADO',
       publicado_en: now,
       post_url_publica: url.trim(),
       updated_at: now,
-    })
-    .eq('id', conf.publicacion_id);
+    }).eq('id', conf.publicacion_id);
+  }
 
-  // 3. Registrar estadísticas iniciales en metricas_extraidas_scraper
-  await db.from('metricas_extraidas_scraper').insert({
-    publicacion_id: conf.publicacion_id,
-    cuenta_id: video?.cuenta_id || null,
-    vistas: 0,
-    likes: 0,
-    comentarios: 0,
-    compartidos: 0,
-    guardados: 0,
-    alcance: 0,
-    post_url: url.trim(),
-    fuente: 'telegram',
-    estado_confirmado: true,
-    fecha_extraccion: now,
-  });
-
-  // 4. Crear notificación en la app
+  // 3. Crear notificación en la app
   try {
     await createNotification({
       tipo: 'success',
       titulo: `Video publicado confirmado`,
-      mensaje: `"${video?.titulo || conf.publicacion_id}" fue confirmado como PUBLICADO. Link: ${url}`,
+      mensaje: `"${video?.titulo || conf.publicacion_id}" fue confirmado como PUBLICADO. ${metricsMsg}`,
       origen: 'telegram',
     });
   } catch {}
 
-  // 5. Responder al admin en Telegram
+  // 4. Responder al admin en Telegram con resultado de la extracción
   const safeTitle = escapeHtml(video?.titulo || 'Video');
+  const statsLine = scraped
+    ? `📊 <i>Métricas extraídas automáticamente y guardadas en Analíticas.</i>`
+    : `📊 <i>Las métricas se actualizarán manualmente en Analíticas (no se pudieron extraer automáticamente).</i>`;
+
   const successMsg = [
     `🎉 <b>PUBLICACIÓN REGISTRADA EXITOSAMENTE</b>`,
     `━━━━━━━━━━━━━━━━━━━━`,
     `🎬 <b>Video:</b> ${safeTitle}`,
     `🔗 <b>Link guardado:</b> ${escapeHtml(url.trim())}`,
-    `📊 <b>Estado:</b> <b>PUBLICADO</b> ✅`,
+    `📈 <b>Estado:</b> <b>PUBLICADO</b> ✅`,
     ``,
-    `<i>Las estadísticas iniciales han sido creadas. El scraper actualizará las vistas y métricas automáticamente.</i>`,
+    statsLine,
+    ``,
+    `<i>Puedes ver las estadísticas en la sección <b>Analíticas</b> de la app.</i>`,
   ].join('\n');
 
   await sendTelegramMessage(botToken, chatId, successMsg, 'HTML', {
@@ -386,6 +412,7 @@ async function handleLinkConfirmation(
 
   return true;
 }
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers: menú de ayuda

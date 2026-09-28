@@ -22,3 +22,10 @@ CREATE INDEX IF NOT EXISTS idx_reels_rastreados_fecha ON public.reels_rastreados
 
 ALTER TABLE public.reels_rastreados ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_full_access" ON public.reels_rastreados FOR ALL USING (true) WITH CHECK (true);
+
+-- Columna para relacionar el reel con el video programado (confirmación via Telegram)
+ALTER TABLE public.reels_rastreados
+    ADD COLUMN IF NOT EXISTS publicacion_id TEXT REFERENCES public.publicaciones(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_reels_rastreados_pub ON public.reels_rastreados(publicacion_id);
+
