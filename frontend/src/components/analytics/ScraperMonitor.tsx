@@ -94,7 +94,7 @@ function extractHashtags(campaignBase?: string, desc?: string): string[] {
 }
 
 export function ScraperMonitor() {
-  const { videos, accounts, campaigns, selectedAccountId, updateVideo } = useAppStore();
+  const { videos, accounts, campaigns, selectedAccountId, updateVideo, refreshData } = useAppStore();
 
   const currentAccountId = selectedAccountId || accounts[0]?.id || '';
   const selectedAccount = accounts.find((a) => a.id === currentAccountId) ?? accounts[0];
@@ -133,7 +133,7 @@ export function ScraperMonitor() {
     return videos.filter((v) => v.cuenta_id === selectedAccount.id);
   }, [videos, selectedAccount]);
 
-  // Ejecuta la extracción real del perfil al cambiar de cuenta o al hacer clic
+  // Ejecuta la extracción real del perfil y el re-escaneo en vivo de todos los reels
   const handleInspectSocialProfile = useCallback(async () => {
     if (!selectedAccount) return;
     setProbing(true);
@@ -145,65 +145,106 @@ export function ScraperMonitor() {
     const username = (selectedAccount.username || '').replace(/^@/, '');
 
     try {
-      const res = await fetch('/api/scraper/inspect-profile', {
+      // 1. Llamar al endpoint que re-escanea el perfil Y todas las URLs de reels en vivo
+      const res = await fetch('/api/scraper/rescan-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, platform }),
+        body: JSON.stringify({ cuenta_id: selectedAccount.id }),
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setProfileData({
-          nickname: data.nickname,
-          bio: data.bio,
-          avatarUrl: data.avatarUrl,
-          profileUrl: data.profileUrl,
-          videoCount: data.videoCount || 0,
-          heartCount: data.heartCount || 0,
-          followerCount: data.followerCount || 0,
-          htmlOk: data.htmlOk,
-          httpStatus: data.httpStatus,
-          message: data.message,
-          lastChecked: new Date().toLocaleTimeString(),
-        });
+        if (data.profileData) {
+          setProfileData({
+            nickname: data.profileData.nickname,
+            bio: data.profileData.bio,
+            avatarUrl: data.profileData.avatarUrl,
+            profileUrl: data.profileData.profileUrl,
+            videoCount: data.profileData.videoCount || 0,
+            heartCount: data.profileData.heartCount || 0,
+            followerCount: data.profileData.followerCount || 0,
+            htmlOk: data.profileData.htmlOk,
+            httpStatus: data.profileData.httpStatus,
+            message: data.profileData.message || '',
+            lastChecked: new Date().toLocaleTimeString(),
+          });
+        }
 
-        const reels: LiveReelItem[] = Array.isArray(data.recentReels) ? data.recentReels : [];
-        setLiveReels(reels);
-        setLiveReelsStatus(reels.length > 0 ? 'done' : 'empty');
-        setLiveReelsDebug(
-          data.debugInfo ||
-          (reels.length === 0
-            ? `Sin reels. HTTP perfil: ${data.httpStatus}. ${data.message}`
-            : '')
-        );
+        if (Array.isArray(data.trackedReels)) {
+          setTrackedReels(data.trackedReels);
+        }
+
+        // 2. Refrescar el store global de videos de Supabase para reflejar confirmaciones de Telegram
+        await refreshData();
+
+        setLiveReelsStatus('done');
+        setReelFeedback({
+          success: true,
+          msg: data.message || `✅ Perfil y reels re-escaneados en vivo exitosamente (${data.reelsActualizados || 0} reels analizados).`,
+        });
       } else {
-        setLiveReelsStatus('empty');
-        setLiveReelsDebug(`Error: ${data.error || res.status}`);
+        // Fallback al inspector de perfil estándar
+        const fallbackRes = await fetch('/api/scraper/inspect-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, platform }),
+        });
+        const fbData = await fallbackRes.json();
+        if (fallbackRes.ok && fbData.success) {
+          setProfileData({
+            nickname: fbData.nickname,
+            bio: fbData.bio,
+            avatarUrl: fbData.avatarUrl,
+            profileUrl: fbData.profileUrl,
+            videoCount: fbData.videoCount || 0,
+            heartCount: fbData.heartCount || 0,
+            followerCount: fbData.followerCount || 0,
+            htmlOk: fbData.htmlOk,
+            httpStatus: fbData.httpStatus,
+            message: fbData.message,
+            lastChecked: new Date().toLocaleTimeString(),
+          });
+          await refreshData();
+        }
       }
     } catch (err: any) {
-      console.warn('Error al extraer perfil:', err);
+      console.warn('Error al re-escanear perfil y reels:', err);
       setLiveReelsStatus('empty');
       setLiveReelsDebug(`Error de red: ${err?.message}`);
     } finally {
       setProbing(false);
     }
-  }, [selectedAccount]);
+  }, [selectedAccount, refreshData]);
 
-  // Carga inicial al seleccionar cuenta
-  useEffect(() => {
-    handleInspectSocialProfile();
-  }, [selectedAccount?.id, handleInspectSocialProfile]);
-
-  // Cargar reels rastreados desde Supabase al cambiar de cuenta
+  // Carga inicial y refresco al seleccionar cuenta
   useEffect(() => {
     if (!selectedAccount?.id) return;
-    setTrackedLoading(true);
+    refreshData();
     fetch(`/api/reels-rastreados?cuenta_id=${selectedAccount.id}`)
       .then((r) => r.json())
       .then((d) => setTrackedReels(d.reels || []))
-      .catch(() => {})
-      .finally(() => setTrackedLoading(false));
-  }, [selectedAccount?.id]);
+      .catch(() => {});
+    handleInspectSocialProfile();
+  }, [selectedAccount?.id, refreshData, handleInspectSocialProfile]);
+
+  // Refrescar automáticamente cuando el usuario regresa a la pestaña (p.ej. tras confirmar en Telegram)
+  useEffect(() => {
+    function onFocus() {
+      if (selectedAccount?.id) {
+        refreshData();
+        fetch(`/api/reels-rastreados?cuenta_id=${selectedAccount.id}`)
+          .then((r) => r.json())
+          .then((d) => setTrackedReels(d.reels || []))
+          .catch(() => {});
+      }
+    }
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(onFocus, 30000); // Polling ligero en segundo plano
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
+  }, [selectedAccount?.id, refreshData]);
 
   // Importar múltiples URLs en bulk
   const handleBulkImport = async (e: React.FormEvent) => {
@@ -386,7 +427,7 @@ export function ScraperMonitor() {
       return dateB - dateA;
     });
 
-    return sorted.map((video, index) => {
+    const pubReels: ScrapedReelItem[] = sorted.map((video, index) => {
       const camp = campaigns.find((c) => c.id === video.campana_id)
         || campaigns.find((c) => c.cuentas_ids?.includes(selectedAccount.id))
         || campaigns[0];
@@ -429,6 +470,38 @@ export function ScraperMonitor() {
         matchedKeywords: campaignHashtags,
       };
     });
+
+    // También incluir reels de trackedReels que no tengan un video asociado en pubReels
+    const matchedTrackedIds = new Set(
+      accountVideos
+        .map((v) => {
+          const matched = trackedReels.find(
+            (tr) => (tr.publicacion_id && tr.publicacion_id === v.id) ||
+                    (v.post_url_publica && tr.url === v.post_url_publica)
+          );
+          return matched?.id;
+        })
+        .filter(Boolean)
+    );
+
+    const standaloneTracked: ScrapedReelItem[] = trackedReels
+      .filter((tr) => !matchedTrackedIds.has(tr.id))
+      .map((tr, idx) => ({
+        id: tr.id,
+        posicion: pubReels.length + idx + 1,
+        titulo: tr.titulo || `Reel de @${selectedAccount.username}`,
+        descripcionReal: tr.descripcion || 'Sin descripción extraída',
+        vistas: tr.vistas || 0,
+        likes: tr.likes || 0,
+        postUrl: tr.url,
+        fecha: tr.fecha_publicacion ? new Date(tr.fecha_publicacion) : new Date(tr.fecha_registro),
+        origen: 'registrado_con_url' as const,
+        campaignName: 'Rastreado en vivo',
+        campaignHashtags: [],
+        matchedKeywords: [],
+      }));
+
+    return [...pubReels, ...standaloneTracked];
   }, [accountVideos, selectedAccount, campaigns, profileData, trackedReels]);
 
   return (

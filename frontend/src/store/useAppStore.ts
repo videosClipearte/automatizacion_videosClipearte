@@ -138,6 +138,7 @@ interface AppState {
 
   // Bootstrap desde Supabase
   initializeStore: () => Promise<void>;
+  refreshData: () => Promise<void>;
 
   setCalendarView: (view: CalendarView) => void;
   setSelectedAccountId: (id: string | null) => void;
@@ -225,6 +226,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       const msg = err?.message ?? 'Error al cargar datos de Supabase';
       console.error('[Supabase] initializeStore falló:', msg);
       set({ isLoading: false, loadError: msg });
+    }
+  },
+
+  refreshData: async () => {
+    try {
+      const db = getSupabase();
+      const [accRes, campRes, vidRes] = await Promise.all([
+        db.from('cuentas').select('*').order('created_at', { ascending: true }),
+        db.from('campanas').select('*').order('created_at', { ascending: true }),
+        db.from('publicaciones').select('*').order('programado_para', { ascending: true }),
+      ]);
+      if (!accRes.error && !campRes.error && !vidRes.error) {
+        const accounts = (accRes.data ?? []).map(mapAccount);
+        const campaigns = (campRes.data ?? []).map(mapCampaign);
+        const videos = (vidRes.data ?? []).map(mapVideo);
+        set({
+          accounts,
+          campaigns,
+          videos,
+          metrics: computeMetrics(videos),
+        });
+      }
+    } catch (err: any) {
+      console.warn('[useAppStore] refreshData falló:', err?.message);
     }
   },
 
