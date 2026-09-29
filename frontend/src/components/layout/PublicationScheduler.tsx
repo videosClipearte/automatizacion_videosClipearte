@@ -41,12 +41,23 @@ export function PublicationScheduler() {
   const isPollingCommandsRef = useRef<boolean>(false);
   const alertedDelaysRef = useRef<Set<string>>(new Set());
 
+  // Refs mutables para acceder siempre a los datos frescos sin provocar re-montajes continuos del efecto
+  const videosRef = useRef(videos);
+  videosRef.current = videos;
+  const accountsRef = useRef(accounts);
+  accountsRef.current = accounts;
+  const campaignsRef = useRef(campaigns);
+  campaignsRef.current = campaigns;
+  const updateVideoRef = useRef(updateVideo);
+  updateVideoRef.current = updateVideo;
+
   useEffect(() => {
     const checkScheduledPublications = async () => {
       const now = new Date();
+      const currentVideos = videosRef.current;
 
       // Desbloquear videos que estén PROGRAMADOS y cuya fecha sea futura (ej. fueron reprogramados)
-      videos.forEach((v) => {
+      currentVideos.forEach((v) => {
         if (v.estado === 'PROGRAMADO' && new Date(v.programado_para).getTime() > now.getTime()) {
           processingRef.current.delete(v.id);
           alertedDelaysRef.current.delete(v.id);
@@ -55,7 +66,7 @@ export function PublicationScheduler() {
       });
 
       // Buscar videos que estén PROGRAMADOS y cuya hora ya se haya cumplido
-      const dueVideos = videos.filter((v) => {
+      const dueVideos = currentVideos.filter((v) => {
         if (v.estado !== 'PROGRAMADO') return false;
         if (processingRef.current.has(v.id)) return false;
         const progTime = new Date(v.programado_para);
@@ -84,7 +95,7 @@ export function PublicationScheduler() {
             console.log(`[PublicationScheduler] Video "${video.titulo}" ya fue procesado por otro mecanismo (estado actual: ${freshVideo?.estado}). Saltando.`);
             // Sincronizar store local
             if (freshVideo && freshVideo.estado !== video.estado) {
-              await updateVideo(video.id, { estado: freshVideo.estado });
+              await updateVideoRef.current(video.id, { estado: freshVideo.estado });
             }
             continue;
           }
@@ -105,8 +116,8 @@ export function PublicationScheduler() {
           const botToken = cfg.telegram_bot_token;
           const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id).trim();
 
-          const account = accounts.find((a) => a.id === video.cuenta_id);
-          const campaign = campaigns.find((c) => c.id === video.campana_id);
+          const account = accountsRef.current.find((a) => a.id === video.cuenta_id);
+          const campaign = campaignsRef.current.find((c) => c.id === video.campana_id);
 
           const horaLocal = formatLocalDateTime(video.programado_para);
 
@@ -193,7 +204,7 @@ export function PublicationScheduler() {
           }
 
           // Sincronizar store local
-          await updateVideo(video.id, {
+          await updateVideoRef.current(video.id, {
             estado: 'ENVIADO',
             enviado_en: new Date(),
           });
@@ -244,15 +255,18 @@ export function PublicationScheduler() {
           const botToken = cfg.telegram_bot_token?.trim();
           const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id || '').trim();
 
-          if (botToken && targetChat && accounts.length > 0) {
+          const currentAccounts = accountsRef.current;
+          const currentVideos = videosRef.current;
+
+          if (botToken && targetChat && currentAccounts.length > 0) {
             let reportBody = `📊 <b>REPORTE DIARIO DE CUOTAS Y PUBLICACIONES FALTANTES</b>\n━━━━━━━━━━━━━━━━━━━━\n📅 <b>Fecha:</b> ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}\n\n`;
 
             let totalTarget = 0;
             let totalPublished = 0;
             let anyMissing = false;
 
-            accounts.forEach((acc) => {
-              const todayVideos = videos.filter(
+            currentAccounts.forEach((acc) => {
+              const todayVideos = currentVideos.filter(
                 (v) => v.cuenta_id === acc.id && isToday(new Date(v.programado_para))
               );
               const pubCount = todayVideos.filter((v) => v.estado === 'PUBLICADO').length;
@@ -299,7 +313,8 @@ export function PublicationScheduler() {
     // Comprobador de tolerancia y advertencia de retrasos en el Centro de Avisos
     const checkToleranceAlerts = async () => {
       const now = new Date();
-      const overdueVideos = videos.filter((v) => {
+      const currentVideos = videosRef.current;
+      const overdueVideos = currentVideos.filter((v) => {
         if (v.estado !== 'PROGRAMADO') return false;
         const progTime = new Date(v.programado_para).getTime();
         // Más de 20 minutos de retraso
@@ -310,7 +325,7 @@ export function PublicationScheduler() {
         if (!alertedDelaysRef.current.has(ov.id)) {
           alertedDelaysRef.current.add(ov.id);
           const diffMins = Math.round((now.getTime() - new Date(ov.programado_para).getTime()) / 60000);
-          const acc = accounts.find((a) => a.id === ov.cuenta_id);
+          const acc = accountsRef.current.find((a) => a.id === ov.cuenta_id);
           await createNotification({
             tipo: 'warning',
             titulo: 'Tolerancia de tiempo excedida',
@@ -370,7 +385,8 @@ export function PublicationScheduler() {
     // Comprobador silencioso del Scraper para videos ENVIADOS:
     // Solo cambia el estado a PUBLICADO cuando el scraper comprueba que la descripción coincide
     const checkScraperVerifications = async () => {
-      const sentVideos = videos.filter((v) => v.estado === 'ENVIADO');
+      const currentVideos = videosRef.current;
+      const sentVideos = currentVideos.filter((v) => v.estado === 'ENVIADO');
       for (const v of sentVideos) {
         const key = `scraped_verify_${v.id}`;
         if (alertedDelaysRef.current.has(key)) continue;
@@ -380,11 +396,11 @@ export function PublicationScheduler() {
         if (Date.now() - sentTime < 60 * 1000) continue;
 
         alertedDelaysRef.current.add(key);
-        const account = accounts.find((a) => a.id === v.cuenta_id);
+        const account = accountsRef.current.find((a) => a.id === v.cuenta_id);
         const res = await verifyScraperPost(v, account);
 
         if (res.success && res.is_live && res.description_matched) {
-          await updateVideo(v.id, {
+          await updateVideoRef.current(v.id, {
             estado: 'PUBLICADO',
             publicado_en: new Date(),
             post_url_publica: res.post_url,
@@ -395,30 +411,42 @@ export function PublicationScheduler() {
       }
     };
 
-    // Comprobador de publicaciones cada 15 segundos
+    // Comprobador de publicaciones inicial
     checkScheduledPublications();
     checkDailyQuotaAlert();
     checkToleranceAlerts();
     checkScraperVerifications();
     checkTelegramCommands();
 
+    // Intervalo de publicaciones cada 15s (pausado si la pestaña no es visible para ahorrar CPU)
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       checkScheduledPublications();
       checkDailyQuotaAlert();
       checkToleranceAlerts();
       checkScraperVerifications();
     }, 15000);
 
-    // Escuchar comandos de Telegram cada 4 segundos
+    // Escuchar comandos de Telegram cada 12 segundos (reducido de 4s a 12s para optimizar CPU y red)
     const commandInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       checkTelegramCommands();
-    }, 4000);
+    }, 12000);
+
+    // Listener para reanudar de inmediato cuando el usuario regresa a la pestaña
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        checkScheduledPublications();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       clearInterval(interval);
       clearInterval(commandInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [videos, accounts, campaigns, updateVideo]);
+  }, []); // Sin dependencias reactivas: se monta una sola vez y no satura CPU
 
   return null;
 }

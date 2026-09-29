@@ -1,6 +1,5 @@
 'use client';
 // src/components/calendar/VideoCard.tsx
-import { motion } from 'framer-motion';
 import { cn, getPlatformColor } from '@/lib/utils';
 import type { Video, Account } from '@/store/useAppStore';
 
@@ -19,12 +18,9 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
   const platformColor = account ? getPlatformColor(account.plataforma) : '#10b981';
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.85 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: index * 0.05 }}
+    <div
       onClick={onClick}
-      className="relative group cursor-pointer"
+      className="relative group cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95 will-change-transform"
       style={{ marginTop: index > 0 ? '-10px' : '0' }}
     >
       {/* Circular thumbnail */}
@@ -66,6 +62,6 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
           }}
         />
       )}
-    </motion.div>
+    </div>
   );
 }

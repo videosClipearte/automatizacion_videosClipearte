@@ -776,14 +776,14 @@ export function CalendarView() {
                         {format(day, 'd')}
                       </span>
                       {isHovered && isCurrentMonth && (
-                        <motion.button
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
+                        <button
+                          type="button"
                           onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
-                          className="w-5 h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                          className="w-5 h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-all duration-150 active:scale-95 animate-in fade-in zoom-in-90"
+                          title="Programar para este día"
                         >
                           <Plus size={10} />
-                        </motion.button>
+                        </button>
                       )}
                     </div>
 

@@ -1,7 +1,6 @@
 'use client';
 // src/components/analytics/RecentCarousel.tsx
 import { useRef } from 'react';
-import { motion } from 'framer-motion';
 import { Clock, ChevronLeft, ChevronRight, Eye, Send, Play, Globe } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -80,13 +79,10 @@ export function RecentCarousel() {
           const isDone = video.estado === 'PUBLICADO';
 
           return (
-            <motion.div
+            <div
               key={video.id}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.03 }}
               onClick={() => setSelectedVideoId(video.id)}
-              className="shrink-0 w-44 p-2.5 rounded-2xl glass border border-[var(--border)] hover:border-emerald-500/40 hover:bg-white/[0.04] transition-all cursor-pointer group shadow-sm flex flex-col"
+              className="shrink-0 w-44 p-2.5 rounded-2xl glass border border-[var(--border)] hover:border-emerald-500/40 hover:bg-white/[0.04] transition-all duration-200 cursor-pointer group shadow-sm flex flex-col active:scale-98 will-change-transform"
             >
               {/* Thumbnail Container */}
               <div
@@ -128,7 +124,7 @@ export function RecentCarousel() {
                 <span>@{account?.username}</span>
                 <span>{formatRelative(video.programado_para)}</span>
               </div>
-            </motion.div>
+            </div>
           );
         })}
       </div>
