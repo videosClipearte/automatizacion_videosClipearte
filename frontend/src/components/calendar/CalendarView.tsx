@@ -386,21 +386,16 @@ export function CalendarView() {
                     )}
                     title="Haz clic para ver el cronograma completo de este día"
                   >
-                    {/* Contenedor Drop Zone para arrastrar videos a este día */}
-                    {isDragging && (
+                    {/* Contenedor Drop Zone: solo visible punteado cuando el archivo está sobre este día */}
+                    {isDayTargeted && (
                       <div
-                        className={cn(
-                          'absolute inset-1 z-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-1 text-center transition-all duration-150 pointer-events-none will-change-transform',
-                          isDayTargeted
-                            ? 'bg-emerald-500/40 border-emerald-400 text-white shadow-lg ring-2 ring-emerald-400/60 scale-[1.02]'
-                            : 'bg-emerald-950/70 border-emerald-500/40 text-emerald-200 backdrop-blur-[2px]'
-                        )}
+                        className="absolute inset-1 z-20 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-500/35 text-white shadow-lg ring-2 ring-emerald-400/60 scale-[1.02] flex flex-col items-center justify-center p-1 text-center transition-all duration-150 pointer-events-none will-change-transform backdrop-blur-[2px]"
                       >
-                        <Upload size={isDayTargeted ? 18 : 14} className={cn('text-emerald-300', isDayTargeted && 'animate-bounce text-white')} />
+                        <Upload size={18} className="text-emerald-200 animate-bounce" />
                         <span className="text-[10px] font-bold leading-tight mt-1 line-clamp-1 px-1">
-                          {isDayTargeted ? `Soltar: ${format(day, 'd MMM')}` : format(day, 'd MMM')}
+                          Soltar: {format(day, 'd MMM')}
                         </span>
-                        <span className="text-[8px] text-emerald-300/80 font-medium">Programar</span>
+                        <span className="text-[8px] text-emerald-200/90 font-medium">Programar aquí</span>
                       </div>
                     )}
 
@@ -511,30 +506,22 @@ export function CalendarView() {
                     )}
                     title="Haz clic en el día para ver la vista diaria detallada"
                   >
-                    {/* Contenedor Drop Zone para arrastrar videos a este día de la semana */}
-                    {isDragging && (
+                    {/* Contenedor Drop Zone: solo visible punteado cuando el archivo está sobre este día */}
+                    {isDayTargeted && (
                       <div
-                        className={cn(
-                          'absolute inset-2 z-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-3 text-center transition-all duration-150 pointer-events-none will-change-transform',
-                          isDayTargeted
-                            ? 'bg-emerald-500/45 border-emerald-400 text-white shadow-xl ring-2 ring-emerald-400/60 scale-[1.01]'
-                            : 'bg-emerald-950/75 border-emerald-500/45 text-emerald-200 backdrop-blur-[2px]'
-                        )}
+                        className="absolute inset-2 z-20 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-500/40 text-white shadow-xl ring-2 ring-emerald-400/60 scale-[1.01] flex flex-col items-center justify-center p-3 text-center transition-all duration-150 pointer-events-none will-change-transform backdrop-blur-[3px]"
                       >
-                        <div className={cn(
-                          'w-11 h-11 rounded-2xl flex items-center justify-center mb-2 shadow-sm',
-                          isDayTargeted ? 'bg-emerald-400/30 text-emerald-200 animate-bounce' : 'bg-emerald-500/20 text-emerald-300'
-                        )}>
+                        <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-2 shadow-sm bg-emerald-400/30 text-emerald-200 animate-bounce">
                           <Upload size={22} />
                         </div>
                         <p className="text-xs font-bold text-white">
-                          {isDayTargeted ? '¡Soltar video aquí!' : 'Programar en este día'}
+                          ¡Soltar video aquí!
                         </p>
-                        <p className="text-[11px] text-emerald-300 font-semibold capitalize mt-1">
+                        <p className="text-[11px] text-emerald-200 font-semibold capitalize mt-1">
                           {format(day, "EEEE d 'de' MMMM", { locale: es })}
                         </p>
-                        <span className="text-[10px] text-emerald-300/70 mt-1">
-                          Suelta para abrir configurador
+                        <span className="text-[10px] text-emerald-200/80 mt-1">
+                          Suelta para programar en este día
                         </span>
                       </div>
                     )}
@@ -663,23 +650,18 @@ export function CalendarView() {
                       </span>
                     </div>
                     <div className="flex-1 min-h-[46px] border-l-2 border-[var(--border)] pl-4 flex flex-col justify-center relative">
-                      {/* Contenedor Drop Zone para arrastrar videos a esta hora específica */}
-                      {isDragging ? (
+                      {/* Contenedor Drop Zone: solo visible punteado en la hora donde está encima el archivo */}
+                      {isHourTargeted ? (
                         <div
-                          className={cn(
-                            'rounded-xl border-2 border-dashed py-2 px-3.5 flex items-center justify-between transition-all duration-150 pointer-events-none will-change-transform',
-                            isHourTargeted
-                              ? 'bg-emerald-500/40 border-emerald-400 text-white shadow-md ring-2 ring-emerald-400/60 scale-[1.01]'
-                              : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-                          )}
+                          className="rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-500/35 text-white shadow-md ring-2 ring-emerald-400/60 scale-[1.01] py-2.5 px-3.5 flex items-center justify-between transition-all duration-150 pointer-events-none will-change-transform"
                         >
                           <div className="flex items-center gap-2">
-                            <Upload size={14} className={cn('text-emerald-300', isHourTargeted && 'animate-bounce text-white')} />
+                            <Upload size={14} className="text-emerald-200 animate-bounce" />
                             <span className="text-xs font-bold">
-                              {isHourTargeted ? `¡Soltar para programar a las ${hour.toString().padStart(2, '0')}:00!` : `Programar a las ${hour.toString().padStart(2, '0')}:00`}
+                              ¡Soltar para programar a las {hour.toString().padStart(2, '0')}:00!
                             </span>
                           </div>
-                          <span className="text-[10px] font-mono text-emerald-300 font-bold px-2 py-0.5 rounded bg-emerald-500/25 border border-emerald-500/30">
+                          <span className="text-[10px] font-mono text-emerald-200 font-bold px-2 py-0.5 rounded bg-emerald-500/30 border border-emerald-500/40">
                             {hour.toString().padStart(2, '0')}:00 hs
                           </span>
                         </div>
