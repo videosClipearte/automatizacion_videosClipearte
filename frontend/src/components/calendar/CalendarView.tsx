@@ -62,8 +62,20 @@ export function CalendarView() {
   // Drag state
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
+  const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Prevenir que el navegador abra el archivo en ventana y detectar arrastre de archivos
+  // Limpieza total y segura del estado de arrastre (evita bloqueos si no se suelta o se cancela)
+  const clearDragState = useCallback(() => {
+    setIsDragging(false);
+    setDragOverDay(null);
+    dragCounter.current = 0;
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+      dragTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Prevenir que el navegador abra el archivo en ventana y detectar arrastre de archivos con auto-limpieza
   useEffect(() => {
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault();
@@ -72,36 +84,64 @@ export function CalendarView() {
         setIsDragging(true);
       }
     };
+
     const onDragOver = (e: DragEvent) => {
       e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
     };
+
     const onDragLeave = (e: DragEvent) => {
       e.preventDefault();
       dragCounter.current = Math.max(0, dragCounter.current - 1);
-      if (dragCounter.current === 0) {
-        setIsDragging(false);
-        setDragOverDay(null);
+      if (dragCounter.current === 0 || !e.relatedTarget || (e.clientX <= 0 && e.clientY <= 0)) {
+        clearDragState();
       }
     };
+
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
-      dragCounter.current = 0;
-      setIsDragging(false);
-      setDragOverDay(null);
+      clearDragState();
+    };
+
+    const onDragEnd = () => {
+      clearDragState();
+    };
+
+    const onMouseUp = () => {
+      clearDragState();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        clearDragState();
+      }
     };
 
     window.addEventListener('dragenter', onDragEnter);
     window.addEventListener('dragover', onDragOver);
     window.addEventListener('dragleave', onDragLeave);
     window.addEventListener('drop', onDrop);
+    window.addEventListener('dragend', onDragEnd);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('blur', clearDragState);
+    window.addEventListener('keydown', onKeyDown);
 
     return () => {
       window.removeEventListener('dragenter', onDragEnter);
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
+      window.removeEventListener('dragend', onDragEnd);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', clearDragState);
+      window.removeEventListener('keydown', onKeyDown);
+      if (dragTimeoutRef.current) {
+        clearTimeout(dragTimeoutRef.current);
+      }
     };
-  }, []);
+  }, [clearDragState]);
 
   // Month / week helpers memorizados para máximo rendimiento
   const monthDays = useMemo(() => {
@@ -170,12 +210,25 @@ export function CalendarView() {
     }
   };
 
-  // ── Drag handlers optimizados para cada celda/día/hora (sin re-renders redundantes) ──
+  // ── Drag handlers optimizados: solo activa el día o la hora donde el cursor está encima ──
   const handleDayDragOver = useCallback((e: React.DragEvent, key: string) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
-    setDragOverDay((prev) => (prev === key ? prev : key));
+
+    setIsDragging(true);
+    setDragOverDay(key);
+
+    // Watchdog timer: si el usuario cancela con Escape, suelta fuera o aleja el cursor
+    // y el navegador no emite dragleave, se autolimpia a los 350ms
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+    }
+    dragTimeoutRef.current = setTimeout(() => {
+      setDragOverDay(null);
+      setIsDragging(false);
+      dragCounter.current = 0;
+    }, 350);
   }, []);
 
   const handleDayDragLeave = useCallback((e: React.DragEvent, key: string) => {
@@ -188,9 +241,7 @@ export function CalendarView() {
   const handleDayDrop = useCallback((e: React.DragEvent, day: Date, hour?: number) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragOverDay(null);
-    setIsDragging(false);
-    dragCounter.current = 0;
+    clearDragState();
 
     const file = extractFileFromDrag(e);
     if (!file) return;
@@ -205,21 +256,19 @@ export function CalendarView() {
     }
 
     openScheduleModal(targetDate, file);
-  }, [openScheduleModal]);
+  }, [clearDragState, openScheduleModal]);
 
   // Fallback si se suelta en el contenedor general fuera de una celda específica
   const handleCalendarDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragOverDay(null);
-    setIsDragging(false);
-    dragCounter.current = 0;
+    clearDragState();
 
     const file = extractFileFromDrag(e);
     if (!file) return;
 
     openScheduleModal(currentDate, file);
-  }, [currentDate, openScheduleModal]);
+  }, [clearDragState, currentDate, openScheduleModal]);
 
   return (
     <div
@@ -364,7 +413,7 @@ export function CalendarView() {
                 const isCurrentMonth = isSameMonth(day, currentDate);
                 const isHovered      = hoveredDay === dayKey;
                 const hasSomething   = dayVideos.length > 0;
-                const isDayTargeted  = isDragging && dragOverDay === dayKey;
+                const isDayTargeted  = dragOverDay === dayKey;
 
                 return (
                   <div
@@ -382,20 +431,24 @@ export function CalendarView() {
                       'relative min-h-[85px] sm:min-h-[105px] md:min-h-[120px] p-1.5 sm:p-2 flex flex-col transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30',
                       isCurrentMonth ? 'bg-[var(--bg-card)]' : 'bg-[var(--bg-elevated)]',
                       isToday(day) && 'ring-inset ring-1 ring-emerald-500/40',
-                      isDayTargeted && 'ring-2 ring-emerald-400 bg-emerald-500/20 z-10 scale-[1.02]'
+                      isDayTargeted && 'ring-2 ring-emerald-400 z-20'
                     )}
                     title="Haz clic para ver el cronograma completo de este día"
                   >
-                    {/* Contenedor Drop Zone: solo visible punteado cuando el archivo está sobre este día */}
+                    {/* Contenedor Drop Zone: SOLO visible en el día donde el video está ubicado encima */}
                     {isDayTargeted && (
                       <div
-                        className="absolute inset-1 z-20 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-500/35 text-white shadow-lg ring-2 ring-emerald-400/60 scale-[1.02] flex flex-col items-center justify-center p-1 text-center transition-all duration-150 pointer-events-none will-change-transform backdrop-blur-[2px]"
+                        className="absolute inset-1.5 z-30 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/90 text-white shadow-xl ring-2 ring-emerald-400/70 flex flex-col items-center justify-center p-1 text-center pointer-events-none will-change-transform backdrop-blur-sm animate-in fade-in zoom-in-95 duration-100"
                       >
-                        <Upload size={18} className="text-emerald-200 animate-bounce" />
-                        <span className="text-[10px] font-bold leading-tight mt-1 line-clamp-1 px-1">
-                          Soltar: {format(day, 'd MMM')}
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-1 text-emerald-300 animate-bounce">
+                          <Upload size={16} />
+                        </div>
+                        <span className="text-[11px] font-extrabold text-white leading-tight px-1">
+                          {format(day, 'd MMM')}
                         </span>
-                        <span className="text-[8px] text-emerald-200/90 font-medium">Programar aquí</span>
+                        <span className="text-[9px] text-emerald-300 font-semibold mt-0.5">
+                          Soltar para programar
+                        </span>
                       </div>
                     )}
 
@@ -486,7 +539,7 @@ export function CalendarView() {
                 const dayVideos    = getVideosForDay(day);
                 const isCurrentDay = isToday(day);
                 const dayKey       = format(day, 'yyyy-MM-dd');
-                const isDayTargeted = isDragging && dragOverDay === dayKey;
+                const isDayTargeted = dragOverDay === dayKey;
 
                 return (
                   <div key={dayKey}
@@ -502,26 +555,24 @@ export function CalendarView() {
                       isCurrentDay
                         ? 'bg-emerald-500/[0.04] border-emerald-500/30'
                         : 'glass border-[var(--border)]',
-                      isDayTargeted && 'ring-2 ring-emerald-400 bg-emerald-500/15 border-emerald-400 z-10'
+                      isDayTargeted && 'ring-2 ring-emerald-400 border-emerald-400 z-20'
                     )}
                     title="Haz clic en el día para ver la vista diaria detallada"
                   >
-                    {/* Contenedor Drop Zone: solo visible punteado cuando el archivo está sobre este día */}
+                    {/* Contenedor Drop Zone: SOLO visible en el día de la semana donde el video está ubicado encima */}
                     {isDayTargeted && (
                       <div
-                        className="absolute inset-2 z-20 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-500/40 text-white shadow-xl ring-2 ring-emerald-400/60 scale-[1.01] flex flex-col items-center justify-center p-3 text-center transition-all duration-150 pointer-events-none will-change-transform backdrop-blur-[3px]"
+                        className="absolute inset-2 z-30 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-950/90 text-white shadow-2xl ring-2 ring-emerald-400/70 flex flex-col items-center justify-center p-3 text-center pointer-events-none will-change-transform backdrop-blur-sm animate-in fade-in zoom-in-95 duration-100"
                       >
-                        <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-2 shadow-sm bg-emerald-400/30 text-emerald-200 animate-bounce">
-                          <Upload size={22} />
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-2 shadow-sm text-emerald-300 animate-bounce">
+                          <Upload size={24} />
                         </div>
-                        <p className="text-xs font-bold text-white">
-                          ¡Soltar video aquí!
-                        </p>
-                        <p className="text-[11px] text-emerald-200 font-semibold capitalize mt-1">
+                        <p className="text-sm font-bold text-white">¡Soltar video aquí!</p>
+                        <p className="text-xs text-emerald-300 font-semibold capitalize mt-1">
                           {format(day, "EEEE d 'de' MMMM", { locale: es })}
                         </p>
-                        <span className="text-[10px] text-emerald-200/80 mt-1">
-                          Suelta para programar en este día
+                        <span className="text-[11px] text-emerald-200/80 mt-1">
+                          Programar en este día
                         </span>
                       </div>
                     )}
@@ -627,7 +678,7 @@ export function CalendarView() {
                 );
                 const hourDate = setHours(currentDate, hour);
                 const hourKey = `${format(currentDate, 'yyyy-MM-dd')}-${hour}`;
-                const isHourTargeted = isDragging && dragOverDay === hourKey;
+                const isHourTargeted = dragOverDay === hourKey;
 
                 return (
                   <div key={hour}
@@ -650,18 +701,20 @@ export function CalendarView() {
                       </span>
                     </div>
                     <div className="flex-1 min-h-[46px] border-l-2 border-[var(--border)] pl-4 flex flex-col justify-center relative">
-                      {/* Contenedor Drop Zone: solo visible punteado en la hora donde está encima el archivo */}
+                      {/* Contenedor Drop Zone: SOLO visible en la hora específica donde el archivo está ubicado encima */}
                       {isHourTargeted ? (
                         <div
-                          className="rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-500/35 text-white shadow-md ring-2 ring-emerald-400/60 scale-[1.01] py-2.5 px-3.5 flex items-center justify-between transition-all duration-150 pointer-events-none will-change-transform"
+                          className="rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/90 text-white shadow-lg ring-2 ring-emerald-400/70 py-2.5 px-3.5 flex items-center justify-between pointer-events-none will-change-transform animate-in fade-in duration-100"
                         >
-                          <div className="flex items-center gap-2">
-                            <Upload size={14} className="text-emerald-200 animate-bounce" />
-                            <span className="text-xs font-bold">
-                              ¡Soltar para programar a las {hour.toString().padStart(2, '0')}:00!
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center text-emerald-300 animate-bounce">
+                              <Upload size={14} />
+                            </div>
+                            <span className="text-xs font-bold text-white">
+                              Soltar para programar a las {hour.toString().padStart(2, '0')}:00 hs
                             </span>
                           </div>
-                          <span className="text-[10px] font-mono text-emerald-200 font-bold px-2 py-0.5 rounded bg-emerald-500/30 border border-emerald-500/40">
+                          <span className="text-[10px] font-mono text-emerald-300 font-bold px-2 py-0.5 rounded bg-emerald-500/30 border border-emerald-500/40">
                             {hour.toString().padStart(2, '0')}:00 hs
                           </span>
                         </div>
