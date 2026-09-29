@@ -292,24 +292,67 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateVideo: async (id, updates) => {
     const db = getSupabase();
+    const finalUpdates = { ...updates };
+    let isRescheduledToFuture = false;
+
+    if (finalUpdates.programado_para !== undefined) {
+      const progDate = new Date(finalUpdates.programado_para);
+      if (!isNaN(progDate.getTime()) && progDate.getTime() > Date.now()) {
+        isRescheduledToFuture = true;
+        // Si la nueva fecha es posterior a la hora actual del dispositivo,
+        // el estatus pasa automáticamente a PROGRAMADO y se resetean envíos previos
+        finalUpdates.estado = 'PROGRAMADO';
+        finalUpdates.enviado_en = undefined;
+        finalUpdates.publicado_en = undefined;
+        finalUpdates.reintentos_alerta = 0;
+      }
+    }
+
     const dbUpdates: any = {};
-    if (updates.titulo !== undefined) dbUpdates.titulo = updates.titulo;
-    if (updates.descripcion_aprobada_ia !== undefined) dbUpdates.descripcion_aprobada_ia = updates.descripcion_aprobada_ia;
-    if (updates.estado !== undefined) dbUpdates.estado = updates.estado;
-    if (updates.programado_para !== undefined) dbUpdates.programado_para = (updates.programado_para as Date).toISOString();
-    if (updates.enviado_en !== undefined) dbUpdates.enviado_en = (updates.enviado_en as Date | undefined)?.toISOString() ?? null;
-    if (updates.publicado_en !== undefined) dbUpdates.publicado_en = (updates.publicado_en as Date | undefined)?.toISOString() ?? null;
-    if (updates.vistas_obtenidas !== undefined) dbUpdates.vistas_obtenidas = updates.vistas_obtenidas;
-    if (updates.ganancias_estimadas !== undefined) dbUpdates.ganancias_estimadas = updates.ganancias_estimadas;
-    if (updates.auto_reprogramacion !== undefined) dbUpdates.auto_reprogramacion = updates.auto_reprogramacion;
-    if (updates.reintentos_alerta !== undefined) dbUpdates.reintentos_alerta = updates.reintentos_alerta;
-    if (updates.post_url_publica !== undefined) dbUpdates.post_url_publica = updates.post_url_publica;
-    if (updates.thumbnail_color !== undefined) dbUpdates.thumbnail_color = updates.thumbnail_color;
-    if (updates.drive_file_url !== undefined) dbUpdates.drive_file_url = updates.drive_file_url;
-    if (updates.campana_id !== undefined) dbUpdates.campana_id = updates.campana_id;
+    if (finalUpdates.titulo !== undefined) dbUpdates.titulo = finalUpdates.titulo;
+    if (finalUpdates.descripcion_aprobada_ia !== undefined) dbUpdates.descripcion_aprobada_ia = finalUpdates.descripcion_aprobada_ia;
+    if (finalUpdates.estado !== undefined) dbUpdates.estado = finalUpdates.estado;
+    if (finalUpdates.programado_para !== undefined) dbUpdates.programado_para = (finalUpdates.programado_para as Date).toISOString();
+    if (finalUpdates.enviado_en !== undefined) dbUpdates.enviado_en = (finalUpdates.enviado_en as Date | undefined)?.toISOString() ?? null;
+    if (finalUpdates.publicado_en !== undefined) dbUpdates.publicado_en = (finalUpdates.publicado_en as Date | undefined)?.toISOString() ?? null;
+    if (finalUpdates.vistas_obtenidas !== undefined) dbUpdates.vistas_obtenidas = finalUpdates.vistas_obtenidas;
+    if (finalUpdates.ganancias_estimadas !== undefined) dbUpdates.ganancias_estimadas = finalUpdates.ganancias_estimadas;
+    if (finalUpdates.auto_reprogramacion !== undefined) dbUpdates.auto_reprogramacion = finalUpdates.auto_reprogramacion;
+    if (finalUpdates.reintentos_alerta !== undefined) dbUpdates.reintentos_alerta = finalUpdates.reintentos_alerta;
+    if (finalUpdates.post_url_publica !== undefined) dbUpdates.post_url_publica = finalUpdates.post_url_publica;
+    if (finalUpdates.thumbnail_color !== undefined) dbUpdates.thumbnail_color = finalUpdates.thumbnail_color;
+    if (finalUpdates.drive_file_url !== undefined) dbUpdates.drive_file_url = finalUpdates.drive_file_url;
+    if (finalUpdates.campana_id !== undefined) dbUpdates.campana_id = finalUpdates.campana_id;
+
+    if (isRescheduledToFuture) {
+      dbUpdates.estado = 'PROGRAMADO';
+      dbUpdates.enviado_en = null;
+      dbUpdates.publicado_en = null;
+      dbUpdates.reintentos_alerta = 0;
+    }
+
     await db.from('publicaciones').update(dbUpdates).eq('id', id);
+
+    if (isRescheduledToFuture) {
+      try {
+        await db.from('confirmaciones_telegram').delete().eq('publicacion_id', id);
+      } catch (delErr) {
+        console.warn('[updateVideo] Error limpiando confirmaciones viejas:', delErr);
+      }
+    }
+
     set((s) => {
-      const videos = s.videos.map((v) => (v.id === id ? { ...v, ...updates } : v));
+      const videos = s.videos.map((v) => {
+        if (v.id === id) {
+          const updated = { ...v, ...finalUpdates };
+          if (isRescheduledToFuture) {
+            delete (updated as any).enviado_en;
+            delete (updated as any).publicado_en;
+          }
+          return updated;
+        }
+        return v;
+      });
       return { videos, metrics: computeMetrics(videos) };
     });
   },

@@ -314,19 +314,34 @@ export function VideoDetailModal() {
     }
 
     const newProgDate = new Date(`${editFecha}T${editHora}`);
+    const isFuture = !isNaN(newProgDate.getTime()) && newProgDate.getTime() > Date.now();
 
-    await updateVideo(video.id, {
+    const updates: any = {
       titulo: editTitle.trim() || video.titulo,
       cuenta_id: editCuentaId,
       campana_id: editCampanaId,
       programado_para: newProgDate,
       descripcion_aprobada_ia: editDescripcion,
       drive_file_url: finalDriveUrl,
-    });
+    };
+
+    if (isFuture) {
+      updates.estado = 'PROGRAMADO';
+      updates.enviado_en = undefined;
+      updates.publicado_en = undefined;
+      updates.reintentos_alerta = 0;
+    }
+
+    await updateVideo(video.id, updates);
 
     setSavingEdit(false);
     setIsEditing(false);
-    setEditFeedback({ success: true, msg: '✅ Publicación y video actualizados con éxito.' });
+    setEditFeedback({
+      success: true,
+      msg: isFuture
+        ? '✅ Fecha reprogramada a futuro. El estado cambió a PROGRAMADO y se volverá a enviar a Telegram en la fecha programada.'
+        : '✅ Publicación y video actualizados con éxito.',
+    });
   };
 
   // Enviar publicación directamente a Telegram
@@ -1005,6 +1020,23 @@ export function VideoDetailModal() {
                         className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white border border-[var(--border)] outline-none bg-transparent [color-scheme:dark]"
                       />
                     </div>
+                    {(() => {
+                      if (!editFecha || !editHora) return null;
+                      const d = new Date(`${editFecha}T${editHora}`);
+                      const isFuture = !isNaN(d.getTime()) && d.getTime() > Date.now();
+                      return isFuture ? (
+                        <div className="col-span-2 flex items-center gap-1.5 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] text-emerald-300">
+                          <Sparkles size={12} className="shrink-0 text-emerald-400" />
+                          <span>
+                            Fecha futura detectada: el estado pasará a <b>PROGRAMADO</b> y se enviará automáticamente a Telegram en esa fecha y hora.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="col-span-2 text-[10px] text-[var(--text-muted)]">
+                          ℹ️ Si configuras una fecha y hora posterior a la actual del dispositivo, el estado cambiará a PROGRAMADO y se reenviará a Telegram.
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Descripción con botón de Regenerar IA */}

@@ -45,6 +45,15 @@ export function PublicationScheduler() {
     const checkScheduledPublications = async () => {
       const now = new Date();
 
+      // Desbloquear videos que estén PROGRAMADOS y cuya fecha sea futura (ej. fueron reprogramados)
+      videos.forEach((v) => {
+        if (v.estado === 'PROGRAMADO' && new Date(v.programado_para).getTime() > now.getTime()) {
+          processingRef.current.delete(v.id);
+          alertedDelaysRef.current.delete(v.id);
+          alertedDelaysRef.current.delete(`scraped_verify_${v.id}`);
+        }
+      });
+
       // Buscar videos que estén PROGRAMADOS y cuya hora ya se haya cumplido
       const dueVideos = videos.filter((v) => {
         if (v.estado !== 'PROGRAMADO') return false;
