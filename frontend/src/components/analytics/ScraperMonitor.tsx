@@ -232,6 +232,8 @@ export function ScraperMonitor() {
     if (!selectedAccId) return;
     const FIVE_MINUTES_MS = 5 * 60 * 1000;
     const interval = setInterval(() => {
+      // Optimización CPU: Si la pestaña no está visible, pausar peticiones de fondo
+      if (typeof document !== 'undefined' && document.hidden) return;
       refreshData();
       fetch(`/api/reels-rastreados?cuenta_id=${selectedAccId}`)
         .then((r) => r.json())

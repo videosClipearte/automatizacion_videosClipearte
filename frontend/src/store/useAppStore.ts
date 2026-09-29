@@ -111,11 +111,24 @@ function mapVideo(row: any): Video {
 }
 
 function computeMetrics(videos: Video[]): GlobalMetrics {
+  let total_programados = 0;
+  let total_enviados = 0;
+  let total_publicados = 0;
+  let total_fallidos = 0;
+
+  for (let i = 0; i < videos.length; i++) {
+    const estado = videos[i].estado;
+    if (estado === 'PROGRAMADO') total_programados++;
+    else if (estado === 'ENVIADO') total_enviados++;
+    else if (estado === 'PUBLICADO') total_publicados++;
+    else if (estado === 'ERROR_DE_RED') total_fallidos++;
+  }
+
   return {
-    total_programados: videos.filter(v => v.estado === 'PROGRAMADO').length,
-    total_enviados: videos.filter(v => v.estado === 'ENVIADO').length,
-    total_publicados: videos.filter(v => v.estado === 'PUBLICADO').length,
-    total_fallidos: videos.filter(v => v.estado === 'ERROR_DE_RED').length,
+    total_programados,
+    total_enviados,
+    total_publicados,
+    total_fallidos,
   };
 }
 

@@ -18,7 +18,11 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { isSidebarCollapsed, toggleSidebar, isMobileSidebarOpen, setMobileSidebarOpen, setCalendarView } = useAppStore();
+  const isSidebarCollapsed = useAppStore((s) => s.isSidebarCollapsed);
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const isMobileSidebarOpen = useAppStore((s) => s.isMobileSidebarOpen);
+  const setMobileSidebarOpen = useAppStore((s) => s.setMobileSidebarOpen);
+  const setCalendarView = useAppStore((s) => s.setCalendarView);
 
   return (
     <>

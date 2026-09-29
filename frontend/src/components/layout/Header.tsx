@@ -1,7 +1,6 @@
 'use client';
 // src/components/layout/Header.tsx
 import { useRouter, usePathname } from 'next/navigation';
-import { motion } from 'framer-motion';
 import { CalendarCheck, Send, CheckCircle, XCircle, Menu } from 'lucide-react';
 import { useAppStore, VideoStatus } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -85,14 +84,18 @@ const metricConfig: MetricItem[] = [
 export function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const { metrics, toggleMobileSidebar, statusFilter, setStatusFilter } = useAppStore();
+
+  // Optimización CPU: Selectores atómicos para evitar re-renders por cambios en videos o cuentas
+  const metrics = useAppStore((s) => s.metrics);
+  const toggleMobileSidebar = useAppStore((s) => s.toggleMobileSidebar);
+  const statusFilter = useAppStore((s) => s.statusFilter);
+  const setStatusFilter = useAppStore((s) => s.setStatusFilter);
 
   const handleMetricClick = (status: VideoStatus) => {
     if (statusFilter === status) {
       setStatusFilter(null);
     } else {
       setStatusFilter(status);
-      // Si el usuario no está en el calendario, llevarlo al calendario para que vea el resultado
       if (!pathname.startsWith('/calendar')) {
         router.push('/calendar');
       }
@@ -114,21 +117,16 @@ export function Header() {
 
         {/* Status Metrics Bar - Interactive Filter Buttons */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 overflow-x-auto scrollbar-none py-1">
-          {metricConfig.map(({ key, status, label, shortLabel, Icon, color, activeColor, bg, activeBg, border, activeBorder, activeRing }, i) => {
+          {metricConfig.map(({ key, status, label, shortLabel, Icon, color, activeColor, bg, activeBg, border, activeBorder, activeRing }) => {
             const isActive = statusFilter === status;
             return (
-              <motion.button
+              <button
                 key={key}
                 type="button"
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ delay: i * 0.05, duration: 0.2 }}
                 onClick={() => handleMetricClick(status)}
                 title={isActive ? `Quitar filtro de ${label}` : `Filtrar calendario por ${label}`}
                 className={cn(
-                  'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl border shrink-0 transition-all cursor-pointer relative select-none',
+                  'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl border shrink-0 transition-all duration-150 cursor-pointer relative select-none hover:scale-[1.03] active:scale-[0.96] will-change-transform',
                   isActive ? cn(activeBg, activeBorder, activeRing) : cn(bg, border, 'hover:brightness-125')
                 )}
               >
@@ -145,7 +143,7 @@ export function Header() {
                 <span className={cn('text-xs sm:text-sm font-bold', isActive ? activeColor : color)}>
                   {metrics[key]}
                 </span>
-              </motion.button>
+              </button>
             );
           })}
         </div>
