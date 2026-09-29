@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Users, ChevronDown, Check, Globe, Send, Play, FilterX, Sparkles
+  Plus, Users, ChevronDown, Check, Globe, Send, Play, FilterX
 } from 'lucide-react';
 import { CalendarView } from '@/components/calendar/CalendarView';
 import { useAppStore } from '@/store/useAppStore';
@@ -61,10 +61,10 @@ export default function CalendarPage() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="relative h-full flex flex-col"
+      className="relative h-full flex flex-col min-h-0"
     >
       {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3 shrink-0">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">Calendario de Publicaciones</h1>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
@@ -223,7 +223,7 @@ export default function CalendarPage() {
       </div>
 
       {/* Calendar */}
-      <div className="flex-1">
+      <div className="flex-1 min-h-0 flex flex-col">
         <CalendarView />
       </div>
 

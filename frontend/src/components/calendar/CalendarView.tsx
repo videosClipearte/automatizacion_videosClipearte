@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Plus, Grid3x3, CalendarDays, Clock,
   Eye, Send, Play, Globe,
-  Upload, Film, Filter
+  Upload, Filter
 } from 'lucide-react';
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -272,7 +272,7 @@ export function CalendarView() {
 
   return (
     <div
-      className="flex flex-col h-full relative"
+      className="flex flex-col flex-1 h-full min-h-0 relative"
       onDragOver={(e) => { e.preventDefault(); }}
       onDrop={handleCalendarDrop}
     >
@@ -283,19 +283,21 @@ export function CalendarView() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="mb-3 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/25 via-cyan-500/20 to-emerald-500/25 border border-emerald-400/60 flex items-center justify-center gap-2 text-xs font-bold text-emerald-200 shadow-lg will-change-transform"
+            className="mb-2.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500/25 via-cyan-500/20 to-emerald-500/25 border border-emerald-400/60 flex items-center justify-center gap-2 text-xs font-bold text-emerald-200 shadow-lg will-change-transform shrink-0"
           >
-            <Upload size={15} className="text-emerald-300 animate-bounce" />
+            <Upload size={14} className="text-emerald-300 animate-bounce" />
             <span>Suelta el video directamente sobre el día o la hora deseada para programarlo de inmediato</span>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Calendar Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 mb-4 shrink-0">
-        <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 mb-2.5 shrink-0">
+        {/* Navegación de Fecha */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button onClick={handlePrevious}
-            className="w-8 h-8 rounded-xl glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0"
+            title="Mes anterior"
           >
             <ChevronLeft size={15} />
           </button>
@@ -303,29 +305,84 @@ export function CalendarView() {
             {getTitle()}
           </h2>
           <button onClick={handleNext}
-            className="w-8 h-8 rounded-xl glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl glass hover:bg-white/5 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0"
+            title="Mes siguiente"
           >
             <ChevronRight size={15} />
           </button>
           <button onClick={() => setCurrentDate(new Date())}
-            className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold glass border border-[var(--border)] text-[var(--text-secondary)] hover:text-white hover:border-[var(--border-strong)] transition-all shrink-0"
+            className="px-2.5 sm:px-3 py-1 rounded-xl text-xs font-semibold glass border border-[var(--border)] text-[var(--text-secondary)] hover:text-white hover:border-[var(--border-strong)] transition-all shrink-0"
           >
             Hoy
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-xl">
-            <Upload size={12} className="text-emerald-400 shrink-0 animate-bounce" />
-            <span>Arrastra un MP4 a cualquier día para programar</span>
-          </div>
-          <div className="flex items-center gap-1 glass rounded-xl p-1 border border-[var(--border)]">
+        {/* Lado derecho: Filtros activos integrados + Selector de Vista */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+          {/* ── Filtros activos ubicados exactamente al lado de Mes / Semana / Día ── */}
+          <AnimatePresence>
+            {Boolean(selectedAccountId || statusFilter) && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="flex items-center gap-1.5 flex-wrap"
+              >
+                <div className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] font-medium mr-0.5">
+                  <Filter size={11} className="text-emerald-400" />
+                  <span className="hidden md:inline">Filtros:</span>
+                </div>
+
+                {selectedAccountId && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-medium text-[11px] shadow-sm">
+                    <span className="truncate max-w-[130px] sm:max-w-[180px]">
+                      @{accounts.find(a => a.id === selectedAccountId)?.username || selectedAccountId}
+                    </span>
+                    <button
+                      onClick={() => setSelectedAccountId(null)}
+                      className="hover:text-white ml-0.5 text-xs font-bold leading-none p-0.5 rounded hover:bg-emerald-500/30 transition-colors"
+                      title="Quitar filtro de cuenta"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+
+                {statusFilter && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-medium text-[11px] shadow-sm">
+                    <span>{statusFilter}</span>
+                    <button
+                      onClick={() => setStatusFilter(null)}
+                      className="hover:text-white ml-0.5 text-xs font-bold leading-none p-0.5 rounded hover:bg-cyan-500/30 transition-colors"
+                      title="Quitar filtro de estado"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+
+                <button
+                  onClick={() => {
+                    setSelectedAccountId(null);
+                    setStatusFilter(null);
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-white underline font-medium ml-0.5 transition-colors"
+                  title="Restablecer todos los filtros"
+                >
+                  Limpiar
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Selector de Vista: Mes / Semana / Día */}
+          <div className="flex items-center gap-1 glass rounded-xl p-1 border border-[var(--border)] shrink-0">
             {VIEW_OPTIONS.map(({ key, label, Icon }) => (
               <button
                 key={key}
                 onClick={() => setCalendarView(key)}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200',
+                  'flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200',
                   calendarView === key
                     ? 'bg-gradient-to-r from-emerald-500/30 to-cyan-500/30 text-white border border-emerald-500/30 shadow-sm'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
@@ -339,73 +396,24 @@ export function CalendarView() {
         </div>
       </div>
 
-      {/* ── Active Filters Notification Pill ── */}
-      <AnimatePresence>
-        {Boolean(selectedAccountId || statusFilter) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-3 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex flex-wrap items-center justify-between gap-2 text-xs"
-          >
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="flex items-center gap-1 text-[var(--text-muted)] font-medium">
-                <Filter size={12} className="text-emerald-400" />
-                Filtros activos:
-              </span>
-              {selectedAccountId && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-medium text-[11px]">
-                  Cuenta: @{accounts.find(a => a.id === selectedAccountId)?.username || selectedAccountId}
-                  <button
-                    onClick={() => setSelectedAccountId(null)}
-                    className="hover:text-white ml-0.5 text-xs font-bold leading-none"
-                    title="Quitar filtro de cuenta"
-                  >
-                    ×
-                  </button>
-                </span>
-              )}
-              {statusFilter && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-medium text-[11px]">
-                  Estado: {statusFilter}
-                  <button
-                    onClick={() => setStatusFilter(null)}
-                    className="hover:text-white ml-0.5 text-xs font-bold leading-none"
-                    title="Quitar filtro de estado"
-                  >
-                    ×
-                  </button>
-                </span>
-              )}
-            </div>
-            <button
-              onClick={() => {
-                setSelectedAccountId(null);
-                setStatusFilter(null);
-              }}
-              className="text-[11px] text-slate-400 hover:text-white underline font-medium"
-            >
-              Restablecer todos
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* ── Scroll container that holds the calendar views ── */}
-      <div className="relative flex-1 min-h-0">
+      <div className="relative flex-1 min-h-0 flex flex-col">
 
         {/* ─────────────────── MONTH VIEW ─────────────────── */}
         {calendarView === 'month' && (
-          <div className="flex flex-col h-full">
-            <div className="grid grid-cols-7 mb-1">
+          <div className="flex flex-col flex-1 h-full min-h-0">
+            <div className="grid grid-cols-7 mb-1 shrink-0">
               {DAY_NAMES.map(d => (
-                <div key={d} className="text-center text-[10px] font-semibold text-[var(--text-muted)] py-2 uppercase tracking-widest">
+                <div key={d} className="text-center text-[10px] font-semibold text-[var(--text-muted)] py-1 uppercase tracking-widest">
                   {d}
                 </div>
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-px bg-[var(--border)] rounded-2xl overflow-hidden flex-1">
+            <div
+              className="grid grid-cols-7 gap-px bg-[var(--border)] rounded-2xl overflow-hidden flex-1 min-h-0 shadow-sm"
+              style={{ gridTemplateRows: `repeat(${Math.ceil(monthDays.length / 7)}, minmax(0, 1fr))` }}
+            >
               {monthDays.map((day) => {
                 const dayVideos = getVideosForDay(day);
                 const metrics  = getDayMetrics(day);
@@ -428,7 +436,7 @@ export function CalendarView() {
                       setCalendarView('day');
                     }}
                     className={cn(
-                      'relative min-h-[85px] sm:min-h-[105px] md:min-h-[120px] p-1.5 sm:p-2 flex flex-col transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30',
+                      'relative min-h-0 p-1 sm:p-1.5 flex flex-col justify-between transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30 overflow-hidden',
                       isCurrentMonth ? 'bg-[var(--bg-card)]' : 'bg-[var(--bg-elevated)]',
                       isToday(day) && 'ring-inset ring-1 ring-emerald-500/40',
                       isDayTargeted && 'ring-2 ring-emerald-400 z-20'
@@ -440,24 +448,24 @@ export function CalendarView() {
                       <div
                         className="absolute inset-1.5 z-30 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/90 text-white shadow-xl ring-2 ring-emerald-400/70 flex flex-col items-center justify-center p-1 text-center pointer-events-none will-change-transform backdrop-blur-sm animate-in fade-in zoom-in-95 duration-100"
                       >
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-1 text-emerald-300 animate-bounce">
-                          <Upload size={16} />
+                        <div className="w-7 h-7 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-1 text-emerald-300 animate-bounce">
+                          <Upload size={15} />
                         </div>
-                        <span className="text-[11px] font-extrabold text-white leading-tight px-1">
+                        <span className="text-[10px] font-extrabold text-white leading-tight px-1">
                           {format(day, 'd MMM')}
                         </span>
-                        <span className="text-[9px] text-emerald-300 font-semibold mt-0.5">
+                        <span className="text-[8px] text-emerald-300 font-semibold mt-0.5">
                           Soltar para programar
                         </span>
                       </div>
                     )}
 
-                    {/* Day number */}
-                    <div className="flex items-center justify-between mb-1.5">
+                    {/* Day number header */}
+                    <div className="flex items-center justify-between mb-0.5 shrink-0">
                       <span className={cn(
-                        'text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full',
+                        'text-[11px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full',
                         isToday(day)
-                          ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white text-[10px]'
+                          ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white text-[10px] font-bold shadow-sm'
                           : isCurrentMonth
                             ? 'text-[var(--text-secondary)]'
                             : 'text-[var(--text-muted)]'
@@ -468,7 +476,7 @@ export function CalendarView() {
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
-                          className="w-5 h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-all duration-150 active:scale-95 animate-in fade-in zoom-in-90"
+                          className="w-4 h-4 sm:w-5 sm:h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-all duration-150 active:scale-95 animate-in fade-in zoom-in-90"
                           title="Programar para este día"
                         >
                           <Plus size={10} />
@@ -476,16 +484,16 @@ export function CalendarView() {
                       )}
                     </div>
 
-                    {/* Video chips */}
+                    {/* Video chips compactos */}
                     {dayVideos.length > 0 && (
-                      <div className="flex flex-col gap-0.5 flex-1 overflow-hidden">
-                        {dayVideos.slice(0, 3).map(video => {
+                      <div className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-hidden my-0.5 justify-start">
+                        {dayVideos.slice(0, 2).map(video => {
                           const acct = accounts.find(a => a.id === video.cuenta_id);
                           return (
                             <button
                               key={video.id}
                               onClick={(e) => { e.stopPropagation(); setSelectedVideoId(video.id); }}
-                              className="px-1.5 py-1 rounded-lg text-left transition-all flex items-center gap-1.5 border bg-white/[0.04] hover:bg-white/[0.08] border-[var(--border)] hover:border-emerald-500/40 group/chip"
+                              className="px-1 py-0.5 rounded text-left transition-all flex items-center gap-1 border bg-white/[0.04] hover:bg-white/[0.08] border-[var(--border)] hover:border-emerald-500/40 group/chip shrink-0"
                               title={`${video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${video.estado}`}
                             >
                               <span className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -498,18 +506,18 @@ export function CalendarView() {
                               <span className="text-[9px] font-mono text-cyan-400 font-semibold shrink-0">
                                 {format(new Date(video.programado_para), 'HH:mm')}
                               </span>
-                              <span className="text-[10px] text-white font-medium truncate flex-1 group-hover/chip:text-emerald-300">
+                              <span className="text-[9px] text-white font-medium truncate flex-1 group-hover/chip:text-emerald-300">
                                 {video.titulo}
                               </span>
                             </button>
                           );
                         })}
-                        {dayVideos.length > 3 && (
+                        {dayVideos.length > 2 && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setCurrentDate(day); setCalendarView('day'); }}
-                            className="text-[9px] text-emerald-400 font-semibold hover:underline text-left pl-1"
+                            className="text-[8px] text-emerald-400 font-semibold hover:underline text-left pl-0.5 leading-none shrink-0"
                           >
-                            +{dayVideos.length - 3} más →
+                            +{dayVideos.length - 2} más →
                           </button>
                         )}
                       </div>
@@ -533,8 +541,8 @@ export function CalendarView() {
 
         {/* ─────────────────── WEEK VIEW ─────────────────── */}
         {calendarView === 'week' && (
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
-            <div className="grid grid-cols-7 gap-2 flex-1 overflow-y-auto">
+          <div className="flex-1 flex flex-col h-full overflow-hidden min-h-0">
+            <div className="grid grid-cols-7 gap-2 flex-1 overflow-y-auto min-h-0">
               {weekDays.map(day => {
                 const dayVideos    = getVideosForDay(day);
                 const isCurrentDay = isToday(day);
@@ -551,7 +559,7 @@ export function CalendarView() {
                       setCalendarView('day');
                     }}
                     className={cn(
-                      'relative flex flex-col rounded-2xl p-2.5 border transition-all min-h-[500px] cursor-pointer hover:border-emerald-500/40 group/col',
+                      'relative flex flex-col rounded-2xl p-2.5 border transition-all min-h-[460px] cursor-pointer hover:border-emerald-500/40 group/col',
                       isCurrentDay
                         ? 'bg-emerald-500/[0.04] border-emerald-500/30'
                         : 'glass border-[var(--border)]',
@@ -649,8 +657,8 @@ export function CalendarView() {
 
         {/* ─────────────────── DAY VIEW ─────────────────── */}
         {calendarView === 'day' && (
-          <div className="flex-1 flex flex-col glass rounded-2xl border border-[var(--border)] p-4 overflow-hidden h-full">
-            <div className="flex items-center justify-between pb-3 mb-3 border-b border-[var(--border)]">
+          <div className="flex-1 flex flex-col glass rounded-2xl border border-[var(--border)] p-4 overflow-hidden h-full min-h-0">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-[var(--border)] shrink-0">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   Cronograma por Horas
@@ -671,7 +679,7 @@ export function CalendarView() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 min-h-0">
               {HOURS.map(hour => {
                 const hourVideos = getVideosForDay(currentDate).filter(
                   v => getHours(new Date(v.programado_para)) === hour
