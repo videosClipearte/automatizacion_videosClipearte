@@ -57,6 +57,18 @@ function parseNumberWithSuffix(str: string): number {
  * Extrae métricas (vistas, likes, comentarios, título, descripción) del HTML del post.
  * Soporta TikTok, Instagram y YouTube Shorts.
  */
+// Caché en memoria para evitar re-scrapear la misma URL en ráfagas repetidas (TTL: 5 min)
+interface ScrapeCacheEntry {
+  timestamp: number;
+  data: {
+    scraped: boolean;
+    httpStatus: number;
+    metrics: ParsedPostMetrics;
+  };
+}
+const scrapeCache = new Map<string, ScrapeCacheEntry>();
+const SCRAPE_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export function parseMetricsFromHtml(html: string, url: string): ParsedPostMetrics {
   const metrics: ParsedPostMetrics = {
     vistas: 0,
@@ -75,17 +87,33 @@ export function parseMetricsFromHtml(html: string, url: string): ParsedPostMetri
   const isTiktok = url.includes('tiktok.com');
   const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
 
+  // Optimización CPU: Los meta tags siempre están en el <head> (~50KB a 100KB).
+  // Limitar la búsqueda de meta tags al chunk del <head> evita escanear 5MB con expresiones regulares.
+  const headEndPos = html.indexOf('</head>');
+  const headChunk = headEndPos !== -1 ? html.slice(0, headEndPos + 7) : html.slice(0, 150_000);
+
   // ── TikTok ──
   if (isTiktok) {
-    const playMatch = html.match(/"playCount"\s*:\s*(\d+)/i);
-    const diggMatch = html.match(/"diggCount"\s*:\s*(\d+)/i);
-    const commentMatch = html.match(/"commentCount"\s*:\s*(\d+)/i);
-    const shareMatch = html.match(/"shareCount"\s*:\s*(\d+)/i);
-    const collectMatch = html.match(/"collectCount"\s*:\s*(\d+)/i);
-    const descMatch = html.match(/"desc"\s*:\s*"((?:[^"\\]|\\.)*)"/i);
-    const tsMatch = html.match(/"createTime"\s*:\s*(\d+)/i);
-    const ogTitle = html.match(/<meta property="og:title" content="([^"]+)"/i);
-    const ogDesc = html.match(/<meta property="og:description" content="([^"]+)"/i);
+    // Buscar el script delimitado de hidratación (__UNIVERSAL_DATA_FOR_REHYDRATION__ o SIGI_STATE)
+    const scriptStart = html.indexOf('__UNIVERSAL_DATA_FOR_REHYDRATION__');
+    let targetChunk = html;
+    if (scriptStart !== -1) {
+      const scriptEnd = html.indexOf('</script>', scriptStart);
+      if (scriptEnd !== -1) {
+        targetChunk = html.slice(scriptStart, scriptEnd);
+      }
+    }
+
+    const playMatch = targetChunk.match(/"playCount"\s*:\s*(\d+)/i);
+    const diggMatch = targetChunk.match(/"diggCount"\s*:\s*(\d+)/i);
+    const commentMatch = targetChunk.match(/"commentCount"\s*:\s*(\d+)/i);
+    const shareMatch = targetChunk.match(/"shareCount"\s*:\s*(\d+)/i);
+    const collectMatch = targetChunk.match(/"collectCount"\s*:\s*(\d+)/i);
+    const descMatch = targetChunk.match(/"desc"\s*:\s*"((?:[^"\\]|\\.)*)"/i);
+    const tsMatch = targetChunk.match(/"createTime"\s*:\s*(\d+)/i);
+    
+    const ogTitle = headChunk.match(/<meta property="og:title" content="([^"]+)"/i);
+    const ogDesc = headChunk.match(/<meta property="og:description" content="([^"]+)"/i);
 
     if (playMatch) metrics.vistas = parseInt(playMatch[1], 10);
     if (diggMatch) metrics.likes = parseInt(diggMatch[1], 10);
@@ -108,66 +136,66 @@ export function parseMetricsFromHtml(html: string, url: string): ParsedPostMetri
 
   // ── Instagram ──
   if (isInstagram) {
-    const viewMatch = html.match(/(?:video_view_count|play_count|video_play_count)["']?\s*:\s*(\d+)/i);
-    const likeMatch = html.match(/(?:like_count|edge_media_preview_like.*?count)["']?\s*:\s*(\d+)/i);
-    const commentMatch = html.match(/(?:comment_count|edge_media_to_comment.*?count)["']?\s*:\s*(\d+)/i);
-    const ogTitle = html.match(/<meta property="og:title" content="([^"]+)"/i);
-    const ogDesc = html.match(/<meta property="og:description" content="([^"]+)"/i);
-    const metaDesc = html.match(/<meta name="description" content="([^"]+)"/i);
-    const takenAt = html.match(/"taken_at_timestamp"\s*:\s*(\d+)/i);
-
-    if (viewMatch) metrics.vistas = parseInt(viewMatch[1], 10);
-    if (likeMatch) metrics.likes = parseInt(likeMatch[1], 10);
-    if (commentMatch) metrics.comentarios = parseInt(commentMatch[1], 10);
+    const ogTitle = headChunk.match(/<meta property="og:title" content="([^"]+)"/i);
+    const ogDesc = headChunk.match(/<meta property="og:description" content="([^"]+)"/i);
+    const metaDesc = headChunk.match(/<meta name="description" content="([^"]+)"/i);
+    const ogViewMatch = headChunk.match(/og:video:view_count.*?content="(\d+)"/i);
 
     const fullDesc = ogDesc ? ogDesc[1] : (metaDesc ? metaDesc[1] : '');
     if (fullDesc) {
       metrics.descripcion = fullDesc.trim().slice(0, 600);
       // Analizar "X likes, Y comments" o "X Me gusta, Y comentarios" dentro del meta tag
-      if (!metrics.likes) {
-        const descLikeMatch = fullDesc.match(/([\d,.]+[kKmM]?)\s*(?:likes|me gusta)/i);
-        if (descLikeMatch) metrics.likes = parseNumberWithSuffix(descLikeMatch[1]);
-      }
-      if (!metrics.comentarios) {
-        const descCommentMatch = fullDesc.match(/([\d,.]+[kKmM]?)\s*(?:comments|comentarios)/i);
-        if (descCommentMatch) metrics.comentarios = parseNumberWithSuffix(descCommentMatch[1]);
-      }
-      if (!metrics.vistas) {
-        const descViewMatch = fullDesc.match(/([\d,.]+[kKmM]?)\s*(?:views|vistas|reproducciones|plays)/i);
-        if (descViewMatch) metrics.vistas = parseNumberWithSuffix(descViewMatch[1]);
-      }
+      const descLikeMatch = fullDesc.match(/([\d,.]+[kKmM]?)\s*(?:likes|me gusta)/i);
+      if (descLikeMatch) metrics.likes = parseNumberWithSuffix(descLikeMatch[1]);
+      
+      const descCommentMatch = fullDesc.match(/([\d,.]+[kKmM]?)\s*(?:comments|comentarios)/i);
+      if (descCommentMatch) metrics.comentarios = parseNumberWithSuffix(descCommentMatch[1]);
+      
+      const descViewMatch = fullDesc.match(/([\d,.]+[kKmM]?)\s*(?:views|vistas|reproducciones|plays)/i);
+      if (descViewMatch) metrics.vistas = parseNumberWithSuffix(descViewMatch[1]);
+    }
+
+    if (ogViewMatch && !metrics.vistas) {
+      metrics.vistas = parseInt(ogViewMatch[1], 10);
+    }
+
+    // Si aún faltan vistas o likes, buscar en scripts JSON de Instagram de forma delimitada
+    if (!metrics.vistas || !metrics.likes) {
+      const viewMatch = html.match(/(?:video_view_count|play_count|video_play_count)["']?\s*:\s*(\d+)/i);
+      const likeMatch = html.match(/(?:like_count|edge_media_preview_like.*?count)["']?\s*:\s*(\d+)/i);
+      const commentMatch = html.match(/(?:comment_count|edge_media_to_comment.*?count)["']?\s*:\s*(\d+)/i);
+
+      if (viewMatch && !metrics.vistas) metrics.vistas = parseInt(viewMatch[1], 10);
+      if (likeMatch && !metrics.likes) metrics.likes = parseInt(likeMatch[1], 10);
+      if (commentMatch && !metrics.comentarios) metrics.comentarios = parseInt(commentMatch[1], 10);
     }
 
     if (ogTitle) metrics.titulo = ogTitle[1].trim().slice(0, 250);
 
+    const takenAt = html.match(/"taken_at_timestamp"\s*:\s*(\d+)/i);
     if (takenAt) {
       const ts = parseInt(takenAt[1], 10);
       if (!isNaN(ts) && ts > 0) metrics.fecha_publicacion = new Date(ts * 1000).toISOString();
-    }
-
-    // Fallback og:video:view_count
-    if (!metrics.vistas) {
-      const ogViewMatch = html.match(/og:video:view_count.*?content="(\d+)"/i);
-      if (ogViewMatch) metrics.vistas = parseInt(ogViewMatch[1], 10);
     }
   }
 
   // ── YouTube ──
   if (isYoutube) {
+    const ogTitle = headChunk.match(/<meta property="og:title" content="([^"]+)"/i);
+    const ogDesc = headChunk.match(/<meta name="description" content="([^"]+)"/i);
+    if (ogTitle) metrics.titulo = ogTitle[1].trim().slice(0, 250);
+    if (ogDesc) metrics.descripcion = ogDesc[1].trim().slice(0, 600);
+
     const viewMatch = html.match(/(?:"viewCount"\s*:\s*"?)(\d+)/i);
     const likeMatch = html.match(/(?:\"label\"\s*:\s*\"([\d,.]+ likes))/i);
-    const ogTitle = html.match(/<meta property="og:title" content="([^"]+)"/i);
-    const ogDesc = html.match(/<meta name="description" content="([^"]+)"/i);
 
     if (viewMatch) metrics.vistas = parseInt(viewMatch[1].replace(/,/g, ''), 10);
     if (likeMatch) metrics.likes = parseNumberWithSuffix(likeMatch[1].replace(' likes', ''));
-    if (ogTitle) metrics.titulo = ogTitle[1].trim().slice(0, 250);
-    if (ogDesc) metrics.descripcion = ogDesc[1].trim().slice(0, 600);
   }
 
-  // Fallback general: buscar reproducciones en cualquier texto
+  // Fallback general: buscar reproducciones en el chunk inicial
   if (!metrics.vistas) {
-    const textMatch = html.match(/([\d,]+(?:\.\d+)?[kKmM]?)\s*(?:reproducciones|vistas|views|plays)/i);
+    const textMatch = headChunk.match(/([\d,]+(?:\.\d+)?[kKmM]?)\s*(?:reproducciones|vistas|views|plays)/i);
     if (textMatch) metrics.vistas = parseNumberWithSuffix(textMatch[1]);
   }
 
@@ -199,6 +227,12 @@ export async function scrapePostUrl(url: string): Promise<{
     return { scraped: false, httpStatus: 0, metrics };
   }
 
+  // Verificar si ya está en caché reciente
+  const cached = scrapeCache.get(url);
+  if (cached && Date.now() - cached.timestamp < SCRAPE_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   try {
     const res = await fetch(url, {
       headers: BROWSER_HEADERS,
@@ -215,7 +249,16 @@ export async function scrapePostUrl(url: string): Promise<{
     console.warn('[publicationConfirmationService] Error en fetch de postUrl:', err?.message);
   }
 
-  return { scraped, httpStatus, metrics };
+  const result = { scraped, httpStatus, metrics };
+
+  // Guardar en caché y limitar tamaño del Map a 200 entradas
+  if (scrapeCache.size > 200) {
+    const oldestKey = scrapeCache.keys().next().value;
+    if (oldestKey) scrapeCache.delete(oldestKey);
+  }
+  scrapeCache.set(url, { timestamp: Date.now(), data: result });
+
+  return result;
 }
 
 /**

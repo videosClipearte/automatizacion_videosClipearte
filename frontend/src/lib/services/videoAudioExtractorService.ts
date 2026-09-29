@@ -1,4 +1,4 @@
-﻿// src/lib/services/videoAudioExtractorService.ts
+// src/lib/services/videoAudioExtractorService.ts
 // Extrae el audio del video en el navegador usando AudioContext + MediaRecorder.
 // Sin reproduccion por altavoces. Captura los primeros N segundos de audio
 // para enviarlo a Gemini como texto + reglas de campana.
@@ -17,7 +17,7 @@ export interface VideoAudioPayload {
  */
 export async function extractAudioFromVideo(
   file: File,
-  maxDurationSeconds: number = 25
+  maxDurationSeconds: number = 18
 ): Promise<VideoAudioPayload | null> {
   if (typeof window === 'undefined') return null;
   if (!window.AudioContext && !(window as any).webkitAudioContext) return null;
@@ -39,10 +39,10 @@ export async function extractAudioFromVideo(
     const timeoutId = setTimeout(() => {
       cleanup();
       resolve(null);
-    }, 60_000);
+    }, 45_000);
 
     videoEl.onloadedmetadata = async () => {
-      const rawDuration = isFinite(videoEl.duration) ? videoEl.duration : 30;
+      const rawDuration = isFinite(videoEl.duration) ? videoEl.duration : 20;
       const captureDuration = Math.min(rawDuration, maxDurationSeconds);
 
       let audioCtx: AudioContext | undefined;
@@ -73,22 +73,21 @@ export async function extractAudioFromVideo(
 
           try {
             const blob = new Blob(chunks, { type: mimeType });
-            const arrayBuffer = await blob.arrayBuffer();
-            const bytes = new Uint8Array(arrayBuffer);
-
-            let binary = '';
-            const CHUNK = 8192;
-            for (let i = 0; i < bytes.length; i += CHUNK) {
-              binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-            }
-            const audioBase64 = btoa(binary);
-
-            resolve({
-              audioBase64,
-              mimeType: 'audio/webm',
-              durationSeconds: Math.round(captureDuration),
-              originalFileSizeBytes: file.size,
-            });
+            
+            // Optimización CPU: Usar FileReader nativo (C++) en lugar de bucle manual JS de concatenación
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const resultStr = (reader.result as string) || '';
+              const audioBase64 = resultStr.includes(',') ? resultStr.split(',')[1] : resultStr;
+              resolve({
+                audioBase64,
+                mimeType: 'audio/webm',
+                durationSeconds: Math.round(captureDuration),
+                originalFileSizeBytes: file.size,
+              });
+            };
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
           } catch {
             resolve(null);
           }

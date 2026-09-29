@@ -129,7 +129,7 @@ export function VideoDetailModal() {
     let active = true;
     setExtractingReplacementAudio(true);
 
-    extractAudioFromVideo(replacementFile, 25)
+    extractAudioFromVideo(replacementFile, 18)
       .then((payload) => {
         if (active) {
           setExtractedReplacementAudio(payload);

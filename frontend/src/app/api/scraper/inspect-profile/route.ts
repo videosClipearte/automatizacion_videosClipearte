@@ -76,6 +76,14 @@ function mapTikTokItem(item: any, cleanUser: string): ReelItem {
   };
 }
 
+// Caché en memoria para evitar llamadas masivas repetidas a la misma red social (TTL: 3 min)
+interface ProfileCacheEntry {
+  timestamp: number;
+  data: any;
+}
+const profileCache = new Map<string, ProfileCacheEntry>();
+const PROFILE_CACHE_TTL_MS = 3 * 60 * 1000;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -84,6 +92,14 @@ export async function POST(req: NextRequest) {
     const cleanUser = (username || '').replace(/^@/, '').trim();
     if (!cleanUser && !postUrl) {
       return NextResponse.json({ error: 'Usuario o URL de publicación requerida' }, { status: 400 });
+    }
+
+    const cacheKey = `${platform}:${cleanUser}`;
+    if (!postUrl && cleanUser) {
+      const cached = profileCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < PROFILE_CACHE_TTL_MS) {
+        return NextResponse.json(cached.data);
+      }
     }
 
     const result: {
@@ -409,6 +425,14 @@ export async function POST(req: NextRequest) {
     result.message = result.htmlOk
       ? `Extracción exitosa de @${cleanUser}: ${result.videoCount} videos en ${platform.toUpperCase()}. ${result.recentReels.length} reels obtenidos.`
       : `La red social respondió HTTP ${result.httpStatus}. Puedes verificar los enlaces directamente.`;
+
+    if (!postUrl && cleanUser && result.success) {
+      if (profileCache.size > 100) {
+        const oldestKey = profileCache.keys().next().value;
+        if (oldestKey) profileCache.delete(oldestKey);
+      }
+      profileCache.set(cacheKey, { timestamp: Date.now(), data: result });
+    }
 
     return NextResponse.json(result);
   } catch (err: any) {

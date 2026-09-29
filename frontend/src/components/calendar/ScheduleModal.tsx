@@ -262,7 +262,7 @@ export function ScheduleModal() {
     let active = true;
     setExtractingAudio(true);
 
-    extractAudioFromVideo(videoFile, 25)
+    extractAudioFromVideo(videoFile, 18)
       .then((payload) => {
         if (active) {
           setExtractedAudio(payload);
