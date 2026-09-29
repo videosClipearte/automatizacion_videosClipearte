@@ -1,12 +1,11 @@
 'use client';
 // src/components/calendar/CalendarView.tsx
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Plus, Grid3x3, CalendarDays, Clock,
-  CheckCircle2, Eye, Send, Play, Globe,
-  Upload, Film, Edit3, X, Sparkles, CalendarCheck, ArrowRight,
-  FileVideo, Zap, Filter, FilterX
+  Eye, Send, Play, Globe,
+  Upload, Film, Filter
 } from 'lucide-react';
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -18,7 +17,6 @@ import { es } from 'date-fns/locale';
 import { useAppStore } from '@/store/useAppStore';
 import { MetricPill } from '@/components/ui/MetricPill';
 import { cn, getStatusClass } from '@/lib/utils';
-import type { Video } from '@/store/useAppStore';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -31,380 +29,28 @@ const VIEW_OPTIONS: { key: ViewMode; label: string; Icon: React.ElementType }[] 
 const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i); // 00:00 → 23:00
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   Drag Drop Scheduler Overlay
-   Aparece al arrastrar cualquier archivo sobre la ventana, sobre la página de
-   calendario. Al soltar sobre una fecha / franja horaria → abre el ScheduleModal
-   con la fecha y el archivo pre-cargados.
-───────────────────────────────────────────────────────────────────────────── */
-interface DragOverlayProps {
-  droppedFile: File;
-  onConfirm: (date: Date, file: File) => void;
-  onCancel: () => void;
+// Helper de extracción rápida y segura de archivos desde eventos de arrastre
+function extractFileFromDrag(e: React.DragEvent): File | null {
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    return e.dataTransfer.files[0];
+  }
+  if (e.dataTransfer.items) {
+    for (let i = 0; i < e.dataTransfer.items.length; i++) {
+      if (e.dataTransfer.items[i].kind === 'file') {
+        const file = e.dataTransfer.items[i].getAsFile();
+        if (file) return file;
+      }
+    }
+  }
+  return null;
 }
-
-function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOverlayProps) {
-  const { selectedAccountId, accounts, campaigns } = useAppStore();
-
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [selectedHour, setSelectedHour] = useState<number>(() => new Date().getHours());
-  const [selectedMinute, setSelectedMinute] = useState<number>(() => new Date().getMinutes());
-  const [calDate, setCalDate] = useState<Date>(new Date()); // nav del mini-calendario
-
-  const activeAccount = useMemo(() => {
-    if (!selectedAccountId || selectedAccountId === 'ALL') return null;
-    return accounts.find((a) => a.id === selectedAccountId) || null;
-  }, [selectedAccountId, accounts]);
-
-  const activeCampaign = useMemo(() => {
-    if (!selectedAccountId || selectedAccountId === 'ALL') return null;
-    return (
-      campaigns.find((c) => c.activo && Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(selectedAccountId)) ||
-      campaigns.find((c) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(selectedAccountId)) ||
-      null
-    );
-  }, [selectedAccountId, campaigns]);
-
-  const miniMonthDays = useMemo(() => {
-    const start = startOfWeek(startOfMonth(calDate), { weekStartsOn: 0 });
-    const end   = endOfWeek(endOfMonth(calDate),   { weekStartsOn: 0 });
-    return eachDayOfInterval({ start, end });
-  }, [calDate]);
-
-  const selectDay = (day: Date) => {
-    const d = new Date(day);
-    d.setHours(selectedHour, selectedMinute, 0, 0);
-    setSelectedDate(d);
-  };
-
-  const handleQuickDate = (offsetDays: number) => {
-    const target = addDays(new Date(), offsetDays);
-    setCalDate(target);
-    selectDay(target);
-  };
-
-  const handleSetCurrentDeviceTime = () => {
-    const now = new Date();
-    setSelectedHour(now.getHours());
-    setSelectedMinute(now.getMinutes());
-    const updated = new Date(selectedDate);
-    updated.setHours(now.getHours(), now.getMinutes(), 0, 0);
-    setSelectedDate(updated);
-  };
-
-  const handleConfirm = () => {
-    const finalDate = new Date(selectedDate);
-    finalDate.setHours(selectedHour, selectedMinute, 0, 0);
-    onConfirm(finalDate, droppedFile);
-  };
-
-  const fileSize = (droppedFile.size / (1024 * 1024)).toFixed(1);
-  const cleanName = droppedFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-      {/* Backdrop con desenfoque profundo */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onCancel}
-        className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
-      />
-
-      {/* Contenedor flotante centrado */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.94, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.94, y: 16 }}
-        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-        className="relative z-10 w-full max-w-xl md:max-w-2xl bg-[#0b0f19]/95 backdrop-blur-xl rounded-3xl border border-emerald-500/30 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(16,185,129,0.18)] overflow-hidden flex flex-col my-auto"
-      >
-        {/* Resplandor radial decorativo */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-32 bg-emerald-500/15 blur-3xl pointer-events-none" />
-
-        {/* Header Modal */}
-        <div className="relative px-6 py-4 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 border border-emerald-500/40 flex items-center justify-center shadow-inner shadow-emerald-500/20">
-              <FileVideo size={20} className="text-emerald-300" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-white">Programar Publicación</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase tracking-wider">
-                  Paso 1 de 2
-                </span>
-              </div>
-              <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                Selecciona la fecha y hora de emisión para tu video
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={onCancel}
-            className="w-8 h-8 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
-            title="Cerrar"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Contenido principal */}
-        <div className="p-5 sm:p-6 flex flex-col gap-4 max-h-[80vh] overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-emerald-500/30 [&::-webkit-scrollbar-thumb]:rounded-full">
-          
-          {/* Card del video seleccionado */}
-          <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-500/[0.08] via-cyan-500/[0.04] to-transparent border border-emerald-500/25 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                <Film size={16} className="text-emerald-400" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-white truncate max-w-[280px] sm:max-w-md">{droppedFile.name}</p>
-                <p className="text-[11px] text-emerald-300 font-mono">{fileSize} MB · Video listo para programar</p>
-              </div>
-            </div>
-            <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-semibold">
-              <Zap size={12} className="text-amber-400" />
-              <span>Detectado</span>
-            </div>
-          </div>
-
-          {/* Card de Cuenta y Campaña activa del filtro */}
-          {activeAccount && (
-            <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-transparent border border-emerald-500/30 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-sm shrink-0"
-                  style={{ backgroundColor: activeAccount.avatar_color || '#10b981' }}
-                >
-                  {activeAccount.username.slice(0, 1).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-white truncate">@{activeAccount.username}</span>
-                    <span className="text-[9px] uppercase font-bold text-emerald-300 px-1.5 py-0.5 rounded bg-emerald-500/20">
-                      {activeAccount.plataforma}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 truncate">
-                    Campaña asignada: <strong className="text-cyan-300">{activeCampaign?.nombre || 'General / Reglas Base'}</strong>
-                  </p>
-                </div>
-              </div>
-              <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 shrink-0 hidden sm:inline">
-                Filtro Activo
-              </span>
-            </div>
-          )}
-
-          {/* Atajos Rápidos de Fecha */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Atajos:</span>
-            <button
-              onClick={() => handleQuickDate(0)}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium glass hover:bg-emerald-500/20 hover:border-emerald-500/30 border border-white/10 text-slate-300 hover:text-white transition-all"
-            >
-              📅 Hoy
-            </button>
-            <button
-              onClick={() => handleQuickDate(1)}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium glass hover:bg-emerald-500/20 hover:border-emerald-500/30 border border-white/10 text-slate-300 hover:text-white transition-all"
-            >
-              🚀 Mañana
-            </button>
-            <button
-              onClick={() => handleQuickDate(2)}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium glass hover:bg-emerald-500/20 hover:border-emerald-500/30 border border-white/10 text-slate-300 hover:text-white transition-all"
-            >
-              ⚡ En 2 días
-            </button>
-          </div>
-
-          {/* Grid de 2 Columnas: Calendario + Hora/Resumen */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-            
-            {/* Columna Izquierda: Mini Calendario (7 cols) */}
-            <div className="md:col-span-7 flex flex-col p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-              {/* Navegación del Mes */}
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  onClick={() => setCalDate(subMonths(calDate, 1))}
-                  className="w-7 h-7 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <span className="text-xs font-bold text-white capitalize tracking-wide">
-                  {format(calDate, 'MMMM yyyy', { locale: es })}
-                </span>
-                <button
-                  onClick={() => setCalDate(addMonths(calDate, 1))}
-                  className="w-7 h-7 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-
-              {/* Días de la semana */}
-              <div className="grid grid-cols-7 mb-1 text-center">
-                {DAY_NAMES.map(d => (
-                  <span key={d} className="text-[10px] font-bold text-[var(--text-muted)] py-1 uppercase">
-                    {d}
-                  </span>
-                ))}
-              </div>
-
-              {/* Días del mes */}
-              <div className="grid grid-cols-7 gap-1">
-                {miniMonthDays.map((day) => {
-                  const isSelected = isSameDay(day, selectedDate);
-                  const isCurrentMonth = isSameMonth(day, calDate);
-                  const isTodayDay = isToday(day);
-
-                  return (
-                    <button
-                      key={format(day, 'yyyy-MM-dd')}
-                      onClick={() => selectDay(day)}
-                      className={cn(
-                        'h-8 sm:h-9 flex items-center justify-center rounded-xl text-xs font-semibold transition-all duration-150',
-                        isSelected
-                          ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white font-bold shadow-lg shadow-emerald-500/30 scale-105 ring-2 ring-emerald-400/40'
-                          : isTodayDay
-                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 font-bold'
-                            : isCurrentMonth
-                              ? 'text-slate-200 hover:bg-white/[0.08] hover:text-white'
-                              : 'text-slate-600 opacity-40'
-                      )}
-                    >
-                      {format(day, 'd')}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Columna Derecha: Selector de Hora y Card de Resumen (5 cols) */}
-            <div className="md:col-span-5 flex flex-col gap-3.5 justify-between">
-              
-              {/* Horas */}
-              <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
-                    Hora de publicación
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSetCurrentDeviceTime}
-                      className="text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-semibold transition-colors"
-                      title="Usar la hora y minutos actuales de tu dispositivo"
-                    >
-                      <Clock size={10} /> Ahora
-                    </button>
-                    <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30">
-                      {selectedHour.toString().padStart(2, '0')}:{selectedMinute.toString().padStart(2, '0')} hs
-                    </span>
-                  </div>
-                </div>
-
-                {/* Grid de Horas (24 hs) */}
-                <div className="grid grid-cols-4 gap-1.5 max-h-[125px] overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-emerald-500/20">
-                  {HOURS.map(h => (
-                    <button
-                      key={h}
-                      onClick={() => setSelectedHour(h)}
-                      className={cn(
-                        'py-1.5 rounded-xl text-xs font-mono font-bold transition-all text-center',
-                        selectedHour === h
-                          ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-md shadow-emerald-500/30 scale-105'
-                          : 'bg-white/[0.04] border border-white/[0.08] text-slate-300 hover:text-white hover:border-emerald-500/40 hover:bg-white/[0.08]'
-                      )}
-                    >
-                      {h.toString().padStart(2, '0')}h
-                    </button>
-                  ))}
-                </div>
-
-                {/* Selector rápido de Minutos */}
-                <div className="mt-2.5 pt-2 border-t border-white/[0.06] flex items-center justify-between gap-1.5">
-                  <span className="text-[10px] font-medium text-[var(--text-muted)]">Minutos:</span>
-                  <div className="flex gap-1">
-                    {[0, 15, 30, 45].map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setSelectedMinute(m)}
-                        className={cn(
-                          'px-2 py-0.5 rounded-lg text-[10px] font-mono font-semibold transition-all',
-                          selectedMinute === m
-                            ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold'
-                            : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/[0.06]'
-                        )}
-                      >
-                        :{m.toString().padStart(2, '0')}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Resumen Card */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-cyan-500/5 to-transparent border border-emerald-500/30 flex flex-col gap-2">
-                <span className="text-[10px] text-emerald-300/80 font-bold uppercase tracking-wider">
-                  Programado para:
-                </span>
-                
-                <div className="flex items-center gap-2">
-                  <CalendarCheck size={16} className="text-emerald-400 shrink-0" />
-                  <span className="text-xs font-bold text-white capitalize">
-                    {format(selectedDate, "EEEE d 'de' MMMM", { locale: es })}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Clock size={16} className="text-cyan-400 shrink-0" />
-                  <span className="text-sm font-extrabold text-cyan-300 font-mono">
-                    {selectedHour.toString().padStart(2, '0')}:{selectedMinute.toString().padStart(2, '0')} hs
-                  </span>
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-        </div>
-
-        {/* Footer con Botones de Acción */}
-        <div className="p-4 sm:p-5 border-t border-white/[0.08] bg-white/[0.02] flex items-center gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-3 rounded-2xl glass border border-white/10 text-xs font-semibold text-slate-300 hover:text-white hover:border-white/20 transition-all"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleConfirm}
-            className="flex-[2] py-3 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-400 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 active:scale-[0.98] transition-all"
-          >
-            <Sparkles size={14} />
-            <span>Continuar y Configurar</span>
-            <ArrowRight size={14} />
-          </button>
-        </div>
-
-      </motion.div>
-    </div>
-  );
-}
-
 
 /* ─────────────────────────────────────────────────────────────────────────────
    CalendarView
 ───────────────────────────────────────────────────────────────────────────── */
 export function CalendarView() {
   const {
-    videos, accounts, campaigns, openScheduleModal,
+    videos, accounts, openScheduleModal,
     setSelectedVideoId, calendarView, setCalendarView,
     selectedAccountId, setSelectedAccountId, statusFilter, setStatusFilter
   } = useAppStore();
@@ -415,10 +61,9 @@ export function CalendarView() {
 
   // Drag state
   const [isDragging, setIsDragging] = useState(false);
-  const [droppedFile, setDroppedFile] = useState<File | null>(null); // when file is dropped → show overlay
   const dragCounter = useRef(0);
 
-  // Prevent browser from opening dragged files and detect file drags
+  // Prevenir que el navegador abra el archivo en ventana y detectar arrastre de archivos
   useEffect(() => {
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault();
@@ -427,16 +72,22 @@ export function CalendarView() {
         setIsDragging(true);
       }
     };
-    const onDragOver = (e: DragEvent) => { e.preventDefault(); };
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
     const onDragLeave = (e: DragEvent) => {
       e.preventDefault();
       dragCounter.current = Math.max(0, dragCounter.current - 1);
-      if (dragCounter.current === 0) setIsDragging(false);
+      if (dragCounter.current === 0) {
+        setIsDragging(false);
+        setDragOverDay(null);
+      }
     };
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
       dragCounter.current = 0;
       setIsDragging(false);
+      setDragOverDay(null);
     };
 
     window.addEventListener('dragenter', onDragEnter);
@@ -452,7 +103,7 @@ export function CalendarView() {
     };
   }, []);
 
-  // Month / week helpers
+  // Month / week helpers memorizados para máximo rendimiento
   const monthDays = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 });
     const end   = endOfWeek(endOfMonth(currentDate),   { weekStartsOn: 0 });
@@ -519,54 +170,56 @@ export function CalendarView() {
     }
   };
 
-  // ── Drag handlers for individual cells ──
-  const handleCellDragOver = (e: React.DragEvent, key: string) => {
+  // ── Drag handlers optimizados para cada celda/día/hora (sin re-renders redundantes) ──
+  const handleDayDragOver = useCallback((e: React.DragEvent, key: string) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
-    if (dragOverDay !== key) setDragOverDay(key);
-  };
+    setDragOverDay((prev) => (prev === key ? prev : key));
+  }, []);
 
-  const handleCellDragLeave = (e: React.DragEvent) => {
+  const handleDayDragLeave = useCallback((e: React.DragEvent, key: string) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    setDragOverDay(null);
-  };
+    setDragOverDay((prev) => (prev === key ? null : prev));
+  }, []);
 
-  // When file is dropped anywhere on the calendar → extract file and show overlay
-  const handleCalendarDrop = (e: React.DragEvent) => {
+  const handleDayDrop = useCallback((e: React.DragEvent, day: Date, hour?: number) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverDay(null);
     setIsDragging(false);
     dragCounter.current = 0;
 
-    let file: File | null = null;
-    if (e.dataTransfer.files?.length > 0) {
-      file = e.dataTransfer.files[0];
-    } else if (e.dataTransfer.items) {
-      for (let i = 0; i < e.dataTransfer.items.length; i++) {
-        if (e.dataTransfer.items[i].kind === 'file') {
-          file = e.dataTransfer.items[i].getAsFile();
-          if (file) break;
-        }
-      }
+    const file = extractFileFromDrag(e);
+    if (!file) return;
+
+    const targetDate = new Date(day);
+    const now = new Date();
+    if (typeof hour === 'number') {
+      targetDate.setHours(hour, 0, 0, 0);
+    } else {
+      // Mantiene la hora actual del dispositivo si no se especificó hora
+      targetDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
     }
 
+    openScheduleModal(targetDate, file);
+  }, [openScheduleModal]);
+
+  // Fallback si se suelta en el contenedor general fuera de una celda específica
+  const handleCalendarDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverDay(null);
+    setIsDragging(false);
+    dragCounter.current = 0;
+
+    const file = extractFileFromDrag(e);
     if (!file) return;
-    setDroppedFile(file);
-  };
 
-  // Overlay: user chose date → open ScheduleModal
-  const handleOverlayConfirm = (date: Date, file: File) => {
-    setDroppedFile(null);
-    openScheduleModal(date, file);
-  };
-
-  const handleOverlayCancel = () => {
-    setDroppedFile(null);
-  };
+    openScheduleModal(currentDate, file);
+  }, [currentDate, openScheduleModal]);
 
   return (
     <div
@@ -574,17 +227,17 @@ export function CalendarView() {
       onDragOver={(e) => { e.preventDefault(); }}
       onDrop={handleCalendarDrop}
     >
-      {/* ── Drag-in progress hint bar ── */}
+      {/* ── Barra de pista superior cuando se arrastra un archivo ── */}
       <AnimatePresence>
-        {isDragging && !droppedFile && (
+        {isDragging && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="mb-3 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/20 via-cyan-500/15 to-emerald-500/20 border border-emerald-400/50 flex items-center justify-center gap-2 text-xs font-semibold text-emerald-300 shadow-lg"
+            className="mb-3 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/25 via-cyan-500/20 to-emerald-500/25 border border-emerald-400/60 flex items-center justify-center gap-2 text-xs font-bold text-emerald-200 shadow-lg will-change-transform"
           >
-            <Film size={14} className="text-emerald-400 animate-bounce" />
-            <span>Suelta el archivo MP4 sobre el calendario para iniciar una nueva programación</span>
+            <Upload size={15} className="text-emerald-300 animate-bounce" />
+            <span>Suelta el video directamente sobre el día o la hora deseada para programarlo de inmediato</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -615,7 +268,7 @@ export function CalendarView() {
         <div className="flex items-center gap-3">
           <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-xl">
             <Upload size={12} className="text-emerald-400 shrink-0 animate-bounce" />
-            <span>Arrastra un MP4 al calendario para programar una publicación</span>
+            <span>Arrastra un MP4 a cualquier día para programar</span>
           </div>
           <div className="flex items-center gap-1 glass rounded-xl p-1 border border-[var(--border)]">
             {VIEW_OPTIONS.map(({ key, label, Icon }) => (
@@ -689,43 +342,8 @@ export function CalendarView() {
         )}
       </AnimatePresence>
 
-      {/* ── Scroll container that holds the calendar + overlay ── */}
+      {/* ── Scroll container that holds the calendar views ── */}
       <div className="relative flex-1 min-h-0">
-
-        {/* ───────── DRAG DROP SCHEDULER OVERLAY ───────── */}
-        <AnimatePresence>
-          {droppedFile && (
-            <DragDropSchedulerOverlay
-              droppedFile={droppedFile}
-              onConfirm={handleOverlayConfirm}
-              onCancel={handleOverlayCancel}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Translucent drop-target hint while file is dragged */}
-        <AnimatePresence>
-          {isDragging && !droppedFile && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-30 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-950/40 flex flex-col items-center justify-center gap-3 pointer-events-none"
-            >
-              <motion.div
-                animate={{ scale: [1, 1.08, 1] }}
-                transition={{ repeat: Infinity, duration: 1.4 }}
-                className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 border-2 border-emerald-400/60 flex items-center justify-center"
-              >
-                <Film size={36} className="text-emerald-300" />
-              </motion.div>
-              <div className="text-center">
-                <p className="text-base font-bold text-white">Suelta para programar</p>
-                <p className="text-sm text-emerald-300 mt-0.5">Se abrirá el configurador de publicación</p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* ─────────────────── MONTH VIEW ─────────────────── */}
         {calendarView === 'month' && (
@@ -746,12 +364,16 @@ export function CalendarView() {
                 const isCurrentMonth = isSameMonth(day, currentDate);
                 const isHovered      = hoveredDay === dayKey;
                 const hasSomething   = dayVideos.length > 0;
+                const isDayTargeted  = isDragging && dragOverDay === dayKey;
 
                 return (
                   <div
                     key={dayKey}
                     onMouseEnter={() => setHoveredDay(dayKey)}
                     onMouseLeave={() => setHoveredDay(null)}
+                    onDragOver={(e) => handleDayDragOver(e, dayKey)}
+                    onDragLeave={(e) => handleDayDragLeave(e, dayKey)}
+                    onDrop={(e) => handleDayDrop(e, day)}
                     onClick={() => {
                       setCurrentDate(day);
                       setCalendarView('day');
@@ -760,9 +382,28 @@ export function CalendarView() {
                       'relative min-h-[85px] sm:min-h-[105px] md:min-h-[120px] p-1.5 sm:p-2 flex flex-col transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30',
                       isCurrentMonth ? 'bg-[var(--bg-card)]' : 'bg-[var(--bg-elevated)]',
                       isToday(day) && 'ring-inset ring-1 ring-emerald-500/40',
+                      isDayTargeted && 'ring-2 ring-emerald-400 bg-emerald-500/20 z-10 scale-[1.02]'
                     )}
                     title="Haz clic para ver el cronograma completo de este día"
                   >
+                    {/* Contenedor Drop Zone para arrastrar videos a este día */}
+                    {isDragging && (
+                      <div
+                        className={cn(
+                          'absolute inset-1 z-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-1 text-center transition-all duration-150 pointer-events-none will-change-transform',
+                          isDayTargeted
+                            ? 'bg-emerald-500/40 border-emerald-400 text-white shadow-lg ring-2 ring-emerald-400/60 scale-[1.02]'
+                            : 'bg-emerald-950/70 border-emerald-500/40 text-emerald-200 backdrop-blur-[2px]'
+                        )}
+                      >
+                        <Upload size={isDayTargeted ? 18 : 14} className={cn('text-emerald-300', isDayTargeted && 'animate-bounce text-white')} />
+                        <span className="text-[10px] font-bold leading-tight mt-1 line-clamp-1 px-1">
+                          {isDayTargeted ? `Soltar: ${format(day, 'd MMM')}` : format(day, 'd MMM')}
+                        </span>
+                        <span className="text-[8px] text-emerald-300/80 font-medium">Programar</span>
+                      </div>
+                    )}
+
                     {/* Day number */}
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={cn(
@@ -850,21 +491,54 @@ export function CalendarView() {
                 const dayVideos    = getVideosForDay(day);
                 const isCurrentDay = isToday(day);
                 const dayKey       = format(day, 'yyyy-MM-dd');
+                const isDayTargeted = isDragging && dragOverDay === dayKey;
 
                 return (
                   <div key={dayKey}
+                    onDragOver={(e) => handleDayDragOver(e, dayKey)}
+                    onDragLeave={(e) => handleDayDragLeave(e, dayKey)}
+                    onDrop={(e) => handleDayDrop(e, day)}
                     onClick={() => {
                       setCurrentDate(day);
                       setCalendarView('day');
                     }}
                     className={cn(
-                      'flex flex-col rounded-2xl p-2.5 border transition-all min-h-[500px] cursor-pointer hover:border-emerald-500/40 group/col',
+                      'relative flex flex-col rounded-2xl p-2.5 border transition-all min-h-[500px] cursor-pointer hover:border-emerald-500/40 group/col',
                       isCurrentDay
                         ? 'bg-emerald-500/[0.04] border-emerald-500/30'
                         : 'glass border-[var(--border)]',
+                      isDayTargeted && 'ring-2 ring-emerald-400 bg-emerald-500/15 border-emerald-400 z-10'
                     )}
                     title="Haz clic en el día para ver la vista diaria detallada"
                   >
+                    {/* Contenedor Drop Zone para arrastrar videos a este día de la semana */}
+                    {isDragging && (
+                      <div
+                        className={cn(
+                          'absolute inset-2 z-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-3 text-center transition-all duration-150 pointer-events-none will-change-transform',
+                          isDayTargeted
+                            ? 'bg-emerald-500/45 border-emerald-400 text-white shadow-xl ring-2 ring-emerald-400/60 scale-[1.01]'
+                            : 'bg-emerald-950/75 border-emerald-500/45 text-emerald-200 backdrop-blur-[2px]'
+                        )}
+                      >
+                        <div className={cn(
+                          'w-11 h-11 rounded-2xl flex items-center justify-center mb-2 shadow-sm',
+                          isDayTargeted ? 'bg-emerald-400/30 text-emerald-200 animate-bounce' : 'bg-emerald-500/20 text-emerald-300'
+                        )}>
+                          <Upload size={22} />
+                        </div>
+                        <p className="text-xs font-bold text-white">
+                          {isDayTargeted ? '¡Soltar video aquí!' : 'Programar en este día'}
+                        </p>
+                        <p className="text-[11px] text-emerald-300 font-semibold capitalize mt-1">
+                          {format(day, "EEEE d 'de' MMMM", { locale: es })}
+                        </p>
+                        <span className="text-[10px] text-emerald-300/70 mt-1">
+                          Suelta para abrir configurador
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-[var(--border)] group-hover/col:border-emerald-500/30 transition-colors">
                       <div>
                         <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
@@ -965,18 +639,51 @@ export function CalendarView() {
                   v => getHours(new Date(v.programado_para)) === hour
                 );
                 const hourDate = setHours(currentDate, hour);
+                const hourKey = `${format(currentDate, 'yyyy-MM-dd')}-${hour}`;
+                const isHourTargeted = isDragging && dragOverDay === hourKey;
 
                 return (
                   <div key={hour}
-                    className="flex items-start gap-3 p-2 rounded-xl hover:bg-white/[0.02] border border-transparent hover:border-[var(--border)] transition-all group"
+                    onDragOver={(e) => handleDayDragOver(e, hourKey)}
+                    onDragLeave={(e) => handleDayDragLeave(e, hourKey)}
+                    onDrop={(e) => handleDayDrop(e, currentDate, hour)}
+                    className={cn(
+                      'flex items-start gap-3 p-2 rounded-xl border transition-all duration-150 group',
+                      isHourTargeted
+                        ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/50'
+                        : 'hover:bg-white/[0.02] border-transparent hover:border-[var(--border)]'
+                    )}
                   >
                     <div className="w-14 text-right pt-1 shrink-0">
-                      <span className="text-xs font-mono font-bold text-[var(--text-muted)] group-hover:text-cyan-400 transition-colors">
+                      <span className={cn(
+                        'text-xs font-mono font-bold transition-colors',
+                        isHourTargeted ? 'text-emerald-400' : 'text-[var(--text-muted)] group-hover:text-cyan-400'
+                      )}>
                         {hour.toString().padStart(2, '0')}:00
                       </span>
                     </div>
-                    <div className="flex-1 min-h-[46px] border-l-2 border-[var(--border)] pl-4 flex flex-col justify-center">
-                      {hourVideos.length === 0 ? (
+                    <div className="flex-1 min-h-[46px] border-l-2 border-[var(--border)] pl-4 flex flex-col justify-center relative">
+                      {/* Contenedor Drop Zone para arrastrar videos a esta hora específica */}
+                      {isDragging ? (
+                        <div
+                          className={cn(
+                            'rounded-xl border-2 border-dashed py-2 px-3.5 flex items-center justify-between transition-all duration-150 pointer-events-none will-change-transform',
+                            isHourTargeted
+                              ? 'bg-emerald-500/40 border-emerald-400 text-white shadow-md ring-2 ring-emerald-400/60 scale-[1.01]'
+                              : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Upload size={14} className={cn('text-emerald-300', isHourTargeted && 'animate-bounce text-white')} />
+                            <span className="text-xs font-bold">
+                              {isHourTargeted ? `¡Soltar para programar a las ${hour.toString().padStart(2, '0')}:00!` : `Programar a las ${hour.toString().padStart(2, '0')}:00`}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono text-emerald-300 font-bold px-2 py-0.5 rounded bg-emerald-500/25 border border-emerald-500/30">
+                            {hour.toString().padStart(2, '0')}:00 hs
+                          </span>
+                        </div>
+                      ) : hourVideos.length === 0 ? (
                         <div onClick={() => openScheduleModal(hourDate)}
                           className="hidden group-hover:flex items-center gap-2 text-xs text-[var(--text-muted)] hover:text-emerald-400 cursor-pointer py-1 transition-colors"
                         >
