@@ -1,21 +1,103 @@
 'use client';
 // src/components/layout/Header.tsx
+import { useRouter, usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { CalendarCheck, Send, CheckCircle, XCircle, Menu } from 'lucide-react';
-import { useAppStore } from '@/store/useAppStore';
+import { useAppStore, VideoStatus } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { NotificationsDropdown } from './NotificationsDropdown';
 import { ProfileDropdown } from './ProfileDropdown';
 
-const metricConfig = [
-  { key: 'total_programados', label: 'Programados', shortLabel: 'Prog.', Icon: CalendarCheck, color: 'text-purple-400',  bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
-  { key: 'total_enviados',    label: 'Enviados',    shortLabel: 'Env.',  Icon: Send,          color: 'text-blue-400',    bg: 'bg-blue-500/10',   border: 'border-blue-500/20'   },
-  { key: 'total_publicados',  label: 'Publicados',  shortLabel: 'Pub.',  Icon: CheckCircle,   color: 'text-emerald-400', bg: 'bg-emerald-500/10',border: 'border-emerald-500/20'},
-  { key: 'total_fallidos',    label: 'Fallidos',    shortLabel: 'Fail',  Icon: XCircle,       color: 'text-red-400',     bg: 'bg-red-500/10',    border: 'border-red-500/20'    },
+interface MetricItem {
+  key: 'total_programados' | 'total_enviados' | 'total_publicados' | 'total_fallidos';
+  status: VideoStatus;
+  label: string;
+  shortLabel: string;
+  Icon: React.ElementType;
+  color: string;
+  activeColor: string;
+  bg: string;
+  activeBg: string;
+  border: string;
+  activeBorder: string;
+  activeRing: string;
+}
+
+const metricConfig: MetricItem[] = [
+  {
+    key: 'total_programados',
+    status: 'PROGRAMADO',
+    label: 'Programados',
+    shortLabel: 'Prog.',
+    Icon: CalendarCheck,
+    color: 'text-purple-400',
+    activeColor: 'text-purple-300',
+    bg: 'bg-purple-500/10',
+    activeBg: 'bg-purple-500/25',
+    border: 'border-purple-500/20',
+    activeBorder: 'border-purple-400/70',
+    activeRing: 'ring-2 ring-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.35)]',
+  },
+  {
+    key: 'total_enviados',
+    status: 'ENVIADO',
+    label: 'Enviados',
+    shortLabel: 'Env.',
+    Icon: Send,
+    color: 'text-blue-400',
+    activeColor: 'text-blue-300',
+    bg: 'bg-blue-500/10',
+    activeBg: 'bg-blue-500/25',
+    border: 'border-blue-500/20',
+    activeBorder: 'border-blue-400/70',
+    activeRing: 'ring-2 ring-blue-400/50 shadow-[0_0_12px_rgba(59,130,246,0.35)]',
+  },
+  {
+    key: 'total_publicados',
+    status: 'PUBLICADO',
+    label: 'Publicados',
+    shortLabel: 'Pub.',
+    Icon: CheckCircle,
+    color: 'text-emerald-400',
+    activeColor: 'text-emerald-300',
+    bg: 'bg-emerald-500/10',
+    activeBg: 'bg-emerald-500/25',
+    border: 'border-emerald-500/20',
+    activeBorder: 'border-emerald-400/70',
+    activeRing: 'ring-2 ring-emerald-400/50 shadow-[0_0_12px_rgba(16,185,129,0.35)]',
+  },
+  {
+    key: 'total_fallidos',
+    status: 'ERROR_DE_RED',
+    label: 'Fallidos',
+    shortLabel: 'Fail',
+    Icon: XCircle,
+    color: 'text-red-400',
+    activeColor: 'text-red-300',
+    bg: 'bg-red-500/10',
+    activeBg: 'bg-red-500/25',
+    border: 'border-red-500/20',
+    activeBorder: 'border-red-400/70',
+    activeRing: 'ring-2 ring-red-400/50 shadow-[0_0_12px_rgba(239,68,68,0.35)]',
+  },
 ];
 
 export function Header() {
-  const { metrics, toggleMobileSidebar } = useAppStore();
+  const router = useRouter();
+  const pathname = usePathname();
+  const { metrics, toggleMobileSidebar, statusFilter, setStatusFilter } = useAppStore();
+
+  const handleMetricClick = (status: VideoStatus) => {
+    if (statusFilter === status) {
+      setStatusFilter(null);
+    } else {
+      setStatusFilter(status);
+      // Si el usuario no está en el calendario, llevarlo al calendario para que vea el resultado
+      if (!pathname.startsWith('/calendar')) {
+        router.push('/calendar');
+      }
+    }
+  };
 
   return (
     <header className="h-16 glass-strong border-b border-[var(--border)] flex items-center justify-between px-3 sm:px-6 shrink-0 z-20 gap-2">
@@ -30,27 +112,42 @@ export function Header() {
           <Menu size={18} />
         </button>
 
-        {/* Status Metrics Bar */}
+        {/* Status Metrics Bar - Interactive Filter Buttons */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 overflow-x-auto scrollbar-none py-1">
-          {metricConfig.map(({ key, label, shortLabel, Icon, color, bg, border }, i) => (
-            <motion.div
-              key={key}
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05, duration: 0.25 }}
-              className={cn(
-                'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl border shrink-0',
-                bg, border
-              )}
-            >
-              <Icon size={12} className={cn(color, 'shrink-0')} />
-              <span className="text-[var(--text-secondary)] text-[11px] hidden md:inline">{label}</span>
-              <span className="text-[var(--text-secondary)] text-[10px] hidden sm:inline md:hidden">{shortLabel}</span>
-              <span className={cn('text-xs sm:text-sm font-bold', color)}>
-                {metrics[key as keyof typeof metrics]}
-              </span>
-            </motion.div>
-          ))}
+          {metricConfig.map(({ key, status, label, shortLabel, Icon, color, activeColor, bg, activeBg, border, activeBorder, activeRing }, i) => {
+            const isActive = statusFilter === status;
+            return (
+              <motion.button
+                key={key}
+                type="button"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ delay: i * 0.05, duration: 0.2 }}
+                onClick={() => handleMetricClick(status)}
+                title={isActive ? `Quitar filtro de ${label}` : `Filtrar calendario por ${label}`}
+                className={cn(
+                  'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl border shrink-0 transition-all cursor-pointer relative select-none',
+                  isActive ? cn(activeBg, activeBorder, activeRing) : cn(bg, border, 'hover:brightness-125')
+                )}
+              >
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse shrink-0" />
+                )}
+                <Icon size={12} className={cn(isActive ? activeColor : color, 'shrink-0')} />
+                <span className={cn('text-[11px] hidden md:inline transition-colors', isActive ? 'text-white font-semibold' : 'text-[var(--text-secondary)]')}>
+                  {label}
+                </span>
+                <span className={cn('text-[10px] hidden sm:inline md:hidden transition-colors', isActive ? 'text-white font-semibold' : 'text-[var(--text-secondary)]')}>
+                  {shortLabel}
+                </span>
+                <span className={cn('text-xs sm:text-sm font-bold', isActive ? activeColor : color)}>
+                  {metrics[key]}
+                </span>
+              </motion.button>
+            );
+          })}
         </div>
       </div>
 

@@ -130,6 +130,7 @@ interface AppState {
 
   calendarView: CalendarView;
   selectedAccountId: string | null;
+  statusFilter: VideoStatus | 'ALL' | null;
   isScheduleModalOpen: boolean;
   scheduleModalDate: Date | null;
   scheduleModalFile: File | null;
@@ -142,6 +143,7 @@ interface AppState {
 
   setCalendarView: (view: CalendarView) => void;
   setSelectedAccountId: (id: string | null) => void;
+  setStatusFilter: (status: VideoStatus | 'ALL' | null) => void;
   openScheduleModal: (date?: Date, file?: File | null) => void;
   closeScheduleModal: () => void;
   setSelectedVideoId: (id: string | null) => void;
@@ -176,6 +178,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   calendarView: 'month',
   selectedAccountId: null,
+  statusFilter: null,
   isScheduleModalOpen: false,
   scheduleModalDate: null,
   scheduleModalFile: null,
@@ -252,6 +255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setCalendarView: (view) => set({ calendarView: view }),
   setSelectedAccountId: (id) => set({ selectedAccountId: id }),
+  setStatusFilter: (status) => set({ statusFilter: status }),
   openScheduleModal: (date, file) =>
     set({ isScheduleModalOpen: true, scheduleModalDate: date ?? new Date(), scheduleModalFile: file ?? null }),
   closeScheduleModal: () =>

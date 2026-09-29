@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, Plus, Grid3x3, CalendarDays, Clock,
   CheckCircle2, Eye, Send, Play, Globe,
   Upload, Film, Edit3, X, Sparkles, CalendarCheck, ArrowRight,
-  FileVideo, Zap
+  FileVideo, Zap, Filter, FilterX
 } from 'lucide-react';
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -319,7 +319,8 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
 export function CalendarView() {
   const {
     videos, accounts, campaigns, openScheduleModal,
-    setSelectedVideoId, calendarView, setCalendarView
+    setSelectedVideoId, calendarView, setCalendarView,
+    selectedAccountId, setSelectedAccountId, statusFilter, setStatusFilter
   } = useAppStore();
 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -402,7 +403,16 @@ export function CalendarView() {
 
   const getVideosForDay = (day: Date) =>
     videos
-      .filter(v => isSameDay(new Date(v.programado_para), day))
+      .filter((v) => {
+        if (!isSameDay(new Date(v.programado_para), day)) return false;
+        if (selectedAccountId && selectedAccountId !== 'ALL' && v.cuenta_id !== selectedAccountId) {
+          return false;
+        }
+        if (statusFilter && statusFilter !== 'ALL' && v.estado !== statusFilter) {
+          return false;
+        }
+        return true;
+      })
       .sort((a, b) => new Date(a.programado_para).getTime() - new Date(b.programado_para).getTime());
 
   const getDayMetrics = (day: Date) => {
@@ -540,6 +550,58 @@ export function CalendarView() {
           </div>
         </div>
       </div>
+
+      {/* ── Active Filters Notification Pill ── */}
+      <AnimatePresence>
+        {Boolean(selectedAccountId || statusFilter) && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-3 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex flex-wrap items-center justify-between gap-2 text-xs"
+          >
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1 text-[var(--text-muted)] font-medium">
+                <Filter size={12} className="text-emerald-400" />
+                Filtros activos:
+              </span>
+              {selectedAccountId && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-medium text-[11px]">
+                  Cuenta: @{accounts.find(a => a.id === selectedAccountId)?.username || selectedAccountId}
+                  <button
+                    onClick={() => setSelectedAccountId(null)}
+                    className="hover:text-white ml-0.5 text-xs font-bold leading-none"
+                    title="Quitar filtro de cuenta"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+              {statusFilter && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-medium text-[11px]">
+                  Estado: {statusFilter}
+                  <button
+                    onClick={() => setStatusFilter(null)}
+                    className="hover:text-white ml-0.5 text-xs font-bold leading-none"
+                    title="Quitar filtro de estado"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setSelectedAccountId(null);
+                setStatusFilter(null);
+              }}
+              className="text-[11px] text-slate-400 hover:text-white underline font-medium"
+            >
+              Restablecer todos
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Scroll container that holds the calendar + overlay ── */}
       <div className="relative flex-1 min-h-0">

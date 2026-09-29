@@ -18,7 +18,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { isSidebarCollapsed, toggleSidebar, isMobileSidebarOpen, setMobileSidebarOpen } = useAppStore();
+  const { isSidebarCollapsed, toggleSidebar, isMobileSidebarOpen, setMobileSidebarOpen, setCalendarView } = useAppStore();
 
   return (
     <>
@@ -54,7 +54,13 @@ export function Sidebar() {
           {navItems.map(({ href, icon: Icon, label }) => {
             const active = pathname.startsWith(href);
             return (
-              <Link key={href} href={href}>
+              <Link
+                key={href}
+                href={href}
+                onClick={() => {
+                  if (href === '/calendar') setCalendarView('month');
+                }}
+              >
                 <div
                   className={cn(
                     'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative',
@@ -172,7 +178,10 @@ export function Sidebar() {
                     <Link
                       key={href}
                       href={href}
-                      onClick={() => setMobileSidebarOpen(false)}
+                      onClick={() => {
+                        setMobileSidebarOpen(false);
+                        if (href === '/calendar') setCalendarView('month');
+                      }}
                     >
                       <div
                         className={cn(
