@@ -29,7 +29,7 @@ const VIEW_OPTIONS: { key: ViewMode; label: string; Icon: React.ElementType }[] 
 ];
 
 const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 06:00 → 23:00
+const HOURS = Array.from({ length: 24 }, (_, i) => i); // 00:00 → 23:00
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Drag Drop Scheduler Overlay
@@ -44,9 +44,26 @@ interface DragOverlayProps {
 }
 
 function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOverlayProps) {
+  const { selectedAccountId, accounts, campaigns } = useAppStore();
+
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [selectedHour, setSelectedHour] = useState<number>(14);
+  const [selectedHour, setSelectedHour] = useState<number>(() => new Date().getHours());
+  const [selectedMinute, setSelectedMinute] = useState<number>(() => new Date().getMinutes());
   const [calDate, setCalDate] = useState<Date>(new Date()); // nav del mini-calendario
+
+  const activeAccount = useMemo(() => {
+    if (!selectedAccountId || selectedAccountId === 'ALL') return null;
+    return accounts.find((a) => a.id === selectedAccountId) || null;
+  }, [selectedAccountId, accounts]);
+
+  const activeCampaign = useMemo(() => {
+    if (!selectedAccountId || selectedAccountId === 'ALL') return null;
+    return (
+      campaigns.find((c) => c.activo && Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(selectedAccountId)) ||
+      campaigns.find((c) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(selectedAccountId)) ||
+      null
+    );
+  }, [selectedAccountId, campaigns]);
 
   const miniMonthDays = useMemo(() => {
     const start = startOfWeek(startOfMonth(calDate), { weekStartsOn: 0 });
@@ -56,7 +73,7 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
 
   const selectDay = (day: Date) => {
     const d = new Date(day);
-    d.setHours(selectedHour, 0, 0, 0);
+    d.setHours(selectedHour, selectedMinute, 0, 0);
     setSelectedDate(d);
   };
 
@@ -66,9 +83,18 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
     selectDay(target);
   };
 
+  const handleSetCurrentDeviceTime = () => {
+    const now = new Date();
+    setSelectedHour(now.getHours());
+    setSelectedMinute(now.getMinutes());
+    const updated = new Date(selectedDate);
+    updated.setHours(now.getHours(), now.getMinutes(), 0, 0);
+    setSelectedDate(updated);
+  };
+
   const handleConfirm = () => {
     const finalDate = new Date(selectedDate);
-    finalDate.setHours(selectedHour, 0, 0, 0);
+    finalDate.setHours(selectedHour, selectedMinute, 0, 0);
     onConfirm(finalDate, droppedFile);
   };
 
@@ -144,6 +170,34 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
               <span>Detectado</span>
             </div>
           </div>
+
+          {/* Card de Cuenta y Campaña activa del filtro */}
+          {activeAccount && (
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-transparent border border-emerald-500/30 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-sm shrink-0"
+                  style={{ backgroundColor: activeAccount.avatar_color || '#10b981' }}
+                >
+                  {activeAccount.username.slice(0, 1).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-white truncate">@{activeAccount.username}</span>
+                    <span className="text-[9px] uppercase font-bold text-emerald-300 px-1.5 py-0.5 rounded bg-emerald-500/20">
+                      {activeAccount.plataforma}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 truncate">
+                    Campaña asignada: <strong className="text-cyan-300">{activeCampaign?.nombre || 'General / Reglas Base'}</strong>
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 shrink-0 hidden sm:inline">
+                Filtro Activo
+              </span>
+            </div>
+          )}
 
           {/* Atajos Rápidos de Fecha */}
           <div className="flex items-center gap-2 flex-wrap">
@@ -239,13 +293,23 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
                   <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
                     Hora de publicación
                   </span>
-                  <span className="text-[11px] font-mono font-bold text-emerald-400">
-                    {selectedHour.toString().padStart(2, '0')}:00 hs
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSetCurrentDeviceTime}
+                      className="text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-semibold transition-colors"
+                      title="Usar la hora y minutos actuales de tu dispositivo"
+                    >
+                      <Clock size={10} /> Ahora
+                    </button>
+                    <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30">
+                      {selectedHour.toString().padStart(2, '0')}:{selectedMinute.toString().padStart(2, '0')} hs
+                    </span>
+                  </div>
                 </div>
 
-                {/* Grid de Horas */}
-                <div className="grid grid-cols-4 gap-1.5 max-h-[140px] overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-emerald-500/20">
+                {/* Grid de Horas (24 hs) */}
+                <div className="grid grid-cols-4 gap-1.5 max-h-[125px] overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-emerald-500/20">
                   {HOURS.map(h => (
                     <button
                       key={h}
@@ -260,6 +324,28 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
                       {h.toString().padStart(2, '0')}h
                     </button>
                   ))}
+                </div>
+
+                {/* Selector rápido de Minutos */}
+                <div className="mt-2.5 pt-2 border-t border-white/[0.06] flex items-center justify-between gap-1.5">
+                  <span className="text-[10px] font-medium text-[var(--text-muted)]">Minutos:</span>
+                  <div className="flex gap-1">
+                    {[0, 15, 30, 45].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setSelectedMinute(m)}
+                        className={cn(
+                          'px-2 py-0.5 rounded-lg text-[10px] font-mono font-semibold transition-all',
+                          selectedMinute === m
+                            ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold'
+                            : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/[0.06]'
+                        )}
+                      >
+                        :{m.toString().padStart(2, '0')}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -279,7 +365,7 @@ function DragDropSchedulerOverlay({ droppedFile, onConfirm, onCancel }: DragOver
                 <div className="flex items-center gap-2">
                   <Clock size={16} className="text-cyan-400 shrink-0" />
                   <span className="text-sm font-extrabold text-cyan-300 font-mono">
-                    {selectedHour.toString().padStart(2, '0')}:00 hs
+                    {selectedHour.toString().padStart(2, '0')}:{selectedMinute.toString().padStart(2, '0')} hs
                   </span>
                 </div>
               </div>

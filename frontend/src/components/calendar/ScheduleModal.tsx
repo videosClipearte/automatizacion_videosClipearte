@@ -93,6 +93,7 @@ export function ScheduleModal() {
     closeScheduleModal,
     scheduleModalDate,
     scheduleModalFile,
+    selectedAccountId,
     accounts,
     campaigns,
     videos,
@@ -119,12 +120,41 @@ export function ScheduleModal() {
   const [driveSuccessUrl, setDriveSuccessUrl] = useState<string | null>(null);
   const [manualDriveUrl, setManualDriveUrl] = useState('');
 
-  const initialDate = scheduleModalDate
-    ? format(scheduleModalDate, 'yyyy-MM-dd')
-    : format(new Date(), 'yyyy-MM-dd');
-  const initialTime = scheduleModalDate
-    ? format(scheduleModalDate, 'HH:mm')
-    : format(new Date(), 'HH:mm');
+  // Sincronizar fecha y hora con el horario local del dispositivo
+  const getDeviceScheduleTime = useCallback((date?: Date | null): { fecha: string; hora: string } => {
+    const now = new Date();
+    const deviceTime = format(now, 'HH:mm');
+
+    if (!date) {
+      return {
+        fecha: format(now, 'yyyy-MM-dd'),
+        hora: deviceTime,
+      };
+    }
+
+    const fecha = format(date, 'yyyy-MM-dd');
+    const isMidnight = date.getHours() === 0 && date.getMinutes() === 0;
+    // Si viene con 00:00 (por clic en celda del calendario), asignar la hora actual del dispositivo
+    const hora = isMidnight ? deviceTime : format(date, 'HH:mm');
+
+    return { fecha, hora };
+  }, []);
+
+  // Buscar campaña vinculada a la cuenta activa del filtro
+  const defaultMatchingCampaign = useMemo(() => {
+    if (!selectedAccountId || selectedAccountId === 'ALL') return null;
+    return (
+      campaigns.find(
+        (c) => c.activo && Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(selectedAccountId)
+      ) ||
+      campaigns.find(
+        (c) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(selectedAccountId)
+      ) ||
+      null
+    );
+  }, [selectedAccountId, campaigns]);
+
+  const initialDateTime = getDeviceScheduleTime(scheduleModalDate);
 
   const {
     register,
@@ -135,8 +165,10 @@ export function ScheduleModal() {
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      fecha: initialDate,
-      hora: initialTime,
+      fecha: initialDateTime.fecha,
+      hora: initialDateTime.hora,
+      cuenta_id: selectedAccountId && selectedAccountId !== 'ALL' ? selectedAccountId : '',
+      campana_id: defaultMatchingCampaign ? defaultMatchingCampaign.id : '',
       auto_reprogramacion: false,
       descripcion: '',
     },
@@ -146,21 +178,21 @@ export function ScheduleModal() {
   const selectedCampanaId = watch('campana_id');
 
   // Cuentas filtradas según la campaña seleccionada
-  const selectedCampaignForFilter = campaigns.find(c => c.id === selectedCampanaId);
+  const selectedCampaignForFilter = campaigns.find((c) => c.id === selectedCampanaId);
   const filteredAccounts = selectedCampaignForFilter
-    ? accounts.filter(a => a.activo && selectedCampaignForFilter.cuentas_ids.includes(a.id))
-    : accounts.filter(a => a.activo);
+    ? accounts.filter((a) => a.activo && selectedCampaignForFilter.cuentas_ids.includes(a.id))
+    : accounts.filter((a) => a.activo);
 
   // Si la cuenta seleccionada no pertenece a la nueva campaña, limpiarla
   useEffect(() => {
     if (!selectedCampanaId) return;
-    const campaign = campaigns.find(c => c.id === selectedCampanaId);
-    if (campaign && selectedCuentaId && !campaign.cuentas_ids.includes(selectedCuentaId)) {
+    const campaign = campaigns.find((c) => c.id === selectedCampanaId);
+    if (campaign && selectedCuentaId && Array.isArray(campaign.cuentas_ids) && !campaign.cuentas_ids.includes(selectedCuentaId)) {
       setValue('cuenta_id', '');
     }
-  }, [selectedCampanaId]);
+  }, [selectedCampanaId, selectedCuentaId, campaigns, setValue]);
 
-  // Cargar token existente de Google Drive al montar o abrir modal
+  // Cargar token existente de Google Drive y preseleccionar cuenta/campaña/hora al abrir modal
   useEffect(() => {
     if (isScheduleModalOpen) {
       setDriveToken(getGoogleDriveToken());
@@ -168,9 +200,29 @@ export function ScheduleModal() {
       setDriveSuccessUrl(null);
       setUploadProgress(0);
 
-      if (scheduleModalDate) {
-        setValue('fecha', format(scheduleModalDate, 'yyyy-MM-dd'));
-        setValue('hora', format(scheduleModalDate, 'HH:mm'));
+      // 1. Sincronizar fecha y hora con el dispositivo
+      const { fecha, hora } = getDeviceScheduleTime(scheduleModalDate);
+      setValue('fecha', fecha);
+      setValue('hora', hora);
+
+      // 2. Preseleccionar automáticamente cuenta y campaña del filtro del calendario
+      if (selectedAccountId && selectedAccountId !== 'ALL') {
+        const matchingAccount = accounts.find((a) => a.id === selectedAccountId);
+        if (matchingAccount) {
+          setValue('cuenta_id', matchingAccount.id);
+
+          const matchingCamp =
+            campaigns.find(
+              (c) => c.activo && Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(matchingAccount.id)
+            ) ||
+            campaigns.find(
+              (c) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(matchingAccount.id)
+            );
+
+          if (matchingCamp) {
+            setValue('campana_id', matchingCamp.id);
+          }
+        }
       }
 
       if (scheduleModalFile) {
@@ -186,7 +238,16 @@ export function ScheduleModal() {
         setVideoTitle('');
       }
     }
-  }, [isScheduleModalOpen, scheduleModalDate, scheduleModalFile, setValue]);
+  }, [
+    isScheduleModalOpen,
+    scheduleModalDate,
+    scheduleModalFile,
+    selectedAccountId,
+    accounts,
+    campaigns,
+    getDeviceScheduleTime,
+    setValue,
+  ]);
 
   // Extraer audio del video para analisis con Gemini (mas rapido que fotogramas)
   useEffect(() => {
@@ -964,11 +1025,26 @@ export function ScheduleModal() {
                   </label>
                    <select
                     {...register('cuenta_id')}
+                    onChange={(e) => {
+                      const accId = e.target.value;
+                      setValue('cuenta_id', accId);
+                      if (accId) {
+                        const matching =
+                          campaigns.find(
+                            (c) => c.activo && Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(accId)
+                          ) ||
+                          campaigns.find(
+                            (c) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(accId)
+                          );
+                        if (matching) {
+                          setValue('campana_id', matching.id);
+                        }
+                      }
+                    }}
                     className="w-full glass rounded-xl px-3 py-2 text-xs text-white bg-transparent border border-[var(--border)] focus:border-emerald-500/50 outline-none"
-                    disabled={!selectedCampanaId}
                   >
                     <option value="" className="bg-[#0d0d1a]">
-                      {selectedCampanaId ? 'Seleccionar cuenta...' : 'Primero selecciona una campaña'}
+                      Seleccionar cuenta...
                     </option>
                     {filteredAccounts
                       .map((a) => {
@@ -1135,9 +1211,19 @@ export function ScheduleModal() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1 mb-1">
-                    <Clock size={11} className="text-cyan-400" /> Hora de Envío
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1">
+                      <Clock size={11} className="text-cyan-400" /> Hora de Envío
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setValue('hora', format(new Date(), 'HH:mm'))}
+                      className="text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-medium transition-colors"
+                      title="Usar hora actual de tu dispositivo"
+                    >
+                      <Clock size={10} /> Hora actual
+                    </button>
+                  </div>
                   <input
                     type="time"
                     {...register('hora')}
