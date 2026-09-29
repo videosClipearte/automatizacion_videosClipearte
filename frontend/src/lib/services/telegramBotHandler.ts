@@ -124,7 +124,9 @@ export async function handleTelegramUpdate(
 
   const text = message.text.trim();
   const chatId = message.chat?.id;
-  const replyToId = message.message_id;
+  const userMessageId = message.message_id;
+  const replyToId = userMessageId;
+  const replyToMsg = message.reply_to_message;
   const threadId = message.message_thread_id;
   const isPrivateChat = message.chat?.type === 'private';
 
@@ -138,7 +140,15 @@ export async function handleTelegramUpdate(
   // ──────────────────────────────────────────
   const detectedUrl = extractUrl(text);
   if (detectedUrl) {
-    const linkHandled = await handleLinkConfirmation(detectedUrl, chatId, replyToId, threadId, db, botToken);
+    const linkHandled = await handleLinkConfirmation({
+      url: detectedUrl,
+      chatId,
+      userMessageId,
+      replyToMsg,
+      threadId,
+      db,
+      botToken,
+    });
     if (linkHandled) return { handled: true, command: 'link_confirmacion', responseSent: true };
   }
 
@@ -211,7 +221,7 @@ async function handleCallbackQuery(
   const callbackData: string = cbq.data || '';
   const chatId = cbq.message?.chat?.id;
   const messageId: number = cbq.message?.message_id;
-  const originalText: string = cbq.message?.text || '';
+  const threadId = cbq.message?.message_thread_id;
 
   if (!chatId) {
     return { handled: false, message: 'callback_query sin chat_id' };
@@ -221,52 +231,72 @@ async function handleCallbackQuery(
   if (callbackData.startsWith('confirm_pub:')) {
     const publicacionId = callbackData.replace('confirm_pub:', '').trim();
 
-    // 1. Confirmar callbackQuery para quitar el reloj del botón
-    await answerCallbackQuery(botToken, callbackId, '✅ ¡Confirmado como publicado!', false);
+    // 1. Obtener detalles reales del video y su cuenta desde la BD
+    const { data: videoData } = await db
+      .from('publicaciones')
+      .select('*, cuentas(*)')
+      .eq('id', publicacionId)
+      .single();
 
-    // 2. Procesar confirmación directa en BD: marcar PUBLICADO, publicado_en = now(),
+    const videoTitle = videoData?.titulo || 'Video';
+    const accountName = videoData?.cuentas?.username || 'cuenta';
+    const platform = (videoData?.cuentas?.plataforma || 'red').toUpperCase();
+    const horaProg = videoData?.programado_para ? formatLocalTime(videoData.programado_para) : '';
+
+    const safeTitle = escapeHtml(videoTitle);
+    const safeAccount = escapeHtml(accountName);
+    const safePlatform = escapeHtml(platform);
+
+    // 2. Confirmar callbackQuery para quitar el reloj del botón en Telegram
+    await answerCallbackQuery(botToken, callbackId, `✅ Confirmado: "${videoTitle.slice(0, 32)}"`, false);
+
+    // 3. Procesar confirmación directa en BD: marcar PUBLICADO, publicado_en = now(),
     //    y registrar en reels_rastreados y metricas_extraidas_scraper
     await confirmPublicationAndProcessMetrics({
       publicacionId,
       fuente: 'telegram',
     });
 
-    // 3. Marcar confirmación como ESPERANDO_LINK en confirmaciones_telegram
+    // 4. Marcar confirmación como ESPERANDO_LINK en confirmaciones_telegram con timestamp actual
+    const nowIso = new Date().toISOString();
     await db
       .from('confirmaciones_telegram')
       .update({
         estado: 'ESPERANDO_LINK',
-        respondido_en: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        respondido_en: nowIso,
+        updated_at: nowIso,
       })
       .eq('publicacion_id', publicacionId);
 
-    // 4. Actualizar el mensaje de la encuesta para mostrar que fue confirmado
+    // 5. Actualizar el mensaje de la encuesta para mostrar claramente qué video fue confirmado
     const confirmedText = [
       `✅ <b>PUBLICACIÓN CONFIRMADA</b>`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      originalText.split('\n').slice(2, 4).join('\n'), // Título y cuenta
+      `🎬 <b>Video confirmado:</b> <b>${safeTitle}</b>`,
+      `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)${horaProg ? ` · ⏰ ${horaProg}` : ''}`,
       ``,
-      `📈 <b>Estado:</b> Registrado como <b>PUBLICADO</b> en el sistema ✅`,
-      `⏳ <i>Envía el <b>enlace directo del reel</b> (Instagram/TikTok) para extraer vistas, likes y alimentar las gráficas de analíticas automáticamente.</i>`,
-      `<code>Ejemplo: https://www.instagram.com/reel/ABC123/</code>`,
+      `📈 <b>Estado en App:</b> Registrado como <b>PUBLICADO</b> ✅`,
+      `⏳ <i>Esperando enlace del reel para vincular reproducciones y métricas reales...</i>`,
     ].join('\n');
 
     await editTelegramMessage(botToken, chatId, messageId, confirmedText);
 
-    // 5. Enviar mensaje separado pidiendo el link
-    await sendTelegramMessage(
-      botToken,
-      chatId,
-      [
-        `🔗 <b>ENLACE DEL REEL PUBLICADO</b>`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `El video ya fue marcado como <b>PUBLICADO</b> en el calendario y analíticas.`,
-        ``,
-        `💡 <i>Pega aquí el enlace directo del reel publicado (Instagram o TikTok) para que el monitor del scraper extraiga las reproducciones reales y actualice las gráficas automáticamente.</i>`,
-      ].join('\n'),
-      'HTML'
-    );
+    // 6. Enviar mensaje citando la encuesta del video (reply_to) con mención explícita y código ref
+    const promptText = [
+      `🔗 <b>ENLACE PARA EL VIDEO CONFIRMADO</b>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `🎬 <b>Video a enlazar:</b> <b>${safeTitle}</b>`,
+      `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)`,
+      ``,
+      `💡 <i>Pega aquí el enlace directo del reel publicado (Instagram o TikTok) correspondiente a <b>"${safeTitle}"</b> para rastrear reproducciones automáticamente.</i>`,
+      ``,
+      `📌 <i>ID de seguimiento: <code>ref:${publicacionId}</code></i>`,
+    ].join('\n');
+
+    await sendTelegramMessage(botToken, chatId, promptText, 'HTML', {
+      reply_to_message_id: messageId,
+      message_thread_id: threadId,
+    });
 
     return { handled: true, command: 'confirm_pub', responseSent: true };
   }
@@ -275,12 +305,32 @@ async function handleCallbackQuery(
   if (callbackData.startsWith('reject_pub:')) {
     const publicacionId = callbackData.replace('reject_pub:', '').trim();
 
-    await answerCallbackQuery(botToken, callbackId, '❌ Marcado como no publicado.', false);
+    // Obtener datos del video para el mensaje
+    const { data: videoData } = await db
+      .from('publicaciones')
+      .select('*, cuentas(*)')
+      .eq('id', publicacionId)
+      .single();
+
+    const videoTitle = videoData?.titulo || 'Video';
+    const accountName = videoData?.cuentas?.username || 'cuenta';
+    const platform = (videoData?.cuentas?.plataforma || 'red').toUpperCase();
+
+    const safeTitle = escapeHtml(videoTitle);
+    const safeAccount = escapeHtml(accountName);
+    const safePlatform = escapeHtml(platform);
+
+    await answerCallbackQuery(botToken, callbackId, `❌ No publicado: "${videoTitle.slice(0, 30)}"`, false);
 
     // Actualizar confirmación como RECHAZADO
+    const nowIso = new Date().toISOString();
     await db
       .from('confirmaciones_telegram')
-      .update({ estado: 'RECHAZADO', respondido_en: new Date().toISOString() })
+      .update({
+        estado: 'RECHAZADO',
+        respondido_en: nowIso,
+        updated_at: nowIso,
+      })
       .eq('publicacion_id', publicacionId)
       .eq('estado', 'PENDIENTE');
 
@@ -288,9 +338,10 @@ async function handleCallbackQuery(
     const rejectedText = [
       `❌ <b>PUBLICACIÓN NO CONFIRMADA</b>`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      originalText.split('\n').slice(2, 4).join('\n'),
+      `🎬 <b>Video:</b> <b>${safeTitle}</b>`,
+      `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)`,
       ``,
-      `⚠️ <i>El video permanece en estado <b>ENVIADO</b>. Cuando lo publiques, podrás confirmarlo manualmente desde la aplicación o reenviar el video.</i>`,
+      `⚠️ <i>El video permanece en estado <b>ENVIADO</b>. Podrás confirmarlo manualmente desde la aplicación web en el calendario.</i>`,
     ].join('\n');
 
     await editTelegramMessage(botToken, chatId, messageId, rejectedText);
@@ -304,32 +355,104 @@ async function handleCallbackQuery(
 // ──────────────────────────────────────────────────────────────────────────────
 // HANDLER: Link de confirmación enviado como mensaje de texto
 // ──────────────────────────────────────────────────────────────────────────────
-async function handleLinkConfirmation(
-  url: string,
-  chatId: string | number,
-  replyToId: number | undefined,
-  threadId: number | undefined,
-  db: any,
-  botToken: string
-): Promise<boolean> {
-  // Buscar si hay alguna confirmación en estado ESPERANDO_LINK para este chat
-  const { data: pendingConf, error } = await db
-    .from('confirmaciones_telegram')
-    .select('*, publicaciones(*)')
-    .eq('chat_id', String(chatId))
-    .eq('estado', 'ESPERANDO_LINK')
-    .order('created_at', { ascending: false })
-    .limit(1);
+interface HandleLinkParams {
+  url: string;
+  chatId: string | number;
+  userMessageId: number;
+  replyToMsg?: any;
+  threadId?: number;
+  db: any;
+  botToken: string;
+}
 
-  if (error || !pendingConf || pendingConf.length === 0) {
-    return false; // No hay confirmación esperando link — no manejar
+async function handleLinkConfirmation({
+  url,
+  chatId,
+  userMessageId,
+  replyToMsg,
+  threadId,
+  db,
+  botToken,
+}: HandleLinkParams): Promise<boolean> {
+  let targetConf: any = null;
+
+  // 1. PRIORIDAD 1: Si el usuario respondió a un mensaje (Reply / Citar)
+  if (replyToMsg) {
+    const replyText: string = replyToMsg.text || replyToMsg.caption || '';
+    const repliedMsgId: number = replyToMsg.message_id;
+
+    // A) Buscar código de referencia "ref:<id>" en el texto del mensaje citado
+    const refMatch = replyText.match(/ref:([a-zA-Z0-9_-]{8,})/i);
+    if (refMatch) {
+      const pubId = refMatch[1].trim();
+      const { data: matchedByRef } = await db
+        .from('confirmaciones_telegram')
+        .select('*, publicaciones(*, cuentas(*))')
+        .eq('publicacion_id', pubId)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (matchedByRef && matchedByRef.length > 0) {
+        targetConf = matchedByRef[0];
+      }
+    }
+
+    // B) Si no hay código ref, buscar si el mensaje citado es el message_id de la encuesta
+    if (!targetConf && repliedMsgId) {
+      const { data: matchedByMsgId } = await db
+        .from('confirmaciones_telegram')
+        .select('*, publicaciones(*, cuentas(*))')
+        .eq('chat_id', String(chatId))
+        .eq('message_id', repliedMsgId)
+        .limit(1);
+
+      if (matchedByMsgId && matchedByMsgId.length > 0) {
+        targetConf = matchedByMsgId[0];
+      }
+    }
   }
 
-  const conf = pendingConf[0];
-  const video = conf.publicaciones;
+  // 2. PRIORIDAD 2: Si no hubo Reply directo o no coincidió,
+  //    buscar el video que el usuario haya confirmado en la encuesta MÁS RECIENTEMENTE:
+  //    (estado = 'ESPERANDO_LINK' ordenado por respondido_en DESC, ¡NO por created_at!)
+  if (!targetConf) {
+    const { data: waitingConfs } = await db
+      .from('confirmaciones_telegram')
+      .select('*, publicaciones(*, cuentas(*))')
+      .eq('chat_id', String(chatId))
+      .eq('estado', 'ESPERANDO_LINK')
+      .order('respondido_en', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (waitingConfs && waitingConfs.length > 0) {
+      targetConf = waitingConfs[0];
+    }
+  }
+
+  // 3. PRIORIDAD 3: Si no hay ninguno en ESPERANDO_LINK, buscar si hay una encuesta PENDIENTE
+  if (!targetConf) {
+    const { data: pendingConfs } = await db
+      .from('confirmaciones_telegram')
+      .select('*, publicaciones(*, cuentas(*))')
+      .eq('chat_id', String(chatId))
+      .eq('estado', 'PENDIENTE')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (pendingConfs && pendingConfs.length > 0) {
+      targetConf = pendingConfs[0];
+    }
+  }
+
+  if (!targetConf) {
+    return false; // No hay ninguna confirmación esperando link
+  }
+
+  const video = targetConf.publicaciones;
   const now = new Date().toISOString();
 
-  // 1. Marcar confirmación como CONFIRMADO
+  // 1. Marcar confirmación como CONFIRMADO con la URL enviada
   await db
     .from('confirmaciones_telegram')
     .update({
@@ -338,11 +461,11 @@ async function handleLinkConfirmation(
       respondido_en: now,
       updated_at: now,
     })
-    .eq('id', conf.id);
+    .eq('id', targetConf.id);
 
-  // 2. Procesar métricas DIRECTAMENTE con el scraper centralizado (sin llamadas HTTP a sí mismo)
+  // 2. Procesar métricas DIRECTAMENTE con el scraper centralizado
   const confirmResult = await confirmPublicationAndProcessMetrics({
-    publicacionId: conf.publicacion_id,
+    publicacionId: targetConf.publicacion_id,
     postUrl: url.trim(),
     cuentaId: video?.cuenta_id,
     fuente: 'telegram',
@@ -351,20 +474,24 @@ async function handleLinkConfirmation(
   const scraped = confirmResult.scraped;
   const metrics = confirmResult.metrics;
 
-  // 3. Responder al admin en Telegram con resultado de la extracción
+  // 3. Responder al admin en Telegram mencionando EXPLÍCITAMENTE a qué video se vinculó
   const safeTitle = escapeHtml(video?.titulo || 'Video');
+  const safeAccount = escapeHtml(video?.cuentas?.username || 'cuenta');
+  const safePlatform = escapeHtml((video?.cuentas?.plataforma || 'red').toUpperCase());
+
   const statsLine = scraped
     ? `📊 <b>Métricas extraídas del scraper:</b>\n` +
       `• 👁️ Reproducciones: <b>${metrics.vistas.toLocaleString()}</b>\n` +
       `• ❤️ Me gusta: <b>${metrics.likes.toLocaleString()}</b>\n` +
       `• 💬 Comentarios: <b>${metrics.comentarios.toLocaleString()}</b>\n` +
       `<i>Datos enlazados al Monitor del Scraper y gráficas de Analíticas.</i>`
-    : `📊 <i>Enlace guardado y verificado. Si el post es reciente, las métricas se actualizarán automáticamente desde el Monitor del Scraper.</i>`;
+    : `📊 <i>Enlace guardado y enlazado. Si el post es reciente, las métricas se actualizarán automáticamente desde el Monitor del Scraper.</i>`;
 
   const successMsg = [
     `🎉 <b>REEL ENLAZADO Y CONFIRMADO EXITOSAMENTE</b>`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `🎬 <b>Video:</b> ${safeTitle}`,
+    `🎬 <b>Video confirmado:</b> <b>${safeTitle}</b>`,
+    `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)`,
     `🔗 <b>Link verificado:</b> ${escapeHtml(url.trim())}`,
     `📈 <b>Estado:</b> <b>PUBLICADO</b> ✅`,
     ``,
@@ -372,7 +499,7 @@ async function handleLinkConfirmation(
   ].join('\n');
 
   await sendTelegramMessage(botToken, chatId, successMsg, 'HTML', {
-    reply_to_message_id: replyToId,
+    reply_to_message_id: userMessageId,
     message_thread_id: threadId,
   });
 
