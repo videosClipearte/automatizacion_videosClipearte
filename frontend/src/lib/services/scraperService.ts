@@ -120,15 +120,25 @@ export async function verifyScraperPost(
     };
   }
 
-  // 2. Determinar URL objetivo: post directo tiene prioridad sobre el perfil
-  const postUrl = video.post_url_publica && video.post_url_publica !== '#'
+  // 2. Determinar URL objetivo: SOLO verificar si existe post_url_publica directa del reel
+  const postUrl = video.post_url_publica && video.post_url_publica !== '#' && video.post_url_publica.startsWith('http')
     ? video.post_url_publica
     : null;
-  const profileUrl = account?.profile_url || `https://${platform}.com/@${username}`;
-  const targetUrl = postUrl || profileUrl;
+
+  if (!postUrl) {
+    return {
+      success: false,
+      is_live: false,
+      description_matched: false,
+      matched_tokens: [],
+      message: 'Pendiente de enlace directo del reel en Telegram o la app. El video permanece como ENVIADO.',
+    };
+  }
+
+  const targetUrl = postUrl;
 
   // 3. Descarga HTTP + análisis de coincidencias en el HTML
-  console.log(`[ScraperService] Analizando URL: ${targetUrl}`);
+  console.log(`[ScraperService] Analizando URL del reel: ${targetUrl}`);
   const scraperResult = await fetchAndMatch(targetUrl, keywords);
 
   let matchedTokens: string[] = [];
@@ -155,8 +165,8 @@ export async function verifyScraperPost(
   if (isConfirmed) {
     // 5. Actualizar Supabase → PUBLICADO
     const db = getSupabase();
+    const confirmedPostUrl = targetUrl;
     const nowIso = new Date().toISOString();
-    const confirmedPostUrl = postUrl || `${profileUrl}/post/${video.id.replace(/[^a-zA-Z0-9]/g, '')}`;
 
     try {
       await db

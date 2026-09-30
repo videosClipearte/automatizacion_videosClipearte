@@ -386,7 +386,9 @@ export function PublicationScheduler() {
     // Solo cambia el estado a PUBLICADO cuando el scraper comprueba que la descripción coincide
     const checkScraperVerifications = async () => {
       const currentVideos = videosRef.current;
-      const sentVideos = currentVideos.filter((v) => v.estado === 'ENVIADO');
+      const sentVideos = currentVideos.filter(
+        (v) => v.estado === 'ENVIADO' && Boolean(v.post_url_publica && v.post_url_publica.startsWith('http'))
+      );
       for (const v of sentVideos) {
         const key = `scraped_verify_${v.id}`;
         if (alertedDelaysRef.current.has(key)) continue;

@@ -248,17 +248,19 @@ async function handleCallbackQuery(
     const safePlatform = escapeHtml(platform);
 
     // 2. Confirmar callbackQuery para quitar el reloj del botón en Telegram
-    await answerCallbackQuery(botToken, callbackId, `✅ Confirmado: "${videoTitle.slice(0, 32)}"`, false);
+    await answerCallbackQuery(botToken, callbackId, `⏳ Esperando enlace: "${videoTitle.slice(0, 30)}"`, false);
 
-    // 3. Procesar confirmación directa en BD: marcar PUBLICADO, publicado_en = now(),
-    //    y registrar en reels_rastreados y metricas_extraidas_scraper
-    await confirmPublicationAndProcessMetrics({
-      publicacionId,
-      fuente: 'telegram',
-    });
+    // 3. El video PERMANECE en estado ENVIADO (NO se pasa a PUBLICADO hasta que se envíe el enlace del reel en el chat)
+    const nowIso = new Date().toISOString();
+    await db
+      .from('publicaciones')
+      .update({
+        estado: 'ENVIADO',
+        updated_at: nowIso,
+      })
+      .eq('id', publicacionId);
 
     // 4. Marcar confirmación como ESPERANDO_LINK en confirmaciones_telegram con timestamp actual
-    const nowIso = new Date().toISOString();
     await db
       .from('confirmaciones_telegram')
       .update({
@@ -268,27 +270,28 @@ async function handleCallbackQuery(
       })
       .eq('publicacion_id', publicacionId);
 
-    // 5. Actualizar el mensaje de la encuesta para mostrar claramente qué video fue confirmado
+    // 5. Actualizar el mensaje de la encuesta para mostrar claramente que el estado sigue ENVIADO esperando el enlace
     const confirmedText = [
-      `✅ <b>PUBLICACIÓN CONFIRMADA</b>`,
+      `⏳ <b>PUBLICACIÓN EN ESPERA DE ENLACE</b>`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `🎬 <b>Video confirmado:</b> <b>${safeTitle}</b>`,
+      `🎬 <b>Video:</b> <b>${safeTitle}</b>`,
       `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)${horaProg ? ` · ⏰ ${horaProg}` : ''}`,
       ``,
-      `📈 <b>Estado en App:</b> Registrado como <b>PUBLICADO</b> ✅`,
-      `⏳ <i>Esperando enlace del reel para vincular reproducciones y métricas reales...</i>`,
+      `📈 <b>Estado en App:</b> <b>ENVIADO</b> ⏳`,
+      `💡 <i>Para confirmarlo como <b>PUBLICADO</b>, envía el enlace directo del reel publicado en este chat.</i>`,
     ].join('\n');
 
     await editTelegramMessage(botToken, chatId, messageId, confirmedText);
 
     // 6. Enviar mensaje citando la encuesta del video (reply_to) con mención explícita y código ref
     const promptText = [
-      `🔗 <b>ENLACE PARA EL VIDEO CONFIRMADO</b>`,
+      `🔗 <b>ENVIAR ENLACE DEL REEL</b>`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `🎬 <b>Video a enlazar:</b> <b>${safeTitle}</b>`,
+      `🎬 <b>Video a confirmar:</b> <b>${safeTitle}</b>`,
       `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)`,
       ``,
-      `💡 <i>Pega aquí el enlace directo del reel publicado (Instagram o TikTok) correspondiente a <b>"${safeTitle}"</b> para rastrear reproducciones automáticamente.</i>`,
+      `💡 <i>Pega aquí el enlace directo del reel publicado (Instagram o TikTok) correspondiente a <b>"${safeTitle}"</b>.</i>`,
+      `<i>Al recibir la URL, el sistema actualizará el estado a <b>PUBLICADO</b> ✅ y comenzará a rastrear reproducciones.</i>`,
       ``,
       `📌 <i>ID de seguimiento: <code>ref:${publicacionId}</code></i>`,
     ].join('\n');

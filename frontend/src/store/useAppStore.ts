@@ -224,6 +224,43 @@ export const useAppStore = create<AppState>((set, get) => ({
         throw new Error(`publicaciones: ${vidRes.error.message}`);
       }
 
+      // Auto-corregir videos erróneamente marcados como PUBLICADO sin confirmación con URL de reel en Telegram
+      try {
+        const { data: pendingConfs } = await db
+          .from('confirmaciones_telegram')
+          .select('publicacion_id, estado')
+          .in('estado', ['PENDIENTE', 'ESPERANDO_LINK']);
+
+        const unconfirmedPubIds = (pendingConfs ?? []).map((c: any) => c.publicacion_id).filter(Boolean);
+
+        const erroneouslyPublished = (vidRes.data ?? []).filter((v: any) => {
+          if (v.estado !== 'PUBLICADO') return false;
+          // Si tiene confirmación de Telegram pendiente o esperando link
+          if (unconfirmedPubIds.includes(v.id)) return true;
+          // O si fue despachado/enviado pero aún no cuenta con la URL pública del reel confirmada
+          if (v.enviado_en && (!v.post_url_publica || !v.post_url_publica.startsWith('http'))) return true;
+          return false;
+        });
+
+        if (erroneouslyPublished.length > 0) {
+          const errIds = erroneouslyPublished.map((v: any) => v.id);
+          console.log(`[Supabase] Auto-corrigiendo ${errIds.length} video(s) a ENVIADO (esperando confirmación con URL de reel):`, errIds);
+          await db
+            .from('publicaciones')
+            .update({ estado: 'ENVIADO', publicado_en: null })
+            .in('id', errIds);
+
+          vidRes.data?.forEach((v: any) => {
+            if (errIds.includes(v.id)) {
+              v.estado = 'ENVIADO';
+              v.publicado_en = null;
+            }
+          });
+        }
+      } catch (autoHealErr) {
+        console.warn('[Supabase] Aviso en auto-corrección de publicaciones pendientes:', autoHealErr);
+      }
+
       const accounts = (accRes.data ?? []).map(mapAccount);
       const campaigns = (campRes.data ?? []).map(mapCampaign);
       const videos = (vidRes.data ?? []).map(mapVideo);
