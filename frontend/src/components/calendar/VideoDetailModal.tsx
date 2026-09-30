@@ -22,7 +22,8 @@ import {
   Sparkles,
   Save,
   RotateCcw,
-  FileText
+  FileText,
+  Link2
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useAppStore } from '@/store/useAppStore';
@@ -70,6 +71,8 @@ export function VideoDetailModal() {
   const [editHora, setEditHora] = useState('');
   const [editDescripcion, setEditDescripcion] = useState('');
   const [editDriveUrl, setEditDriveUrl] = useState('');
+  const [editReelUrl, setEditReelUrl] = useState('');
+  const [confirmandoEdit, setConfirmandoEdit] = useState(false);
   const [replacementFile, setReplacementFile] = useState<File | null>(null);
   const [extractedReplacementAudio, setExtractedReplacementAudio] = useState<VideoAudioPayload | null>(null);
   const [extractingReplacementAudio, setExtractingReplacementAudio] = useState(false);
@@ -106,6 +109,7 @@ export function VideoDetailModal() {
       setEditHora(format(progDate, 'HH:mm'));
       setEditDescripcion(video.descripcion_aprobada_ia || '');
       setEditDriveUrl(video.drive_file_url || '');
+      setEditReelUrl(video.post_url_publica && video.post_url_publica !== '#' ? video.post_url_publica : '');
       setReplacementFile(null);
       setExtractedReplacementAudio(null);
       setExtractingReplacementAudio(false);
@@ -323,6 +327,7 @@ export function VideoDetailModal() {
       programado_para: newProgDate,
       descripcion_aprobada_ia: editDescripcion,
       drive_file_url: finalDriveUrl,
+      post_url_publica: editReelUrl.trim() || video.post_url_publica || undefined,
     };
 
     if (isFuture) {
@@ -342,6 +347,91 @@ export function VideoDetailModal() {
         ? '✅ Fecha reprogramada a futuro. El estado cambió a PROGRAMADO y se volverá a enviar a Telegram en la fecha programada.'
         : '✅ Publicación y video actualizados con éxito.',
     });
+  };
+
+  // Confirmar publicación directamente desde el modo edición con URL del Reel
+  const handleConfirmarFromEdit = async () => {
+    if (!video) return;
+    const finalReelUrl = editReelUrl.trim();
+
+    if (!finalReelUrl) {
+      setEditFeedback({
+        success: false,
+        msg: '⚠️ Debes ingresar el enlace directo del Reel (Instagram o TikTok) para confirmar la publicación.',
+      });
+      return;
+    }
+
+    if (!finalReelUrl.startsWith('http://') && !finalReelUrl.startsWith('https://')) {
+      setEditFeedback({
+        success: false,
+        msg: '⚠️ La URL del Reel debe comenzar con https:// (ej: https://www.instagram.com/reel/...)',
+      });
+      return;
+    }
+
+    setConfirmandoEdit(true);
+    setEditFeedback(null);
+
+    try {
+      const newProgDate = new Date(`${editFecha}T${editHora}`);
+      const baseUpdates: any = {
+        titulo: editTitle.trim() || video.titulo,
+        cuenta_id: editCuentaId,
+        campana_id: editCampanaId,
+        programado_para: !isNaN(newProgDate.getTime()) ? newProgDate : video.programado_para,
+        descripcion_aprobada_ia: editDescripcion,
+        drive_file_url: editDriveUrl.trim(),
+        post_url_publica: finalReelUrl,
+      };
+
+      const res = await fetch(`/api/publicaciones/${video.id}/confirmar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post_url_publica: finalReelUrl,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        await updateVideo(video.id, {
+          ...baseUpdates,
+          estado: 'PUBLICADO',
+          publicado_en: new Date(),
+          post_url_publica: finalReelUrl,
+          ...(data.metrics?.vistas ? { vistas_obtenidas: data.metrics.vistas } : {}),
+        });
+
+        setConfirmandoEdit(false);
+        setIsEditing(false);
+        setEditFeedback({
+          success: true,
+          msg: `✅ ¡Video confirmado como PUBLICADO con URL de Reel! ${data.metrics?.vistas ? `(${data.metrics.vistas.toLocaleString()} vistas extraídas)` : ''}`,
+        });
+
+        createNotification({
+          tipo: 'success',
+          titulo: 'Publicación confirmada con Reel',
+          mensaje: `"${video.titulo}" confirmado como PUBLICADO con URL: ${finalReelUrl}.`,
+          video_id: video.id,
+          cuenta_id: editCuentaId || video.cuenta_id,
+          origen: 'scraper',
+        });
+      } else {
+        setConfirmandoEdit(false);
+        setEditFeedback({
+          success: false,
+          msg: `❌ Error al confirmar: ${data.error || 'Respuesta inesperada del servidor'}`,
+        });
+      }
+    } catch (err: any) {
+      setConfirmandoEdit(false);
+      setEditFeedback({
+        success: false,
+        msg: `❌ Error de red al confirmar: ${err?.message || 'Fallo de conexión'}`,
+      });
+    }
   };
 
   // Enviar publicación directamente a Telegram
@@ -945,6 +1035,51 @@ export function VideoDetailModal() {
                     </p>
                   </div>
 
+                  {/* Enlace del Reel y Botón de Confirmar Publicación */}
+                  <div className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-cyan-500/10 border border-emerald-500/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Link2 size={13} className="text-emerald-400" />
+                        <span>Enlace del Reel o Post Publicado (Instagram / TikTok)</span>
+                      </label>
+                      {video.estado === 'PUBLICADO' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                          <CheckCircle2 size={10} /> PUBLICADO
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="url"
+                      value={editReelUrl}
+                      onChange={(e) => setEditReelUrl(e.target.value)}
+                      placeholder="https://www.instagram.com/reel/Cxxxxxx/ o TikTok..."
+                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/60 outline-none bg-black/40 font-mono placeholder:text-[var(--text-muted)]"
+                    />
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <p className="text-[10px] text-[var(--text-muted)] leading-tight flex-1">
+                        Pega la URL del reel publicado para extraer métricas y confirmar el estado.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleConfirmarFromEdit}
+                        disabled={confirmandoEdit || savingEdit}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                      >
+                        {confirmandoEdit ? (
+                          <>
+                            <Loader2 size={12} className="animate-spin" />
+                            <span>Confirmando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 size={12} className="text-emerald-400" />
+                            <span>Confirmar Publicado</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Cuenta y Campaña — la campaña filtra las cuentas disponibles */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -1110,12 +1245,12 @@ export function VideoDetailModal() {
                   </div>
 
                   {/* Action buttons de Edición */}
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
                     <button
                       type="button"
                       onClick={() => setIsEditing(false)}
-                      disabled={savingEdit}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors"
+                      disabled={savingEdit || confirmandoEdit}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors"
                     >
                       <RotateCcw size={12} />
                       <span>Cancelar</span>
@@ -1123,11 +1258,20 @@ export function VideoDetailModal() {
                     <button
                       type="button"
                       onClick={handleSaveEdit}
-                      disabled={savingEdit}
-                      className="flex items-center gap-1.5 px-5 py-2 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50"
+                      disabled={savingEdit || confirmandoEdit}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass border border-[var(--border)] hover:border-white/20 text-xs font-semibold text-white transition-all disabled:opacity-50"
                     >
                       {savingEdit ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                       <span>Guardar Cambios</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmarFromEdit}
+                      disabled={savingEdit || confirmandoEdit}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold shadow-lg shadow-emerald-500/25 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {confirmandoEdit ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                      <span>Confirmar Publicado con Reel</span>
                     </button>
                   </div>
                 </div>

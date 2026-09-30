@@ -398,6 +398,22 @@ export async function confirmPublicationAndProcessMetrics(
     { onConflict: 'cuenta_id,url', ignoreDuplicates: false }
   );
 
+  // 5b. Sincronizar confirmaciones_telegram si existía alguna pendiente
+  try {
+    await db
+      .from('confirmaciones_telegram')
+      .update({
+        estado: 'CONFIRMADO',
+        post_url: targetUrl || undefined,
+        respondido_en: now,
+        updated_at: now,
+      })
+      .eq('publicacion_id', publicacionId)
+      .in('estado', ['PENDIENTE', 'ESPERANDO_LINK']);
+  } catch (confErr) {
+    console.warn('[publicationConfirmationService] Error actualizando confirmaciones_telegram:', confErr);
+  }
+
   // 6. Notificación en el sistema
   try {
     await createNotification({
