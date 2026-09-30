@@ -142,6 +142,7 @@ export async function handleTelegramUpdate(
   if (detectedUrl) {
     const linkHandled = await handleLinkConfirmation({
       url: detectedUrl,
+      rawText: text,
       chatId,
       userMessageId,
       replyToMsg,
@@ -177,10 +178,18 @@ export async function handleTelegramUpdate(
       return { handled: true, command, responseSent: res.success, message: res.message };
     }
 
+    case '/porconfirmar':
+    case '/sinconfirmar':
+    case '/pendientes':
+    case '/confirmar':
+    case '/unconfirmed': {
+      const res = await handleCommandPorConfirmar(db, botToken, chatId, replyToId, threadId);
+      return { handled: true, command, responseSent: res.success, message: res.message };
+    }
+
     case '/metas':
     case '/faltantes':
-    case '/cuotas':
-    case '/pendientes': {
+    case '/cuotas': {
       const res = await handleCommandMetas(db, botToken, chatId, replyToId, threadId);
       return { handled: true, command, responseSent: res.success, message: res.message };
     }
@@ -360,6 +369,7 @@ async function handleCallbackQuery(
 // ──────────────────────────────────────────────────────────────────────────────
 interface HandleLinkParams {
   url: string;
+  rawText?: string;
   chatId: string | number;
   userMessageId: number;
   replyToMsg?: any;
@@ -370,6 +380,7 @@ interface HandleLinkParams {
 
 async function handleLinkConfirmation({
   url,
+  rawText,
   chatId,
   userMessageId,
   replyToMsg,
@@ -379,8 +390,38 @@ async function handleLinkConfirmation({
 }: HandleLinkParams): Promise<boolean> {
   let targetConf: any = null;
 
-  // 1. PRIORIDAD 1: Si el usuario respondió a un mensaje (Reply / Citar)
-  if (replyToMsg) {
+  // 1. PRIORIDAD 1: Si el mensaje del usuario contiene explícitamente "ref:<id>"
+  const directRefMatch = (rawText || '').match(/ref:([a-zA-Z0-9_-]{8,})/i);
+  if (directRefMatch) {
+    const pubId = directRefMatch[1].trim();
+    const { data: matchedByRef } = await db
+      .from('confirmaciones_telegram')
+      .select('*, publicaciones(*, cuentas(*))')
+      .eq('publicacion_id', pubId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (matchedByRef && matchedByRef.length > 0) {
+      targetConf = matchedByRef[0];
+    } else {
+      // Buscar directamente en publicaciones por si no se generó fila en confirmaciones_telegram
+      const { data: directPub } = await db
+        .from('publicaciones')
+        .select('*, cuentas(*)')
+        .eq('id', pubId)
+        .limit(1);
+      if (directPub && directPub.length > 0) {
+        targetConf = {
+          id: `virtual_${pubId}`,
+          publicacion_id: pubId,
+          publicaciones: directPub[0],
+        };
+      }
+    }
+  }
+
+  // 2. PRIORIDAD 2: Si el usuario respondió a un mensaje (Reply / Citar)
+  if (!targetConf && replyToMsg) {
     const replyText: string = replyToMsg.text || replyToMsg.caption || '';
     const repliedMsgId: number = replyToMsg.message_id;
 
@@ -524,6 +565,9 @@ async function sendHelpMenu(
   const helpText = `
 ${noteHeader}🤖 <b>COMANDOS DISPONIBLES EN AUTOPUBLISH</b>
 ━━━━━━━━━━━━━━━━━━━━
+📋 <b>/porconfirmar</b> o <b>/pendientes</b>
+Muestra los videos enviados pendientes por confirmar con su enlace del reel en Telegram.
+
 📅 <b>/hoy</b> o <b>/programados</b>
 Muestra todos los videos programados para el día de hoy (fecha/hora, campaña, título y cuenta. <i>Sin enlaces ni descripciones</i>).
 
@@ -805,3 +849,126 @@ ${driveUrlText}
     });
   }
 }
+
+/**
+ * Comando /porconfirmar (o /pendientes, /sinconfirmar):
+ * Lista con detalle todos los videos despachados a Telegram que aún faltan por confirmar con la URL del reel.
+ */
+async function handleCommandPorConfirmar(
+  db: any,
+  botToken: string,
+  chatId: string | number,
+  replyToId?: number,
+  threadId?: number
+) {
+  try {
+    const [
+      { data: vids, error: errVids },
+      { data: cuentas },
+      { data: campanas },
+      { data: confs },
+    ] = await Promise.all([
+      db.from('publicaciones')
+        .select('*')
+        .order('programado_para', { ascending: true }),
+      db.from('cuentas').select('*'),
+      db.from('campanas').select('*'),
+      db.from('confirmaciones_telegram')
+        .select('*')
+        .in('estado', ['PENDIENTE', 'ESPERANDO_LINK']),
+    ]);
+
+    if (errVids) {
+      console.error('[TelegramBot] Error consultando videos por confirmar:', errVids);
+      const errMsg = `⚠️ <b>Error en base de datos:</b> ${escapeHtml(errVids.message || 'Error al consultar publicaciones')}`;
+      return await sendTelegramMessage(botToken, chatId, errMsg, 'HTML', { reply_to_message_id: replyToId, message_thread_id: threadId });
+    }
+
+    const pendingConfPubIds = new Set((confs || []).map((c: any) => c.publicacion_id).filter(Boolean));
+
+    // Videos pendientes de confirmación:
+    // 1. Estado ENVIADO sin URL pública de post válida
+    // 2. O aquellos con registro abierto en confirmaciones_telegram (PENDIENTE o ESPERANDO_LINK) sin URL válida
+    const unconfirmedVideos = (vids || []).filter((v: any) => {
+      const hasValidUrl = Boolean(v.post_url_publica && v.post_url_publica !== '#' && v.post_url_publica.startsWith('http'));
+      if (v.estado === 'ENVIADO' && !hasValidUrl) return true;
+      if (pendingConfPubIds.has(v.id) && !hasValidUrl) return true;
+      return false;
+    });
+
+    if (unconfirmedVideos.length === 0) {
+      const allGoodMsg = [
+        `🎉 <b>¡TODO AL DÍA! NO HAY VIDEOS PENDIENTES POR CONFIRMAR</b>`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Todos los videos despachados han sido confirmados con su enlace de Reel.`,
+        ``,
+        `💡 <i>Usa <b>/hoy</b> para consultar los programados del día o <b>/metas</b> para ver el avance diario.</i>`,
+      ].join('\n');
+
+      return await sendTelegramMessage(botToken, chatId, allGoodMsg, 'HTML', {
+        reply_to_message_id: replyToId,
+        message_thread_id: threadId,
+      });
+    }
+
+    const maxItems = 12;
+    const displayedVideos = unconfirmedVideos.slice(0, maxItems);
+    const remainingCount = unconfirmedVideos.length - maxItems;
+
+    let text = [
+      `📋 <b>VIDEOS PENDIENTES POR CONFIRMAR (${unconfirmedVideos.length})</b>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `<i>Los siguientes videos ya fueron enviados y están a la espera de su enlace de reel:</i>\n`,
+    ].join('\n');
+
+    displayedVideos.forEach((vid: any, idx: number) => {
+      const acc = cuentas?.find((c: any) => c.id === vid.cuenta_id);
+      const camp = campanas?.find((cp: any) => cp.id === vid.campana_id);
+      const conf = confs?.find((cf: any) => cf.publicacion_id === vid.id);
+
+      const horaProg = vid.programado_para ? formatLocalDate(vid.programado_para) : 'Sin fecha';
+      const confStatus = conf?.estado === 'ESPERANDO_LINK'
+        ? '⏳ <b>Esperando enlace del Reel</b> (voto "Sí" en encuesta)'
+        : conf?.estado === 'PENDIENTE'
+        ? '❓ <b>Encuesta pendiente de voto</b>'
+        : '📤 <b>Enviado a redes</b> (pendiente de enlace)';
+
+      text += `<b>${idx + 1}. 🎬 ${escapeHtml(vid.titulo)}</b>\n`;
+      text += `   👤 <b>Cuenta:</b> @${escapeHtml(acc?.username || 'cuenta')} (<b>${escapeHtml((acc?.plataforma || 'red').toUpperCase())}</b>)\n`;
+      if (camp?.nombre) {
+        text += `   🎯 <b>Campaña:</b> ${escapeHtml(camp.nombre)}\n`;
+      }
+      text += `   🕒 <b>Programado:</b> ${horaProg}\n`;
+      text += `   📌 <b>Estado:</b> ${confStatus}\n`;
+      if (vid.drive_file_url && vid.drive_file_url.startsWith('http')) {
+        text += `   📁 <a href="${escapeHtml(vid.drive_file_url)}">Ver video en Drive</a>\n`;
+      }
+      text += `   🔑 <b>Código ref:</b> <code>ref:${vid.id}</code>\n\n`;
+    });
+
+    if (remainingCount > 0) {
+      text += `<i>... y ${remainingCount} video(s) más pendientes por confirmar.</i>\n\n`;
+    }
+
+    const sampleRef = unconfirmedVideos[0]?.id ? `ref:${unconfirmedVideos[0].id}` : 'ref:ID';
+    text += [
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `💡 <b>¿Cómo confirmar cualquiera de estos videos?</b>`,
+      `1. Copia la URL del reel publicado en Instagram o TikTok.`,
+      `2. Responde a la encuesta del video pegando el enlace, o envíalo directamente en este chat junto a su código:`,
+      `   <code>https://instagram.com/reel/... ${sampleRef}</code>`,
+    ].join('\n');
+
+    return await sendTelegramMessage(botToken, chatId, text.trim(), 'HTML', {
+      reply_to_message_id: replyToId,
+      message_thread_id: threadId,
+    });
+  } catch (err: any) {
+    console.error('[TelegramBot] Excepción en /porconfirmar:', err);
+    return await sendTelegramMessage(botToken, chatId, `⚠️ Error ejecutando /porconfirmar: ${escapeHtml(err.message)}`, 'HTML', {
+      reply_to_message_id: replyToId,
+      message_thread_id: threadId,
+    });
+  }
+}
+
