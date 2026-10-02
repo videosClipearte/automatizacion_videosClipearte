@@ -1,0 +1,3 @@
+# NO subir al repositorio - contienen credenciales privadas
+client_secret.json
+tokens/token_*.json

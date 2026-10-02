@@ -5,3 +5,9 @@ requests>=2.32.0
 playwright>=1.50.0
 python-dotenv>=1.0.1
 pydantic>=2.10.0
+
+# YouTube Data API v3 + OAuth2
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1

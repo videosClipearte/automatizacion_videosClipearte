@@ -39,3 +39,17 @@ DRIVE_RETENTION_HOURS = int(os.getenv("DRIVE_RETENTION_HOURS", "24")) # Horas de
 # Google Gemini IA para Generación de Copys y Descripciones
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
+# YouTube Data API v3
+YOUTUBE_ENABLED = os.getenv("YOUTUBE_ENABLED", "true").lower() == "true"
+YOUTUBE_CLIENT_SECRET_PATH = os.getenv(
+    "YOUTUBE_CLIENT_SECRET_PATH",
+    str(BASE_DIR / "youtube" / "client_secret.json")
+)
+YOUTUBE_TOKENS_DIR = os.getenv(
+    "YOUTUBE_TOKENS_DIR",
+    str(BASE_DIR / "youtube" / "tokens")
+)
+# Cuota diaria de la API: 10000 unidades. Subir un video cuesta ~1600 unidades.
+# Con 1 proyecto gratuito puedes subir hasta ~6 videos por dia.
+YOUTUBE_DAILY_QUOTA_LIMIT = int(os.getenv("YOUTUBE_DAILY_QUOTA_LIMIT", "6"))

@@ -35,6 +35,9 @@ export interface AppConfig {
   scraper_intervalo_minutos: number;
   scraper_modo_headless: boolean;
   scraper_timeout_segundos: number;
+  // YouTube Data API v3
+  youtube_client_id: string;
+  youtube_client_secret: string;
 }
 
 // Config por defecto (vacía - el usuario la llena desde la UI)
@@ -64,6 +67,9 @@ const DEFAULT_CONFIG: AppConfig = {
   scraper_intervalo_minutos: 5,
   scraper_modo_headless: true,
   scraper_timeout_segundos: 15,
+  // YouTube Data API v3
+  youtube_client_id: '',
+  youtube_client_secret: '',
 };
 
 // Cache en memoria para evitar múltiples fetches
@@ -139,6 +145,9 @@ export async function loadAppConfig(): Promise<AppConfig> {
       scraper_intervalo_minutos: data.scraper_intervalo_minutos ?? 5,
       scraper_modo_headless: data.scraper_modo_headless ?? true,
       scraper_timeout_segundos: data.scraper_timeout_segundos ?? 15,
+      // YouTube Data API v3
+      youtube_client_id: data.youtube_client_id ?? '',
+      youtube_client_secret: data.youtube_client_secret ?? '',
     };
 
     cachedConfig = config;

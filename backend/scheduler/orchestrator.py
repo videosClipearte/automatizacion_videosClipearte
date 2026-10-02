@@ -4,6 +4,7 @@ Implementación 4: Orquestador de Tareas y Planificador (APScheduler / Python)
 - Sincroniza publicaciones programadas, descargas de Drive y ejecución con Playwright.
 - Monitoreo del margen de tolerancia y envío de alertas escalonadas a Telegram.
 - Verificación de metas diarias por cuenta y despacho de reporte consolidado.
+- Publicación en YouTube via API oficial (Shorts y videos normales).
 """
 import os
 import logging
@@ -19,10 +20,24 @@ from config import (
     SUPABASE_URL, SUPABASE_KEY,
     TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_ID, TELEGRAM_ADMIN_CHAT_ID,
     TOLERANCIA_MINUTOS, FRECUENCIA_AVISOS_MINUTOS, MAX_REINTENTOS_ALERTA,
-    HORA_REPORTE_METAS_DIARIAS, SCRAPER_INTERVALO_MINUTOS
+    HORA_REPORTE_METAS_DIARIAS, SCRAPER_INTERVALO_MINUTOS,
+    YOUTUBE_ENABLED,
 )
 from storage.drive_downloader import DriveDownloader
 from scraper.silent_scraper import SilentScraper
+
+# Importar publicador de YouTube (solo si está habilitado)
+if YOUTUBE_ENABLED:
+    try:
+        from youtube.youtube_publisher import YouTubePublisher
+        from youtube.token_manager import TokenManager
+        _youtube_available = True
+    except ImportError as _e:
+        logger_tmp = logging.getLogger("Orchestrator")
+        logger_tmp.warning(f"Módulo YouTube no disponible: {_e}")
+        _youtube_available = False
+else:
+    _youtube_available = False
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("Orchestrator")
@@ -32,7 +47,13 @@ class TaskOrchestrator:
         self.scheduler = BackgroundScheduler()
         self.downloader = DriveDownloader()
         self.scraper = SilentScraper()
-        
+
+        # Publicador de YouTube (si está disponible y habilitado)
+        self.youtube_publisher: Optional["YouTubePublisher"] = None
+        if _youtube_available:
+            self.youtube_publisher = YouTubePublisher(TokenManager())
+            logger.info("✅ YouTubePublisher inicializado correctamente.")
+
         # Estado local de demostración / caché en memoria si Supabase no está conectado con credenciales activas
         self.local_videos: List[Dict[str, Any]] = []
         self.local_accounts: List[Dict[str, Any]] = []
@@ -60,12 +81,47 @@ class TaskOrchestrator:
             logger.error(f"Error conectando con Telegram API: {e}")
         return False
 
+    def _publish_to_youtube(self, video: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Publica un video en YouTube usando la API oficial.
+        El video debe tener 'canal_youtube_id' y 'local_video_path' definidos.
+        """
+        if not self.youtube_publisher:
+            return {"success": False, "error": "YouTubePublisher no está disponible."}
+
+        canal_id = video.get("canal_youtube_id")
+        if not canal_id:
+            return {"success": False, "error": "El video no tiene 'canal_youtube_id' definido."}
+
+        local_path = video.get("local_video_path")
+        if not local_path:
+            return {"success": False, "error": "El video no tiene ruta local descargada."}
+
+        logger.info(f"[YouTube] Publicando Short en canal '{canal_id}': '{video.get('titulo')}'")
+
+        result = self.youtube_publisher.upload_short(
+            canal_id=canal_id,
+            video_path=local_path,
+            titulo=video.get("titulo", "Sin título"),
+            descripcion=video.get("descripcion_aprobada_ia", video.get("descripcion", "")),
+            tags=video.get("tags", []),
+            privacidad=video.get("privacidad_youtube", "public"),
+            miniatura_path=video.get("miniatura_path"),
+        )
+
+        if result.get("success"):
+            logger.info(f"[YouTube] ✅ Short publicado: {result.get('video_url')}")
+        else:
+            logger.error(f"[YouTube] ❌ Error al publicar: {result.get('error')}")
+
+        return result
+
     def check_and_publish_scheduled_videos(self):
         """
         Revisa las publicaciones programadas cuya fecha/hora se haya cumplido.
         1. Descarga el video de Drive a la carpeta temporal (Implementación 5).
-        2. Cambia estado a ENVIADO.
-        3. En producción dispara el script de Playwright.
+        2. Si la plataforma es YouTube → publica via API oficial directamente.
+        3. Para otras plataformas → cambia estado a ENVIADO (para Playwright).
         """
         logger.info("Verificando cola de publicaciones programadas...")
         now = datetime.utcnow()
@@ -79,7 +135,7 @@ class TaskOrchestrator:
 
                 if prog_date <= now:
                     logger.info(f"Publicación alcanzada para video: '{video.get('titulo')}' (ID: {video.get('id')})")
-                    
+
                     # 1. Descargar video desde Drive
                     download_res = self.downloader.download_video(
                         video.get("drive_file_url", ""),
@@ -87,10 +143,43 @@ class TaskOrchestrator:
                     )
                     video["local_video_path"] = download_res.get("local_path")
 
-                    # 2. Cambiar a ENVIADO
-                    video["estado"] = "ENVIADO"
-                    video["enviado_en"] = now.isoformat()
-                    logger.info(f"Video '{video.get('titulo')}' pasado a estado ENVIADO. Listo para confirmación.")
+                    plataforma = video.get("plataforma", "").lower()
+
+                    # ── YouTube: publicar directamente via API ────────────────
+                    if plataforma == "youtube" and self.youtube_publisher:
+                        yt_result = self._publish_to_youtube(video)
+                        if yt_result.get("success"):
+                            video["estado"] = "PUBLICADO"
+                            video["publicado_en"] = now.isoformat()
+                            video["post_url_publica"] = yt_result.get("video_url")
+                            video["youtube_video_id"] = yt_result.get("video_id")
+                            logger.info(f"[YouTube] Video '{video.get('titulo')}' PUBLICADO exitosamente.")
+                            # Limpiar video local tras publicación exitosa
+                            if video.get("local_video_path"):
+                                self.downloader.cleanup_video(video["local_video_path"])
+                            # Notificar éxito por Telegram
+                            self.send_telegram_alert(
+                                TELEGRAM_GROUP_ID,
+                                f"✅ <b>Short publicado en YouTube</b>\n"
+                                f"📺 <b>Canal:</b> {video.get('canal_youtube_id')}\n"
+                                f"🎬 <b>Video:</b> {video.get('titulo')}\n"
+                                f"🔗 <b>URL:</b> {yt_result.get('video_url')}"
+                            )
+                        else:
+                            video["estado"] = "ERROR_YOUTUBE"
+                            self.send_telegram_alert(
+                                TELEGRAM_ADMIN_CHAT_ID or TELEGRAM_GROUP_ID,
+                                f"❌ <b>Error al publicar en YouTube</b>\n"
+                                f"📺 <b>Canal:</b> {video.get('canal_youtube_id')}\n"
+                                f"🎬 <b>Video:</b> {video.get('titulo')}\n"
+                                f"⚠️ <b>Error:</b> {yt_result.get('error')}"
+                            )
+
+                    # ── Otras plataformas: flujo Playwright existente ─────────
+                    else:
+                        video["estado"] = "ENVIADO"
+                        video["enviado_en"] = now.isoformat()
+                        logger.info(f"Video '{video.get('titulo')}' pasado a estado ENVIADO. Listo para confirmación.")
 
     def check_tolerance_and_alerts(self):
         """

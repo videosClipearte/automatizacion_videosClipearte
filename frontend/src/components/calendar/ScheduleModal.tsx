@@ -17,13 +17,13 @@ import {
   Check,
   ExternalLink,
   FileText,
-  Code,
   Send,
   Globe,
   Play,
   ShieldAlert,
   ShieldCheck,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -683,27 +683,52 @@ export function ScheduleModal() {
   return (
     <AnimatePresence>
       {isScheduleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
+          {...(!videoFile ? getRootProps() : {})}
+        >
+          {/* Overlay con dropzone en toda la pantalla */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={closeScheduleModal}
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm"
+            onClick={!isDragActive ? closeScheduleModal : undefined}
+            className={cn(
+              'fixed inset-0 backdrop-blur-sm transition-colors duration-200',
+              isDragActive ? 'bg-emerald-900/60 border-2 border-dashed border-emerald-400/60' : 'bg-black/75'
+            )}
           />
+
+          {/* Indicador de drag global */}
+          {isDragActive && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="fixed inset-0 z-[60] flex flex-col items-center justify-center pointer-events-none"
+            >
+              <div className="bg-emerald-900/90 border-2 border-emerald-400 rounded-3xl px-12 py-8 flex flex-col items-center gap-3 shadow-2xl">
+                <Upload size={48} className="text-emerald-400 animate-bounce" />
+                <p className="text-xl font-bold text-white">¡Suelta el video aquí!</p>
+                <p className="text-sm text-emerald-300">Se cargará automáticamente</p>
+              </div>
+            </motion.div>
+          )}
+
+          {!videoFile && <input {...getInputProps()} />}
 
           <motion.div
             initial={{ opacity: 0, scale: 0.94, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 16 }}
             transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-            className="relative z-10 w-full max-w-xl bg-[#0b0f19]/95 backdrop-blur-xl rounded-3xl border border-emerald-500/30 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(16,185,129,0.18)] overflow-hidden max-h-[92vh] flex flex-col"
+            className="relative z-10 w-full max-w-xl bg-[#0b0f19]/98 backdrop-blur-xl rounded-3xl border border-emerald-500/30 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(16,185,129,0.18)] overflow-hidden max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Resplandor radial decorativo */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-32 bg-emerald-500/15 blur-3xl pointer-events-none" />
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-24 bg-emerald-500/12 blur-3xl pointer-events-none" />
 
             {/* Header */}
-            <div className="p-5 border-b border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-white/[0.07] bg-white/[0.015] flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-bold text-white">Configurar Publicación</h2>
@@ -711,8 +736,8 @@ export function ScheduleModal() {
                     Paso 2 de 2
                   </span>
                 </div>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Sube el video a Drive y programa el envío con el copy de campaña
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                  Arrastra el video a cualquier parte de la pantalla o usa el área de abajo
                 </p>
               </div>
               <button
@@ -725,106 +750,106 @@ export function ScheduleModal() {
             </div>
 
             {/* Banner Informativo de Fecha Asignada */}
-            <div className="px-5 pt-4">
-              <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/25 flex items-center justify-between gap-2">
+            <div className="px-5 pt-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/8 to-cyan-500/8 border border-emerald-500/20 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-xs">
-                  <Calendar size={14} className="text-emerald-400 shrink-0" />
+                  <Calendar size={13} className="text-emerald-400 shrink-0" />
                   <div>
-                    <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider block font-semibold">
-                      Fecha programada:
+                    <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
+                      Fecha programada: 
                     </span>
-                    <span className="text-xs font-bold text-white capitalize">
+                    <span className="text-xs font-bold text-white capitalize ml-1">
                       {displayDateStr}
                     </span>
                   </div>
                 </div>
-
                 {videoFile && (
-                  <span className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                    <CheckCircle2 size={11} /> Video Cargado
+                  <span className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+                    <CheckCircle2 size={11} /> Cargado
                   </span>
                 )}
               </div>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="p-5 space-y-4 flex-1 overflow-y-auto">
+            <form onSubmit={handleSubmit(onSubmit)} className="px-5 py-3 space-y-3.5 flex-1 overflow-y-auto">
               {/* Dropzone Video */}
-              <div
-                {...getRootProps()}
-                className={cn(
-                  'rounded-xl border-2 border-dashed p-4 text-center cursor-pointer transition-all duration-200 relative',
-                  isDragActive
-                    ? 'border-emerald-400 bg-emerald-500/15 scale-[1.01]'
-                    : videoFile
-                    ? 'border-emerald-500/50 bg-emerald-500/5'
-                    : 'border-[var(--border-strong)] hover:border-emerald-500/40 hover:bg-white/[0.02]'
-                )}
-              >
-                <input {...getInputProps()} />
-
-                {videoFile ? (
-                  <div className="space-y-2 py-1">
-                    <div className="flex items-center justify-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                        <FileVideo size={20} />
-                      </div>
-                      <div className="text-left min-w-0 flex-1">
-                        <p className="text-xs font-bold text-white truncate">{videoFile.name}</p>
-                        <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
-                          {(videoFile.size / (1024 * 1024)).toFixed(2)} MB • Calidad original HD
-                        </p>
-                      </div>
-                      <span className="text-[10px] text-[var(--text-muted)] underline hover:text-white">
+              {videoFile ? (
+                /* Video cargado: card compacta con botón X para eliminar */
+                <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-3 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                      <FileVideo size={18} />
+                    </div>
+                    <div className="text-left min-w-0 flex-1">
+                      <p className="text-xs font-bold text-white truncate">{videoFile.name}</p>
+                      <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
+                        {(videoFile.size / (1024 * 1024)).toFixed(2)} MB • HD
+                      </p>
+                    </div>
+                    {/* Botón cambiar */}
+                    <div
+                      {...getRootProps()}
+                      className="cursor-pointer"
+                    >
+                      <input {...getInputProps()} />
+                      <span className="text-[10px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer">
                         Cambiar
                       </span>
                     </div>
-
-                    {/* Badge de estado de extraccion de audio */}
-                    <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-between gap-2 text-[10px]">
-                      {extractingAudio ? (
-                        <div className="flex items-center gap-1.5 text-amber-300 font-medium">
-                          <Loader2 size={12} className="animate-spin text-amber-400" />
-                          <span>Extrayendo audio para analisis IA...</span>
-                        </div>
-                      ) : extractedAudio ? (
-                        <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">
-                          <Sparkles size={12} className="text-cyan-400" />
-                          <span>
-                            Audio listo: {extractedAudio.durationSeconds}s capturados — IA usara subtitulos del habla
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-                          <FileVideo size={12} />
-                          <span>Video cargado listo para Drive (sin audio capturable)</span>
-                        </div>
-                      )}
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-[var(--text-secondary)] font-mono">
-                        Drive 100% HD
-                      </span>
-                    </div>
+                    {/* Botón X para eliminar video */}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setVideoFile(null); setVideoTitle(''); setExtractedAudio(null); setDriveSuccessUrl(null); setDriveError(null); }}
+                      className="w-6 h-6 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 hover:bg-red-500/30 hover:text-red-300 transition-all"
+                      title="Eliminar video"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
-                ) : (
-                  <>
-                    <Upload
-                      size={22}
-                      className={cn(
-                        'mx-auto mb-1.5',
-                        isDragActive ? 'text-emerald-400 animate-bounce' : 'text-[var(--text-muted)]'
-                      )}
-                    />
-                    <p className="text-xs font-semibold text-white">
-                      {isDragActive
-                        ? '¡Suelta el video aquí!'
-                        : 'Arrastra o selecciona el archivo de video (.mp4)'}
-                    </p>
-                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                      Soporta MP4, MOV, WEBM, AVI
-                    </p>
-                  </>
-                )}
-              </div>
+
+                  {/* Estado extracción de audio */}
+                  <div className="p-2 rounded-lg bg-black/30 border border-emerald-500/15 flex items-center justify-between gap-2 text-[10px]">
+                    {extractingAudio ? (
+                      <div className="flex items-center gap-1.5 text-amber-300 font-medium">
+                        <Loader2 size={11} className="animate-spin text-amber-400" />
+                        <span>Extrayendo audio para análisis IA...</span>
+                      </div>
+                    ) : extractedAudio ? (
+                      <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">
+                        <Sparkles size={11} className="text-cyan-400" />
+                        <span>Audio listo: {extractedAudio.durationSeconds}s — IA usará subtítulos</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
+                        <FileVideo size={11} />
+                        <span>Video listo para Drive</span>
+                      </div>
+                    )}
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-[var(--text-secondary)] font-mono shrink-0">
+                      100% HD
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* Sin video: zona de drop compacta */
+                <div
+                  {...getRootProps()}
+                  className={cn(
+                    'rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-all duration-200',
+                    isDragActive
+                      ? 'border-emerald-400 bg-emerald-500/15 scale-[1.01]'
+                      : 'border-[var(--border-strong)] hover:border-emerald-500/40 hover:bg-white/[0.02]'
+                  )}
+                >
+                  <input {...getInputProps()} />
+                  <Upload size={20} className={cn('mx-auto mb-2', isDragActive ? 'text-emerald-400 animate-bounce' : 'text-[var(--text-muted)]')} />
+                  <p className="text-xs font-semibold text-white">
+                    {isDragActive ? '¡Suelta el video aquí!' : 'Arrastra o selecciona el archivo de video'}
+                  </p>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">MP4, MOV, WEBM, AVI — También puedes soltar en cualquier parte de la pantalla</p>
+                </div>
+              )}
 
               {/* Campo de Título del Video y Verificador Anti-Duplicados */}
               {videoFile && (
@@ -843,7 +868,7 @@ export function ScheduleModal() {
                       value={videoTitle}
                       onChange={(e) => setVideoTitle(e.target.value)}
                       placeholder="Título o nombre del video..."
-                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-cyan-400 outline-none bg-black/20"
+                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-400/60 outline-none bg-[#0d1422] transition-colors hover:border-cyan-500/30"
                     />
                   </div>
 
@@ -1008,7 +1033,7 @@ export function ScheduleModal() {
                       value={manualDriveUrl}
                       onChange={(e) => setManualDriveUrl(e.target.value)}
                       placeholder="https://drive.google.com/file/d/.../view"
-                      className="w-full glass rounded-lg px-2.5 py-1.5 text-xs text-white border border-cyan-500/30 focus:border-cyan-400 outline-none bg-black/30 font-mono"
+                      className="w-full rounded-lg px-2.5 py-2 text-xs text-white border border-cyan-500/30 focus:border-cyan-400/60 outline-none bg-[#0d1422] font-mono transition-colors hover:border-cyan-500/40"
                     />
                     <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                       Si pegas el enlace aquí, se usará directamente sin requerir inicio de sesión en Google.
@@ -1096,138 +1121,48 @@ export function ScheduleModal() {
                 </div>
               </div>
 
-              {/* ── Tarjeta de Videos Faltantes en la Cuenta Seleccionada para este Día ── */}
-              {selectedAccountStat ? (
-                <div
-                  className={cn(
-                    'p-3.5 rounded-2xl border text-xs space-y-2.5 transition-all',
-                    selectedAccountStat.missing > 0
-                      ? 'bg-gradient-to-r from-amber-950/40 via-[#0e1626] to-[#0a101d] border-amber-500/35 shadow-[0_0_15px_rgba(245,158,11,0.08)]'
-                      : 'bg-gradient-to-r from-emerald-950/40 via-[#0e1626] to-[#0a101d] border-emerald-500/35 shadow-[0_0_15px_rgba(16,185,129,0.08)]'
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className={cn(
-                          'w-8 h-8 rounded-xl border flex items-center justify-center shrink-0',
-                          selectedAccountStat.missing > 0
-                            ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
-                            : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                        )}
-                      >
-                        {getPlatformIcon(selectedAccountStat.account.plataforma)}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                          Videos del día para @{selectedAccountStat.account.username}
-                          <span className="text-[10px] font-normal text-slate-400 capitalize">
-                            ({format(targetDateObj, "d 'de' MMMM", { locale: es })})
-                          </span>
-                        </h4>
-                        <p className="text-[11px] text-[var(--text-muted)] truncate">
-                          {selectedAccountStat.missing > 0
-                            ? `⚠️ Faltan ${selectedAccountStat.missing} video(s) para completar la meta diaria estimada.`
-                            : '🎉 ¡Esta cuenta ya completó su cuota de videos para este día!'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <span
-                        className={cn(
-                          'text-xs font-mono font-bold block',
-                          selectedAccountStat.missing > 0 ? 'text-amber-400' : 'text-emerald-400'
-                        )}
-                      >
-                        {selectedAccountStat.count} / {selectedAccountStat.target} videos
-                      </span>
-                      <span
-                        className={cn(
-                          'text-[9px] font-semibold px-2 py-0.5 rounded-full border inline-block mt-0.5',
-                          selectedAccountStat.missing > 0
-                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                            : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                        )}
-                      >
-                        {selectedAccountStat.missing > 0
-                          ? `Faltan ${selectedAccountStat.missing}`
-                          : 'Meta lista'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Barra de progreso */}
-                  <div className="space-y-1">
-                    <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                      <div
-                        className={cn(
-                          'h-full rounded-full transition-all duration-500',
-                          selectedAccountStat.missing > 0
-                            ? 'bg-gradient-to-r from-amber-500 to-amber-400'
-                            : 'bg-gradient-to-r from-emerald-500 to-cyan-400'
-                        )}
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            Math.round(
-                              (selectedAccountStat.count / (selectedAccountStat.target || 1)) * 100
-                            )
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-slate-400">
-                      <span>{selectedAccountStat.count} programado{selectedAccountStat.count === 1 ? '' : 's'} este día</span>
-                      <span>Meta: {selectedAccountStat.target} videos diarios</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 text-xs flex items-center gap-2 text-[var(--text-muted)]">
-                  <Clock size={14} className="text-cyan-400 shrink-0" />
-                  <span>
-                    Selecciona una cuenta arriba para ver cuántos videos le faltan en este día (
-                    {format(targetDateObj, "d 'de' MMMM", { locale: es })}).
-                  </span>
-                </div>
-              )}
+              {/* ── Tarjeta de Videos del día — FUERA del contenedor principal ── */}
+              {/* Se renderiza fuera del scroll principal como un aviso flotante */}
 
 
-              {/* Date + Time */}
+              {/* Date + Time — Inputs con diseño coherente a la app */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1 mb-1">
+                  <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5 mb-1.5">
                     <Calendar size={11} className="text-emerald-400" /> Fecha Programada
                   </label>
-                  <input
-                    type="date"
-                    {...register('fecha')}
-                    className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent [color-scheme:dark]"
-                  />
+                  <div className="relative">
+                    <input
+                      type="date"
+                      {...register('fecha')}
+                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-emerald-500/60 outline-none bg-[#0d1422] [color-scheme:dark] transition-colors hover:border-emerald-500/30 cursor-pointer"
+                      style={{ fontFamily: 'inherit' }}
+                    />
+                  </div>
                   {errors.fecha && (
                     <p className="text-red-400 text-[10px] mt-1">{errors.fecha.message}</p>
                   )}
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
                       <Clock size={11} className="text-cyan-400" /> Hora de Envío
                     </label>
                     <button
                       type="button"
                       onClick={() => setValue('hora', format(new Date(), 'HH:mm'))}
-                      className="text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-medium transition-colors"
-                      title="Usar hora actual de tu dispositivo"
+                      className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium transition-colors hover:underline"
+                      title="Usar hora actual"
                     >
-                      <Clock size={10} /> Hora actual
+                      <Clock size={9} /> Hora actual
                     </button>
                   </div>
                   <input
                     type="time"
                     {...register('hora')}
-                    className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent [color-scheme:dark]"
+                    className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-500/60 outline-none bg-[#0d1422] [color-scheme:dark] transition-colors hover:border-cyan-500/30 cursor-pointer"
+                    style={{ fontFamily: 'inherit' }}
                   />
                   {errors.hora && (
                     <p className="text-red-400 text-[10px] mt-1">{errors.hora.message}</p>
@@ -1235,17 +1170,17 @@ export function ScheduleModal() {
                 </div>
               </div>
 
-              {/* Description */}
+              {/* Description — auto-expandible hasta 150px */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-[var(--text-secondary)]">
-                    Descripción / Copy (Reglas de Campaña)
+                    Descripción / Copy
                   </label>
                   <button
                     type="button"
                     onClick={handleGenerateAI}
                     disabled={generatingAI}
-                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-400 hover:from-emerald-500/30 hover:to-cyan-500/30 transition-all disabled:opacity-50"
+                    className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-400 hover:from-emerald-500/30 hover:to-cyan-500/30 transition-all disabled:opacity-50"
                   >
                     {generatingAI ? (
                       <RefreshCw size={10} className="animate-spin" />
@@ -1254,18 +1189,23 @@ export function ScheduleModal() {
                     )}
                     <span>
                       {generatingAI
-                        ? 'Analizando con Gemini...'
+                        ? 'Analizando...'
                         : extractedAudio
-                        ? 'Generar Descripcion con Subtitulos IA 🎙️✨'
-                        : 'Generar Descripcion con IA ✨'}
+                        ? 'Generar con Subtítulos IA 🎙️✨'
+                        : 'Generar con IA ✨'}
                     </span>
                   </button>
                 </div>
                 <textarea
-                  rows={3}
                   {...register('descripcion')}
                   placeholder="El copy se generará respetando las reglas de la campaña y la red social seleccionada..."
-                  className="w-full glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent resize-none leading-relaxed placeholder:text-[var(--text-muted)]"
+                  className="w-full glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent leading-relaxed placeholder:text-[var(--text-muted)] resize-none overflow-y-auto"
+                  style={{ minHeight: '72px', maxHeight: '150px', height: 'auto' }}
+                  onInput={(e) => {
+                    const el = e.currentTarget;
+                    el.style.height = 'auto';
+                    el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+                  }}
                 />
                 {aiFeedback && (
                   <p className="text-[10px] text-cyan-300 mt-1 leading-snug">{aiFeedback}</p>
@@ -1332,7 +1272,7 @@ export function ScheduleModal() {
               </div>
 
               {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.07]">
                 <button
                   type="button"
                   onClick={closeScheduleModal}
@@ -1357,6 +1297,68 @@ export function ScheduleModal() {
                 </button>
               </div>
             </form>
+
+            {/* ── Tarjeta de Videos del día — FUERA del form, debajo del scroll ── */}
+            {selectedAccountStat && (
+              <div className="px-5 pb-4 pt-1">
+                <div
+                  className={cn(
+                    'p-3 rounded-2xl border text-xs space-y-2 transition-all',
+                    selectedAccountStat.missing > 0
+                      ? 'bg-gradient-to-r from-amber-950/35 via-[#0e1626] to-[#0a101d] border-amber-500/30'
+                      : 'bg-gradient-to-r from-emerald-950/35 via-[#0e1626] to-[#0a101d] border-emerald-500/30'
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={cn(
+                          'w-7 h-7 rounded-lg border flex items-center justify-center shrink-0',
+                          selectedAccountStat.missing > 0
+                            ? 'bg-amber-500/15 border-amber-500/25 text-amber-400'
+                            : 'bg-emerald-500/15 border-emerald-500/25 text-emerald-400'
+                        )}
+                      >
+                        {getPlatformIcon(selectedAccountStat.account.plataforma)}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-[11px] font-bold text-white truncate">
+                          Videos del día para @{selectedAccountStat.account.username}
+                          <span className="text-[10px] font-normal text-slate-400 ml-1">
+                            ({format(targetDateObj, "d 'de' MMMM", { locale: es })})
+                          </span>
+                        </h4>
+                        <p className="text-[10px] text-[var(--text-muted)] truncate">
+                          {selectedAccountStat.missing > 0
+                            ? `⚠️ Faltan ${selectedAccountStat.missing} video(s) para la meta diaria.`
+                            : '🎉 ¡Meta completada para este día!'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                      <span className={cn('text-xs font-mono font-bold', selectedAccountStat.missing > 0 ? 'text-amber-400' : 'text-emerald-400')}>
+                        {selectedAccountStat.count} / {selectedAccountStat.target} videos
+                      </span>
+                      <span className={cn('text-[9px] font-semibold px-2 py-0.5 rounded-full border', selectedAccountStat.missing > 0 ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30')}>
+                        {selectedAccountStat.missing > 0 ? `Faltan ${selectedAccountStat.missing}` : 'Meta lista'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className={cn('h-full rounded-full transition-all duration-500', selectedAccountStat.missing > 0 ? 'bg-gradient-to-r from-amber-500 to-amber-400' : 'bg-gradient-to-r from-emerald-500 to-cyan-400')}
+                        style={{ width: `${Math.min(100, Math.round((selectedAccountStat.count / (selectedAccountStat.target || 1)) * 100))}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] text-slate-500">
+                      <span>{selectedAccountStat.count} programado{selectedAccountStat.count !== 1 ? 's' : ''} este día</span>
+                      <span>Meta: {selectedAccountStat.target} videos diarios</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </motion.div>
         </div>
       )}
