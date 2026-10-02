@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 // src/components/ui/TimePicker.tsx
 // Drum-roll / iOS-style time picker coherente con el diseno de la app
 
@@ -17,9 +17,9 @@ interface TimePickerProps {
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
 
-const ITEM_H = 40; // px por fila
-const VISIBLE = 5; // filas visibles (el central es el seleccionado)
-const PADDING = Math.floor(VISIBLE / 2); // 2 filas arriba y abajo del seleccionado
+const ITEM_H = 34; // px por fila
+const VISIBLE = 3; // 3 filas visibles (el central seleccionado, 1 arriba y 1 abajo) - altura compacta a la mitad
+const PADDING = Math.floor(VISIBLE / 2); // 1 fila arriba y abajo del seleccionado
 
 // ----- Columna individual estilo drum-roll -----
 interface DrumColumnProps {
@@ -95,7 +95,7 @@ function DrumColumn({ items, selected, onSelect, accentColor }: DrumColumnProps)
         className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
         style={{
           height: PADDING * ITEM_H,
-          background: 'linear-gradient(to bottom, #0a0e1a 10%, rgba(10,14,26,0.3) 100%)',
+          background: 'linear-gradient(to bottom, #0a0e1a 15%, rgba(10,14,26,0.3) 100%)',
         }}
       />
       {/* Degradado inferior */}
@@ -103,7 +103,7 @@ function DrumColumn({ items, selected, onSelect, accentColor }: DrumColumnProps)
         className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
         style={{
           height: PADDING * ITEM_H,
-          background: 'linear-gradient(to top, #0a0e1a 10%, rgba(10,14,26,0.3) 100%)',
+          background: 'linear-gradient(to top, #0a0e1a 15%, rgba(10,14,26,0.3) 100%)',
         }}
       />
 
@@ -129,8 +129,8 @@ function DrumColumn({ items, selected, onSelect, accentColor }: DrumColumnProps)
 
         {items.map((item, idx) => {
           const dist = Math.abs(idx - selected);
-          const opacity = dist === 0 ? 1 : dist === 1 ? 0.5 : 0.25;
-          const scale = dist === 0 ? 1 : dist === 1 ? 0.88 : 0.75;
+          const opacity = dist === 0 ? 1 : 0.35;
+          const scale = dist === 0 ? 1 : 0.85;
           const isActive = idx === selected;
           const color = accentColor === 'emerald' ? 'text-emerald-300' : 'text-cyan-300';
           return (
@@ -149,7 +149,7 @@ function DrumColumn({ items, selected, onSelect, accentColor }: DrumColumnProps)
                 cursor: 'pointer',
               }}
               className={cn(
-                'font-mono font-bold text-xl transition-all',
+                'font-mono font-bold text-lg transition-all',
                 isActive ? color : 'text-[var(--text-muted)]'
               )}
             >
@@ -241,22 +241,16 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
       </button>
       {error && <p className="text-red-400 text-[10px] mt-1">{error}</p>}
 
-      {/* Popover drum-roll */}
+      {/* Popover drum-roll: rectangular horizontal, mismo ancho que el input, altura a la mitad, sin HH/MM */}
       {open && (
-        <div className="absolute z-[200] top-full mt-2 right-0 rounded-2xl border border-cyan-500/20 bg-[#0a0e1a] shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_40px_rgba(6,182,212,0.1)] overflow-hidden w-44">
+        <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full rounded-2xl border border-cyan-500/25 bg-[#0a0e1a] shadow-[0_16px_50px_rgba(0,0,0,0.9),0_0_30px_rgba(6,182,212,0.12)] overflow-hidden">
           {/* Header */}
-          <div className="px-4 py-2.5 border-b border-white/[0.05] bg-white/[0.02] flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="px-3.5 py-2 border-b border-white/[0.05] bg-white/[0.02] flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
               <Clock size={11} className="text-cyan-400" />
               <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Hora</span>
             </div>
-            <span className="font-mono font-bold text-cyan-300 text-base">{displayVal}</span>
-          </div>
-
-          {/* Labels HH / MM */}
-          <div className="grid grid-cols-2 border-b border-white/[0.04] px-2 py-1">
-            <span className="text-center text-[9px] font-bold text-emerald-500/70 uppercase tracking-widest">HH</span>
-            <span className="text-center text-[9px] font-bold text-cyan-500/70 uppercase tracking-widest">MM</span>
+            <span className="font-mono font-bold text-cyan-300 text-sm">{displayVal}</span>
           </div>
 
           {/* Drum wheels */}
@@ -276,7 +270,7 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end px-3 py-2 border-t border-white/[0.05] bg-white/[0.01]">
+          <div className="flex justify-end px-3 py-1.5 border-t border-white/[0.05] bg-white/[0.01]">
             <button
               type="button"
               onClick={() => setOpen(false)}
