@@ -88,14 +88,14 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
 
       {/* Popover: ancho y altura exactos al ancho del input (aspect-square) */}
       {open && (
-        <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full aspect-square rounded-2xl border border-emerald-500/25 bg-[#0a0e1a] shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(16,185,129,0.08)] overflow-hidden flex flex-col justify-between">
+        <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full aspect-square rounded-2xl border border-emerald-500/25 bg-[#0a0e1a] shadow-[0_12px_36px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col justify-between">
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.05] bg-white/[0.02] shrink-0">
-            <button type="button" onClick={prevMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-all">
+            <button type="button" onClick={prevMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors duration-150">
               <ChevronLeft size={14} />
             </button>
             <span className="text-xs font-bold text-white tracking-wide">{MONTHS_ES[viewMonth]} {viewYear}</span>
-            <button type="button" onClick={nextMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-all">
+            <button type="button" onClick={nextMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors duration-150">
               <ChevronRight size={14} />
             </button>
           </div>
@@ -117,11 +117,11 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
                   type="button"
                   onClick={() => { onChange(ymd); setOpen(false); }}
                   className={cn(
-                    'w-full h-full max-h-7 aspect-square mx-auto rounded-lg text-[11px] flex items-center justify-center transition-all font-medium',
+                    'w-full h-full max-h-7 aspect-square mx-auto rounded-lg text-[11px] flex items-center justify-center transition-colors duration-150 font-medium',
                     !current && 'text-white/20 pointer-events-none',
-                    current && !isSel && !isTod && 'text-[var(--text-secondary)] hover:bg-emerald-500/10 hover:text-emerald-300 hover:scale-105',
+                    current && !isSel && !isTod && 'text-[var(--text-secondary)] hover:bg-emerald-500/20 hover:text-emerald-300',
                     isTod && !isSel && 'text-emerald-400 font-bold ring-1 ring-emerald-500/50 ring-offset-1 ring-offset-[#0a0e1a]',
-                    isSel && 'bg-gradient-to-br from-emerald-500 to-cyan-400 text-white font-bold shadow-[0_0_12px_rgba(16,185,129,0.5)] scale-105',
+                    isSel && 'bg-gradient-to-br from-emerald-500 to-cyan-400 text-white font-bold shadow-[0_0_10px_rgba(16,185,129,0.4)]',
                   )}
                 >
                   {date.getDate()}
@@ -131,8 +131,8 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
           </div>
           {/* Footer */}
           <div className="flex items-center justify-between px-3 py-1.5 border-t border-white/[0.05] bg-white/[0.01] shrink-0">
-            <button type="button" onClick={() => { onChange(''); setOpen(false); }} className="text-[10px] text-[var(--text-muted)] hover:text-red-400 transition-colors font-medium">Limpiar</button>
-            <button type="button" onClick={() => { onChange(today); setOpen(false); }} className="text-[10px] text-emerald-400 hover:text-white font-bold transition-colors px-2 py-0.5 rounded-lg hover:bg-emerald-500/20">Hoy</button>
+            <button type="button" onClick={() => { onChange(''); setOpen(false); }} className="text-[10px] text-[var(--text-muted)] hover:text-red-400 transition-colors duration-150 font-medium">Limpiar</button>
+            <button type="button" onClick={() => { onChange(today); setOpen(false); }} className="text-[10px] text-emerald-400 hover:text-white font-bold transition-colors duration-150 px-2 py-0.5 rounded-lg hover:bg-emerald-500/20">Hoy</button>
           </div>
         </div>
       )}

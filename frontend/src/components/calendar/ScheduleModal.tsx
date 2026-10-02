@@ -774,7 +774,7 @@ export function ScheduleModal() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="px-5 py-3 space-y-3.5 flex-1 overflow-y-auto">
+            <form onSubmit={handleSubmit(onSubmit)} className="px-5 py-3 space-y-3.5 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
               {/* Dropzone Video */}
               {videoFile ? (
                 /* Video cargado: card compacta con botón X para eliminar */
