@@ -241,18 +241,9 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
       </button>
       {error && <p className="text-red-400 text-[10px] mt-1">{error}</p>}
 
-      {/* Popover drum-roll: rectangular horizontal, mismo ancho que el input, altura a la mitad, sin HH/MM */}
+      {/* Popover drum-roll: rectangular horizontal, mismo ancho que el input, altura compacta, sin HH/MM ni header redundante */}
       {open && (
         <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full rounded-2xl border border-cyan-500/25 bg-[#0a0e1a] shadow-[0_16px_50px_rgba(0,0,0,0.9),0_0_30px_rgba(6,182,212,0.12)] overflow-hidden">
-          {/* Header */}
-          <div className="px-3.5 py-2 border-b border-white/[0.05] bg-white/[0.02] flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Clock size={11} className="text-cyan-400" />
-              <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Hora</span>
-            </div>
-            <span className="font-mono font-bold text-cyan-300 text-sm">{displayVal}</span>
-          </div>
-
           {/* Drum wheels */}
           <div className="grid grid-cols-2 divide-x divide-white/[0.05] px-1 py-1">
             <DrumColumn

@@ -730,51 +730,54 @@ export function ScheduleModal() {
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-24 bg-emerald-500/12 blur-3xl pointer-events-none" />
 
             {/* Header */}
-            <div className="px-5 py-4 border-b border-white/[0.07] bg-white/[0.015] flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-white">Configurar Publicación</h2>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase tracking-wider">
-                    Paso 2 de 2
-                  </span>
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                  Arrastra el video a cualquier parte de la pantalla o usa el área de abajo
-                </p>
-              </div>
-              <button
-                onClick={closeScheduleModal}
-                className="w-8 h-8 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
-                title="Cerrar"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* Banner Informativo de Fecha Asignada */}
-            <div className="px-5 pt-3">
-              <div className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/8 to-cyan-500/8 border border-emerald-500/20 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs">
-                  <Calendar size={13} className="text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-                      Fecha programada: 
-                    </span>
-                    <span className="text-xs font-bold text-white capitalize ml-1">
-                      {displayDateStr}
+            <div className="px-5 py-3.5 border-b border-white/[0.07] bg-white/[0.015] space-y-2.5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-white">Configurar Publicación</h2>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase tracking-wider">
+                      Paso 2 de 2
                     </span>
                   </div>
+                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                    Arrastra el video a cualquier parte de la pantalla o usa el área de abajo
+                  </p>
                 </div>
-                {videoFile && (
-                  <span className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
-                    <CheckCircle2 size={11} /> Cargado
-                  </span>
-                )}
+                <button
+                  type="button"
+                  onClick={closeScheduleModal}
+                  className="w-8 h-8 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all shrink-0 ml-2 cursor-pointer"
+                  title="Cerrar"
+                >
+                  <X size={16} />
+                </button>
               </div>
+
+              {/* Aviso Fecha programada: dentro del header, debajo del título y subtítulo */}
+              {displayDateStr && (
+                <div className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Calendar size={13} className="text-emerald-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
+                        Fecha programada: 
+                      </span>
+                      <span className="text-xs font-bold text-white capitalize ml-1">
+                        {displayDateStr}
+                      </span>
+                    </div>
+                  </div>
+                  {videoFile && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+                      <CheckCircle2 size={11} /> Cargado
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="px-5 py-3 space-y-3.5 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
+            <form id="schedule-modal-form" onSubmit={handleSubmit(onSubmit)} className="px-5 py-3 space-y-3.5 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
               {/* Dropzone Video */}
               {videoFile ? (
                 /* Video cargado: card compacta con botón X para eliminar */
@@ -1246,39 +1249,15 @@ export function ScheduleModal() {
                 />
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.07]">
-                <button
-                  type="button"
-                  onClick={closeScheduleModal}
-                  disabled={uploadingDrive}
-                  className="px-4 py-2 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploadingDrive}
-                  className="px-6 py-2 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
-                >
-                  {uploadingDrive ? (
-                    <>
-                      <Loader2 size={13} className="animate-spin" />
-                      <span>Subiendo a Drive ({uploadProgress}%)...</span>
-                    </>
-                  ) : (
-                    <span>Confirmar y Programar Video</span>
-                  )}
-                </button>
-              </div>
             </form>
 
-            {/* ── Tarjeta de Videos del día — FUERA del form, debajo del scroll ── */}
-            {selectedAccountStat && (
-              <div className="px-5 pb-4 pt-1">
+            {/* ── Footer de Configurar Publicación ── */}
+            <div className="px-5 py-3 border-t border-white/[0.08] bg-[#090d18] space-y-2.5 shrink-0">
+              {/* Tarjeta de Videos del día (si hay cuenta seleccionada) */}
+              {selectedAccountStat && (
                 <div
                   className={cn(
-                    'p-3 rounded-2xl border text-xs space-y-2 transition-all',
+                    'p-2.5 rounded-xl border text-xs space-y-1.5 transition-all',
                     selectedAccountStat.missing > 0
                       ? 'bg-gradient-to-r from-amber-950/35 via-[#0e1626] to-[#0a101d] border-amber-500/30'
                       : 'bg-gradient-to-r from-emerald-950/35 via-[#0e1626] to-[#0a101d] border-emerald-500/30'
@@ -1288,7 +1267,7 @@ export function ScheduleModal() {
                     <div className="flex items-center gap-2 min-w-0">
                       <div
                         className={cn(
-                          'w-7 h-7 rounded-lg border flex items-center justify-center shrink-0',
+                          'w-6 h-6 rounded-lg border flex items-center justify-center shrink-0',
                           selectedAccountStat.missing > 0
                             ? 'bg-amber-500/15 border-amber-500/25 text-amber-400'
                             : 'bg-emerald-500/15 border-emerald-500/25 text-emerald-400'
@@ -1310,7 +1289,7 @@ export function ScheduleModal() {
                         </p>
                       </div>
                     </div>
-                    <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                    <div className="text-right shrink-0 flex items-center gap-2">
                       <span className={cn('text-xs font-mono font-bold', selectedAccountStat.missing > 0 ? 'text-amber-400' : 'text-emerald-400')}>
                         {selectedAccountStat.count} / {selectedAccountStat.target} videos
                       </span>
@@ -1332,8 +1311,35 @@ export function ScheduleModal() {
                     </div>
                   </div>
                 </div>
+              )}
+
+              {/* Botón Cancelar y Botón Programar Video */}
+              <div className="flex items-center justify-end gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={closeScheduleModal}
+                  disabled={uploadingDrive}
+                  className="px-4 py-2 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="schedule-modal-form"
+                  disabled={uploadingDrive}
+                  className="px-6 py-2 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {uploadingDrive ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Subiendo a Drive ({uploadProgress}%)...</span>
+                    </>
+                  ) : (
+                    <span>Programar Video</span>
+                  )}
+                </button>
               </div>
-            )}
+            </div>
           </motion.div>
         </div>
       )}
