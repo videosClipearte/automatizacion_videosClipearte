@@ -44,6 +44,8 @@ import {
   uploadVideoToGoogleDrive,
 } from '@/lib/services/driveService';
 import { createNotification } from '@/lib/services/notificationService';
+import { DatePicker } from '@/components/ui/DatePicker';
+import { TimePicker } from '@/components/ui/TimePicker';
 
 // Helpers para normalización y tokens (Verificador Anti-Duplicados)
 function normalizeText(text: string): string {
@@ -1125,49 +1127,22 @@ export function ScheduleModal() {
               {/* Se renderiza fuera del scroll principal como un aviso flotante */}
 
 
-              {/* Date + Time — Inputs con diseño coherente a la app */}
+              {/* Date + Time — Componentes custom coherentes con el diseño de la app */}
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5 mb-1.5">
-                    <Calendar size={11} className="text-emerald-400" /> Fecha Programada
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      {...register('fecha')}
-                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-emerald-500/60 outline-none bg-[#0d1422] [color-scheme:dark] transition-colors hover:border-emerald-500/30 cursor-pointer"
-                      style={{ fontFamily: 'inherit' }}
-                    />
-                  </div>
-                  {errors.fecha && (
-                    <p className="text-red-400 text-[10px] mt-1">{errors.fecha.message}</p>
-                  )}
-                </div>
+                <DatePicker
+                  label="Fecha Programada"
+                  value={watch('fecha')}
+                  onChange={(v) => setValue('fecha', v, { shouldValidate: true })}
+                  error={errors.fecha?.message}
+                />
 
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
-                      <Clock size={11} className="text-cyan-400" /> Hora de Envío
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setValue('hora', format(new Date(), 'HH:mm'))}
-                      className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium transition-colors hover:underline"
-                      title="Usar hora actual"
-                    >
-                      <Clock size={9} /> Hora actual
-                    </button>
-                  </div>
-                  <input
-                    type="time"
-                    {...register('hora')}
-                    className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-500/60 outline-none bg-[#0d1422] [color-scheme:dark] transition-colors hover:border-cyan-500/30 cursor-pointer"
-                    style={{ fontFamily: 'inherit' }}
-                  />
-                  {errors.hora && (
-                    <p className="text-red-400 text-[10px] mt-1">{errors.hora.message}</p>
-                  )}
-                </div>
+                <TimePicker
+                  label="Hora de Envío"
+                  value={watch('hora')}
+                  onChange={(v) => setValue('hora', v, { shouldValidate: true })}
+                  onSetNow={() => setValue('hora', format(new Date(), 'HH:mm'), { shouldValidate: true })}
+                  error={errors.hora?.message}
+                />
               </div>
 
               {/* Description — auto-expandible hasta 150px */}
