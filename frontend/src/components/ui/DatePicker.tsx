@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 // src/components/ui/DatePicker.tsx
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
@@ -51,7 +51,7 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
     for (let i = startDow - 1; i >= 0; i--) cells.push({ date: new Date(viewYear, viewMonth-1, daysInPrev-i), current: false });
     for (let d = 1; d <= daysInMonth; d++) cells.push({ date: new Date(viewYear, viewMonth, d), current: true });
     let next = 1;
-    while (cells.length % 7 !== 0) cells.push({ date: new Date(viewYear, viewMonth+1, next++), current: false });
+    while (cells.length < 42) cells.push({ date: new Date(viewYear, viewMonth+1, next++), current: false });
     return cells;
   }, [viewYear, viewMonth]);
 
@@ -86,26 +86,27 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
       </button>
       {error && <p className="text-red-400 text-[10px] mt-1">{error}</p>}
 
+      {/* Popover: ancho y altura exactos al ancho del input (aspect-square) */}
       {open && (
-        <div className="absolute z-[200] top-full mt-2 left-0 w-72 rounded-2xl border border-emerald-500/20 bg-[#0a0e1a] shadow-[0_20px_60px_rgba(0,0,0,0.85),0_0_40px_rgba(16,185,129,0.08)] overflow-hidden">
+        <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full aspect-square rounded-2xl border border-emerald-500/25 bg-[#0a0e1a] shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(16,185,129,0.08)] overflow-hidden flex flex-col justify-between">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05] bg-white/[0.02]">
-            <button type="button" onClick={prevMonth} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-all">
-              <ChevronLeft size={15} />
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.05] bg-white/[0.02] shrink-0">
+            <button type="button" onClick={prevMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-all">
+              <ChevronLeft size={14} />
             </button>
             <span className="text-xs font-bold text-white tracking-wide">{MONTHS_ES[viewMonth]} {viewYear}</span>
-            <button type="button" onClick={nextMonth} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-all">
-              <ChevronRight size={15} />
+            <button type="button" onClick={nextMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-all">
+              <ChevronRight size={14} />
             </button>
           </div>
           {/* Dias semana */}
-          <div className="grid grid-cols-7 px-3 pt-2.5 pb-1">
+          <div className="grid grid-cols-7 px-2.5 pt-1.5 pb-0.5 shrink-0">
             {DAYS_ES.map(d => (
-              <div key={d} className="text-center text-[10px] font-bold text-[var(--text-muted)] py-1">{d}</div>
+              <div key={d} className="text-center text-[9px] font-bold text-[var(--text-muted)]">{d}</div>
             ))}
           </div>
           {/* Celdas */}
-          <div className="grid grid-cols-7 px-3 pb-3 gap-y-0.5">
+          <div className="grid grid-cols-7 grid-rows-6 px-2.5 pb-1 flex-1 gap-0.5 items-center">
             {days.map(({ date, current }, i) => {
               const ymd = toYMD(date);
               const isSel   = ymd === value;
@@ -116,11 +117,11 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
                   type="button"
                   onClick={() => { onChange(ymd); setOpen(false); }}
                   className={cn(
-                    'w-full aspect-square rounded-lg text-[11px] flex items-center justify-center transition-all font-medium',
+                    'w-full h-full max-h-7 aspect-square mx-auto rounded-lg text-[11px] flex items-center justify-center transition-all font-medium',
                     !current && 'text-white/20 pointer-events-none',
                     current && !isSel && !isTod && 'text-[var(--text-secondary)] hover:bg-emerald-500/10 hover:text-emerald-300 hover:scale-105',
                     isTod && !isSel && 'text-emerald-400 font-bold ring-1 ring-emerald-500/50 ring-offset-1 ring-offset-[#0a0e1a]',
-                    isSel && 'bg-gradient-to-br from-emerald-500 to-cyan-400 text-white font-bold shadow-[0_0_14px_rgba(16,185,129,0.5)] scale-105',
+                    isSel && 'bg-gradient-to-br from-emerald-500 to-cyan-400 text-white font-bold shadow-[0_0_12px_rgba(16,185,129,0.5)] scale-105',
                   )}
                 >
                   {date.getDate()}
@@ -129,7 +130,7 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
             })}
           </div>
           {/* Footer */}
-          <div className="flex items-center justify-between px-4 py-2.5 border-t border-white/[0.05] bg-white/[0.01]">
+          <div className="flex items-center justify-between px-3 py-1.5 border-t border-white/[0.05] bg-white/[0.01] shrink-0">
             <button type="button" onClick={() => { onChange(''); setOpen(false); }} className="text-[10px] text-[var(--text-muted)] hover:text-red-400 transition-colors font-medium">Limpiar</button>
             <button type="button" onClick={() => { onChange(today); setOpen(false); }} className="text-[10px] text-emerald-400 hover:text-white font-bold transition-colors px-2 py-0.5 rounded-lg hover:bg-emerald-500/20">Hoy</button>
           </div>
