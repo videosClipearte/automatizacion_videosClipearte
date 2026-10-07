@@ -504,28 +504,23 @@ export default function AlertsSettingsPage() {
           </label>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
-              Hora de despacho del reporte diario al grupo
-            </label>
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            Hora de despacho del reporte diario al grupo
+          </label>
+          {/* Input y botón en la misma fila, misma altura */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
             <input
               type="time"
               value={dailyQuotaAlertHour}
               onChange={(e) => setDailyQuotaAlertHour(e.target.value)}
-              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent"
+              className="w-full h-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent"
             />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
-              Hora a la que el bot revisará cuántos videos faltan en cada cuenta y enviará el resumen al grupo.
-            </p>
-          </div>
-
-          <div className="flex flex-col justify-end">
             <button
               type="button"
               onClick={handleSendDailyQuotaReport}
               disabled={sendingDailyReport}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all shadow-md disabled:opacity-50"
+              className="w-full h-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all shadow-md disabled:opacity-50"
             >
               {sendingDailyReport ? (
                 <><Loader2 size={13} className="animate-spin" /> Despachando reporte a Telegram...</>
@@ -534,6 +529,9 @@ export default function AlertsSettingsPage() {
               )}
             </button>
           </div>
+          <p className="text-[10px] text-[var(--text-muted)] mt-1 sm:max-w-[50%] sm:pr-2">
+            Hora a la que el bot revisará cuántos videos faltan en cada cuenta y enviará el resumen al grupo.
+          </p>
         </div>
 
         {dailyReportFeedback && (
