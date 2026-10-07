@@ -85,6 +85,64 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// ── POST: guardar tokens manuales (access_token + refresh_token desde OAuth Playground) ──
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const { canal_id, access_token, refresh_token } = body as Record<string, string>;
+
+    if (!canal_id) {
+      return NextResponse.json({ success: false, error: 'canal_id es requerido' }, { status: 400 });
+    }
+    if (!access_token && !refresh_token) {
+      return NextResponse.json({ success: false, error: 'Debes proporcionar al menos access_token o refresh_token' }, { status: 400 });
+    }
+
+    const safeId = getSafeChannelId(canal_id);
+
+    const credentialsPayload = {
+      token: access_token ?? '',
+      refresh_token: refresh_token ?? '',
+      token_uri: 'https://oauth2.googleapis.com/token',
+      scopes: ['https://www.googleapis.com/auth/youtube.upload'],
+      saved_at: new Date().toISOString(),
+      canal_id: safeId,
+      method: 'manual_token',
+    };
+
+    // Guardar en Supabase
+    const { getSupabase } = await import('@/lib/supabase');
+    const supabase = getSupabase();
+    const { data } = await supabase
+      .from('configuracion_app')
+      .select('youtube_tokens')
+      .eq('id', 'singleton')
+      .single();
+
+    const currentTokens = (data?.youtube_tokens && typeof data.youtube_tokens === 'object')
+      ? data.youtube_tokens
+      : {};
+    currentTokens[safeId] = credentialsPayload;
+
+    const { error } = await supabase
+      .from('configuracion_app')
+      .upsert({ id: 'singleton', youtube_tokens: currentTokens }, { onConflict: 'id' });
+
+    if (error) {
+      return NextResponse.json({ success: false, error: `Error al guardar en Supabase: ${error.message}` }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      canal_id,
+      message: `Tokens para @${canal_id} guardados correctamente. La app ya puede publicar automáticamente.`,
+    });
+  } catch (err: any) {
+    console.error('[YouTube Status POST] Error:', err);
+    return NextResponse.json({ success: false, error: err.message ?? 'Error inesperado.' }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);

@@ -82,9 +82,11 @@ export default function AccountsPage() {
     }
   }, []);
 
-  // Modal de ayuda si faltan credenciales de Google
-  const [oauthHelpAccount, setOauthHelpAccount] = useState<Account | null>(null);
-  const [copiedCommand, setCopiedCommand] = useState(false);
+  // Modal de ingreso manual de tokens de YouTube
+  const [tokenModalAccount, setTokenModalAccount] = useState<Account | null>(null);
+  const [manualAccessToken, setManualAccessToken] = useState('');
+  const [manualRefreshToken, setManualRefreshToken] = useState('');
+  const [savingTokens, setSavingTokens] = useState(false);
 
   // Check YouTube token status for all YouTube accounts on mount + detectar retorno de Google OAuth
   useEffect(() => {
@@ -111,48 +113,47 @@ export default function AccountsPage() {
     }
   }, [accounts, checkYtStatus, updateAccount]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Trigger YouTube OAuth
-  const handleYtAuthorize = async (account: Account) => {
-    setYtStatus(prev => ({
-      ...prev,
-      [account.id]: { ...(prev[account.id] ?? { authorized: false, revoking: false }), loading: true },
-    }));
-    showNotification(`🔑 Conectando con Google OAuth para @${account.username}…`);
+  // Abrir modal de ingreso manual de tokens
+  const handleYtAuthorize = (account: Account) => {
+    setManualAccessToken('');
+    setManualRefreshToken('');
+    setTokenModalAccount(account);
+  };
+
+  // Guardar tokens manuales en Supabase
+  const handleSaveManualTokens = async () => {
+    if (!tokenModalAccount) return;
+    if (!manualAccessToken.trim() && !manualRefreshToken.trim()) {
+      showNotification('⚠️ Debes ingresar al menos el Refresh Token.');
+      return;
+    }
+    setSavingTokens(true);
     try {
-      const res = await fetch('/api/youtube/authorize', {
+      const res = await fetch('/api/youtube/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ canal_id: account.username }),
+        body: JSON.stringify({
+          canal_id: tokenModalAccount.username,
+          access_token: manualAccessToken.trim(),
+          refresh_token: manualRefreshToken.trim(),
+        }),
       });
       const data = await res.json();
-
-      // Si Google OAuth generó la URL de consentimiento (Web OAuth estándar):
-      if (data.authUrl) {
-        showNotification(`🔑 Abriendo pantalla de inicio de sesión de Google para @${account.username}…`);
-        window.location.href = data.authUrl;
-        return;
-      }
-
-      setYtStatus(prev => ({
-        ...prev,
-        [account.id]: { authorized: !!data.success, loading: false, revoking: false },
-      }));
-
       if (data.success) {
-        showNotification(`✅ Canal @${account.username} conectado a YouTube. La app ya puede publicar automáticamente.`);
-        if (!account.activo) updateAccount(account.id, { activo: true });
-      } else if (data.needs_credentials) {
-        setOauthHelpAccount(account);
-        showNotification(`⚠️ Falta registrar Client ID de Google en Configuración → Integraciones.`);
+        showNotification(`✅ Canal @${tokenModalAccount.username} conectado a YouTube. La app ya puede publicar automáticamente.`);
+        setYtStatus(prev => ({
+          ...prev,
+          [tokenModalAccount.id]: { authorized: true, loading: false, revoking: false },
+        }));
+        if (!tokenModalAccount.activo) updateAccount(tokenModalAccount.id, { activo: true });
+        setTokenModalAccount(null);
       } else {
-        showNotification(`⚠️ No se pudo conectar @${account.username}: ${data.error ?? data.message}`);
+        showNotification(`❌ No se pudo guardar: ${data.error}`);
       }
     } catch (err: any) {
-      setYtStatus(prev => ({
-        ...prev,
-        [account.id]: { authorized: false, loading: false, revoking: false },
-      }));
-      showNotification(`❌ Error al conectar con YouTube: ${err.message}`);
+      showNotification(`❌ Error: ${err.message}`);
+    } finally {
+      setSavingTokens(false);
     }
   };
 
@@ -665,16 +666,11 @@ export default function AccountsPage() {
                           <button
                             type="button"
                             onClick={() => handleYtAuthorize(account)}
-                            disabled={isLoading}
-                            title={`Iniciar sesión en YouTube para publicar automáticamente como @${account.username}`}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/15 border border-red-500/35 hover:bg-red-500/25 text-red-300 text-xs font-semibold transition-all disabled:opacity-50"
+                            title={`Conectar YouTube para publicar automáticamente como @${account.username}`}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/15 border border-red-500/35 hover:bg-red-500/25 text-red-300 text-xs font-semibold transition-all"
                           >
-                            {isLoading ? (
-                              <Loader2 size={12} className="animate-spin text-red-400" />
-                            ) : (
-                              <YoutubeIcon size={12} className="text-red-400" />
-                            )}
-                            <span>{isLoading ? 'Abriendo Google…' : 'Conectar YouTube'}</span>
+                            <YoutubeIcon size={12} className="text-red-400" />
+                            <span>Conectar YouTube</span>
                           </button>
                         );
                       })()}
@@ -719,9 +715,9 @@ export default function AccountsPage() {
         })}
       </div>
 
-      {/* Modal Informativo / Asistente para Conexión de YouTube */}
+      {/* Modal de ingreso manual de tokens de YouTube */}
       <AnimatePresence>
-        {oauthHelpAccount && (
+        {tokenModalAccount && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -729,80 +725,88 @@ export default function AccountsPage() {
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               className="w-full max-w-lg rounded-2xl glass-strong border border-red-500/30 p-5 shadow-2xl space-y-4"
             >
+              {/* Header */}
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400">
                     <YoutubeIcon size={18} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Conectar YouTube: @{oauthHelpAccount.username}</h3>
-                    <p className="text-[11px] text-[var(--text-muted)]">Configuración de autorización OAuth2 de Google</p>
+                    <h3 className="text-sm font-bold text-white">Conectar YouTube: @{tokenModalAccount.username}</h3>
+                    <p className="text-[11px] text-[var(--text-muted)]">Pega los tokens de Google OAuth Playground</p>
                   </div>
                 </div>
                 <button
-                  onClick={() => setOauthHelpAccount(null)}
+                  onClick={() => setTokenModalAccount(null)}
                   className="w-7 h-7 rounded-lg glass border border-white/10 flex items-center justify-center text-slate-400 hover:text-white"
                 >
                   <X size={14} />
                 </button>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-200 leading-relaxed">
-                Google exige que tu aplicación tenga un <strong>Client ID</strong> y <strong>Client Secret</strong> registrados en Google Cloud Console para publicar videos automáticamente.
+              {/* Instrucciones */}
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Sparkles size={12} className="text-cyan-400" />
+                  Cómo obtener los tokens:
+                </p>
+                <ol className="text-[11px] text-[var(--text-muted)] space-y-1 list-decimal list-inside leading-relaxed">
+                  <li>Ve a <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline hover:text-cyan-300">developers.google.com/oauthplayground</a></li>
+                  <li>En el paso 1, selecciona el scope: <code className="text-emerald-300 bg-black/40 px-1 rounded">YouTube Data API v3 → .../auth/youtube</code></li>
+                  <li>Haz click en <strong className="text-white">Authorize APIs</strong> e inicia sesión con tu cuenta de Google</li>
+                  <li>En el paso 2, haz click en <strong className="text-white">Exchange authorization code for tokens</strong></li>
+                  <li>Copia el <code className="text-amber-300 bg-black/40 px-1 rounded">access_token</code> y el <code className="text-emerald-300 bg-black/40 px-1 rounded">refresh_token</code> y pégalos abajo</li>
+                </ol>
               </div>
 
+              {/* Inputs */}
               <div className="space-y-3">
-                <div className="p-3 rounded-xl glass border border-[var(--border)] space-y-2">
-                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Sparkles size={13} className="text-cyan-400" />
-                    Opción 1: Conectar en la Web (Vercel & Local)
-                  </p>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Agrega tu Google Client ID en la pestaña de Integraciones. Puedes usar el mismo proyecto de Google Cloud que Google Drive.
-                  </p>
-                  <a
-                    href="/settings/integrations"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 border border-red-500/35 hover:bg-red-500/30 text-red-300 text-xs font-semibold transition-all"
-                  >
-                    Ir a Configuración → Integraciones →
-                  </a>
+                <div>
+                  <label className="text-[11px] font-bold text-amber-300 block mb-1.5">
+                    Refresh Token <span className="text-[var(--text-muted)] font-normal">(recomendado — no expira)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={manualRefreshToken}
+                    onChange={e => setManualRefreshToken(e.target.value)}
+                    placeholder="1//0g..."
+                    className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-amber-500/30 focus:border-amber-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] resize-none font-mono"
+                  />
                 </div>
-
-                <div className="p-3 rounded-xl glass border border-[var(--border)] space-y-2">
-                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Target size={13} className="text-emerald-400" />
-                    Opción 2: Ejecutar en tu PC (Backend Python Local)
-                  </p>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Si ejecutas el backend de automatización en tu computadora, abre tu terminal (PowerShell) en la carpeta del proyecto y ejecuta:
-                  </p>
-                  <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-black/60 border border-white/10">
-                    <code className="text-[11px] font-mono text-emerald-300 truncate">
-                      python backend/youtube/authorize.py --channel={oauthHelpAccount.username}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(`python backend/youtube/authorize.py --channel=${oauthHelpAccount.username}`);
-                        setCopiedCommand(true);
-                        setTimeout(() => setCopiedCommand(false), 2000);
-                      }}
-                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold shrink-0 flex items-center gap-1"
-                    >
-                      {copiedCommand ? <Check size={11} className="text-emerald-400" /> : null}
-                      <span>{copiedCommand ? 'Copiado' : 'Copiar'}</span>
-                    </button>
-                  </div>
+                <div>
+                  <label className="text-[11px] font-bold text-cyan-300 block mb-1.5">
+                    Access Token <span className="text-[var(--text-muted)] font-normal">(opcional — expira en 1 hora)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={manualAccessToken}
+                    onChange={e => setManualAccessToken(e.target.value)}
+                    placeholder="ya29..."
+                    className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-cyan-500/30 focus:border-cyan-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] resize-none font-mono"
+                  />
                 </div>
               </div>
 
-              <div className="flex justify-end pt-1">
+              <div className="flex justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setOauthHelpAccount(null)}
-                  className="px-4 py-2 rounded-xl glass border border-white/10 text-xs font-semibold text-white hover:bg-white/5 transition-all"
+                  onClick={() => setTokenModalAccount(null)}
+                  className="px-4 py-1.5 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white"
                 >
-                  Entendido
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveManualTokens}
+                  disabled={savingTokens || (!manualAccessToken.trim() && !manualRefreshToken.trim())}
+                  className="flex items-center gap-1.5 px-5 py-1.5 rounded-xl bg-red-500/20 border border-red-500/40 hover:bg-red-500/30 text-red-200 text-xs font-bold transition-all disabled:opacity-50"
+                >
+                  {savingTokens ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <YoutubeIcon size={12} className="text-red-400" />
+                  )}
+                  {savingTokens ? 'Guardando…' : 'Guardar y Conectar'}
                 </button>
               </div>
             </motion.div>
