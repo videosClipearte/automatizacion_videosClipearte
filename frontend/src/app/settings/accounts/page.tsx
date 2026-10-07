@@ -1,10 +1,11 @@
 'use client';
 // src/app/settings/accounts/page.tsx
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Trash2, Edit3, CheckCircle, XCircle, Globe, Play, Send,
-  X, Check, AlertCircle, Sparkles, Target, BellRing, Loader2
+  X, Check, AlertCircle, Sparkles, Target, BellRing, Loader2,
+  Youtube, LogIn, LogOut, ShieldCheck, ShieldOff
 } from 'lucide-react';
 import { isToday } from 'date-fns';
 import { useAppStore } from '@/store/useAppStore';
@@ -52,6 +53,91 @@ export default function AccountsPage() {
   // Alert sending state
   const [alertingAccountId, setAlertingAccountId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  // YouTube OAuth state
+  // Map of account.id -> { authorized: boolean, loading: boolean, revoking: boolean }
+  const [ytStatus, setYtStatus] = useState<Record<string, { authorized: boolean; loading: boolean; revoking: boolean }>>({});
+
+  // Check YouTube token status for all YouTube accounts on mount
+  const checkYtStatus = useCallback(async (account: Account) => {
+    if (account.plataforma !== 'youtube') return;
+    setYtStatus(prev => ({ ...prev, [account.id]: { authorized: false, loading: true, revoking: false } }));
+    try {
+      const res = await fetch(`/api/youtube/status?canal_id=${encodeURIComponent(account.username)}`);
+      const data = await res.json();
+      setYtStatus(prev => ({
+        ...prev,
+        [account.id]: { authorized: !!data.authorized, loading: false, revoking: false },
+      }));
+    } catch {
+      setYtStatus(prev => ({ ...prev, [account.id]: { authorized: false, loading: false, revoking: false } }));
+    }
+  }, []);
+
+  // Check status for every YouTube account on first render
+  useEffect(() => {
+    accounts.forEach(a => { if (a.plataforma === 'youtube') checkYtStatus(a); });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trigger YouTube OAuth
+  const handleYtAuthorize = async (account: Account) => {
+    setYtStatus(prev => ({
+      ...prev,
+      [account.id]: { ...(prev[account.id] ?? { authorized: false, revoking: false }), loading: true },
+    }));
+    showNotification(`🔑 Abriendo Google OAuth para @${account.username}… Completa el inicio de sesión en la ventana del navegador que se abrirá.`);
+    try {
+      const res = await fetch('/api/youtube/authorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canal_id: account.username }),
+      });
+      const data = await res.json();
+      setYtStatus(prev => ({
+        ...prev,
+        [account.id]: { authorized: !!data.success, loading: false, revoking: false },
+      }));
+      if (data.success) {
+        showNotification(`✅ Canal @${account.username} conectado a YouTube. La app ya puede publicar automáticamente.`);
+        // Activate the account if it was inactive
+        if (!account.activo) updateAccount(account.id, { activo: true });
+      } else {
+        showNotification(`⚠️ No se pudo conectar @${account.username}: ${data.error ?? data.message}`);
+      }
+    } catch (err: any) {
+      setYtStatus(prev => ({
+        ...prev,
+        [account.id]: { authorized: false, loading: false, revoking: false },
+      }));
+      showNotification(`❌ Error al conectar con YouTube: ${err.message}`);
+    }
+  };
+
+  // Revoke YouTube token
+  const handleYtRevoke = async (account: Account) => {
+    if (!confirm(`¿Desconectar la sesión de YouTube para @${account.username}? La publicación automática dejará de funcionar.`)) return;
+    setYtStatus(prev => ({
+      ...prev,
+      [account.id]: { ...(prev[account.id] ?? { authorized: true, loading: false }), revoking: true },
+    }));
+    try {
+      const res = await fetch(`/api/youtube/status?canal_id=${encodeURIComponent(account.username)}`, { method: 'DELETE' });
+      const data = await res.json();
+      setYtStatus(prev => ({
+        ...prev,
+        [account.id]: { authorized: false, loading: false, revoking: false },
+      }));
+      showNotification(data.success
+        ? `🔓 Sesión de @${account.username} en YouTube desvinculada.`
+        : `⚠️ ${data.message}`);
+    } catch (err: any) {
+      setYtStatus(prev => ({
+        ...prev,
+        [account.id]: { authorized: false, loading: false, revoking: false },
+      }));
+      showNotification(`❌ Error al desconectar: ${err.message}`);
+    }
+  };
 
   const showNotification = (msg: string) => {
     setFeedback(msg);
@@ -501,7 +587,55 @@ export default function AccountsPage() {
                     </div>
 
                     {/* Right: Actions & Telegram Goal Trigger */}
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0 self-end sm:self-center">
+
+                      {/* ── YouTube OAuth Button (solo para cuentas YouTube) ── */}
+                      {account.plataforma === 'youtube' && (() => {
+                        const yt = ytStatus[account.id];
+                        const isLoading = yt?.loading ?? false;
+                        const isRevoking = yt?.revoking ?? false;
+                        const authorized = yt?.authorized ?? false;
+
+                        if (authorized) {
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              {/* Badge: conectado */}
+                              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-[10px] font-bold">
+                                <ShieldCheck size={11} className="text-red-400" />
+                                YouTube conectado
+                              </span>
+                              {/* Botón desconectar */}
+                              <button
+                                type="button"
+                                onClick={() => handleYtRevoke(account)}
+                                disabled={isRevoking}
+                                title="Desconectar sesión de YouTube"
+                                className="w-7 h-7 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center justify-center text-red-400 hover:bg-red-500/25 transition-all disabled:opacity-50"
+                              >
+                                {isRevoking ? <Loader2 size={11} className="animate-spin" /> : <LogOut size={11} />}
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => handleYtAuthorize(account)}
+                            disabled={isLoading}
+                            title={`Iniciar sesión en YouTube para publicar automáticamente como @${account.username}`}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/15 border border-red-500/35 hover:bg-red-500/25 text-red-300 text-xs font-semibold transition-all disabled:opacity-50"
+                          >
+                            {isLoading ? (
+                              <Loader2 size={12} className="animate-spin text-red-400" />
+                            ) : (
+                              <Youtube size={12} className="text-red-400" />
+                            )}
+                            <span>{isLoading ? 'Abriendo Google…' : 'Conectar YouTube'}</span>
+                          </button>
+                        );
+                      })()}
+
                       {/* Botón para enviar aviso de meta a Telegram */}
                       <button
                         type="button"
