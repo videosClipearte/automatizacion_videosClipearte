@@ -5,11 +5,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Trash2, Edit3, CheckCircle, XCircle, Globe, Play, Send,
   X, Check, AlertCircle, Sparkles, Target, BellRing, Loader2,
-  Youtube, LogIn, LogOut, ShieldCheck, ShieldOff
+  LogOut, ShieldCheck
 } from 'lucide-react';
 import { isToday } from 'date-fns';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
+
+function YoutubeIcon({ size = 14, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+    </svg>
+  );
+}
 import { getPlatformColor } from '@/lib/utils';
 import { sendDailyQuotaAlert } from '@/lib/services/telegramService';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
@@ -629,7 +637,7 @@ export default function AccountsPage() {
                             {isLoading ? (
                               <Loader2 size={12} className="animate-spin text-red-400" />
                             ) : (
-                              <Youtube size={12} className="text-red-400" />
+                              <YoutubeIcon size={12} className="text-red-400" />
                             )}
                             <span>{isLoading ? 'Abriendo Google…' : 'Conectar YouTube'}</span>
                           </button>
