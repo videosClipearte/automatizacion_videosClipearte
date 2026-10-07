@@ -26,7 +26,7 @@ const VIEW_OPTIONS: { key: ViewMode; label: string; Icon: React.ElementType }[] 
   { key: 'day',   label: 'Día',    Icon: Clock      },
 ];
 
-const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i); // 00:00 → 23:00
 
 // Helper de extracción rápida y segura de archivos desde eventos de arrastre
@@ -56,6 +56,31 @@ export function CalendarView() {
   } = useAppStore();
 
   const [currentDate, setCurrentDate] = useState(new Date());
+  // Fecha actual sincronizada en tiempo real con el reloj local del dispositivo del cliente
+  const [clientToday, setClientToday] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
+
+  useEffect(() => {
+    const syncToday = () => {
+      const now = new Date();
+      setClientToday(format(now, 'yyyy-MM-dd'));
+    };
+    syncToday();
+    // Re-evaluar periódicamente para actualizar el día inmediatamente al pasar la medianoche
+    const interval = setInterval(syncToday, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleGoToday = useCallback(() => {
+    const now = new Date();
+    setClientToday(format(now, 'yyyy-MM-dd'));
+    setCurrentDate(now);
+  }, []);
+
+  const isDayToday = useCallback((day: Date) => {
+    const dayKey = format(day, 'yyyy-MM-dd');
+    return clientToday ? dayKey === clientToday : isToday(day);
+  }, [clientToday]);
+
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
 
@@ -143,16 +168,16 @@ export function CalendarView() {
     };
   }, [clearDragState]);
 
-  // Month / week helpers memorizados para máximo rendimiento
+  // Month / week helpers memorizados para máximo rendimiento (inicio de semana en Lunes = 1)
   const monthDays = useMemo(() => {
-    const start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 });
-    const end   = endOfWeek(endOfMonth(currentDate),   { weekStartsOn: 0 });
+    const start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
+    const end   = endOfWeek(endOfMonth(currentDate),   { weekStartsOn: 1 });
     return eachDayOfInterval({ start, end });
   }, [currentDate]);
 
   const weekDays = useMemo(() => {
-    const start = startOfWeek(currentDate, { weekStartsOn: 0 });
-    const end   = endOfWeek(currentDate,   { weekStartsOn: 0 });
+    const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+    const end   = endOfWeek(currentDate,   { weekStartsOn: 1 });
     return eachDayOfInterval({ start, end });
   }, [currentDate]);
 
@@ -171,8 +196,8 @@ export function CalendarView() {
   const getTitle = () => {
     if (calendarView === 'month') return format(currentDate, 'MMMM yyyy', { locale: es });
     if (calendarView === 'week') {
-      const s = startOfWeek(currentDate, { weekStartsOn: 0 });
-      const e = endOfWeek(currentDate, { weekStartsOn: 0 });
+      const s = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const e = endOfWeek(currentDate, { weekStartsOn: 1 });
       return `${format(s, "d 'de' MMM", { locale: es })} - ${format(e, "d 'de' MMM yyyy", { locale: es })}`;
     }
     return format(currentDate, "EEEE, d 'de' MMMM yyyy", { locale: es });
@@ -310,7 +335,7 @@ export function CalendarView() {
           >
             <ChevronRight size={15} />
           </button>
-          <button onClick={() => setCurrentDate(new Date())}
+          <button onClick={handleGoToday}
             className="px-2.5 sm:px-3 py-1 rounded-xl text-xs font-semibold glass border border-[var(--border)] text-[var(--text-secondary)] hover:text-white hover:border-[var(--border-strong)] transition-all shrink-0"
           >
             Hoy
@@ -438,7 +463,7 @@ export function CalendarView() {
                     className={cn(
                       'relative min-h-0 p-1 sm:p-1.5 flex flex-col justify-between transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30 overflow-hidden',
                       isCurrentMonth ? 'bg-[var(--bg-card)]' : 'bg-[var(--bg-elevated)]',
-                      isToday(day) && 'ring-inset ring-1 ring-emerald-500/40',
+                      isDayToday(day) && 'ring-inset ring-1 ring-emerald-500/40',
                       isDayTargeted && 'ring-2 ring-emerald-400 z-20'
                     )}
                     title="Haz clic para ver el cronograma completo de este día"
@@ -464,7 +489,7 @@ export function CalendarView() {
                     <div className="flex items-center justify-between mb-0.5 shrink-0">
                       <span className={cn(
                         'text-[11px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full',
-                        isToday(day)
+                        isDayToday(day)
                           ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white text-[10px] font-bold shadow-sm'
                           : isCurrentMonth
                             ? 'text-[var(--text-secondary)]'
@@ -545,7 +570,7 @@ export function CalendarView() {
             <div className="grid grid-cols-7 gap-2 flex-1 overflow-y-auto min-h-0">
               {weekDays.map(day => {
                 const dayVideos    = getVideosForDay(day);
-                const isCurrentDay = isToday(day);
+                const isCurrentDay = isDayToday(day);
                 const dayKey       = format(day, 'yyyy-MM-dd');
                 const isDayTargeted = dragOverDay === dayKey;
 
@@ -662,7 +687,7 @@ export function CalendarView() {
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   Cronograma por Horas
-                  {isToday(currentDate) && (
+                  {isDayToday(currentDate) && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                       Hoy
                     </span>

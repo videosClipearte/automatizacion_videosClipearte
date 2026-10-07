@@ -9,6 +9,8 @@ import { CalendarView } from '@/components/calendar/CalendarView';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic';
+
 export default function CalendarPage() {
   const {
     accounts,
