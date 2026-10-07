@@ -122,26 +122,22 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 5. Guardar en Supabase configuracion_app (para acceso desde Vercel o sincronización en la nube)
+    // 5. Guardar en Supabase tabla youtube_tokens
     try {
       const { getSupabase } = await import('@/lib/supabase');
       const supabase = getSupabase();
-      const { data } = await supabase
-        .from('configuracion_app')
-        .select('youtube_tokens')
-        .eq('id', 'singleton')
-        .single();
-
-      const currentTokens = (data?.youtube_tokens && typeof data.youtube_tokens === 'object')
-        ? data.youtube_tokens
-        : {};
-
-      currentTokens[safeId] = credentialsPayload;
 
       await supabase
-        .from('configuracion_app')
-        .update({ youtube_tokens: currentTokens })
-        .eq('id', 'singleton');
+        .from('youtube_tokens')
+        .upsert({
+          canal_id: safeId,
+          access_token: credentialsPayload.token,
+          refresh_token: credentialsPayload.refresh_token,
+          token_uri: credentialsPayload.token_uri,
+          scopes: credentialsPayload.scopes?.join(' ') ?? '',
+          method: 'oauth_web',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'canal_id' });
     } catch (e) {
       console.warn('[YouTube Callback] No se pudo guardar en Supabase:', e);
     }

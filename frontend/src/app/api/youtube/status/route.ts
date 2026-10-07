@@ -1,5 +1,5 @@
 // src/app/api/youtube/status/route.ts
-// Verifica si un canal de YouTube tiene token autorizado sin depender de procesos Python en Vercel
+// Verifica, guarda y elimina tokens de YouTube usando la tabla youtube_tokens en Supabase
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
@@ -11,7 +11,6 @@ function getSafeChannelId(canal_id: string): string {
 function checkLocalToken(safeId: string): boolean {
   if (process.env.VERCEL) return false;
   try {
-    // Ruta relativa a frontend (servidor local o dev)
     const possiblePaths = [
       path.join(process.cwd(), '..', 'backend', 'youtube', 'tokens', `token_${safeId}.json`),
       path.join(process.cwd(), 'backend', 'youtube', 'tokens', `token_${safeId}.json`),
@@ -32,6 +31,7 @@ function checkLocalToken(safeId: string): boolean {
   return false;
 }
 
+// ── GET: verificar si un canal tiene token activo ──
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -46,25 +46,22 @@ export async function GET(req: NextRequest) {
     // 1. Revisar si existe en disco local
     let authorized = checkLocalToken(safeId);
 
-    // 2. Si no está en disco local, verificar en Supabase configuracion_app (youtube_tokens)
+    // 2. Si no está en disco local, verificar en tabla youtube_tokens de Supabase
     if (!authorized) {
       try {
         const { getSupabase } = await import('@/lib/supabase');
         const supabase = getSupabase();
-        const { data } = await supabase
-          .from('configuracion_app')
-          .select('youtube_tokens')
-          .eq('id', 'singleton')
-          .single();
+        const { data, error } = await supabase
+          .from('youtube_tokens')
+          .select('canal_id, refresh_token, access_token')
+          .eq('canal_id', safeId)
+          .maybeSingle();
 
-        if (data?.youtube_tokens && typeof data.youtube_tokens === 'object') {
-          const tokenData = data.youtube_tokens[safeId];
-          if (tokenData && (tokenData.refresh_token || tokenData.token)) {
-            authorized = true;
-          }
+        if (!error && data && (data.refresh_token || data.access_token)) {
+          authorized = true;
         }
       } catch {
-        // Fallback silencioso si la columna o conexión no está disponible
+        // Fallback silencioso
       }
     }
 
@@ -77,7 +74,7 @@ export async function GET(req: NextRequest) {
         : `Canal @${canal_id} no está conectado a YouTube.`,
     });
   } catch (err: any) {
-    console.error('[YouTube Status] Error:', err);
+    console.error('[YouTube Status GET] Error:', err);
     return NextResponse.json({
       success: false,
       error: err.message ?? 'Error al verificar el estado.',
@@ -95,41 +92,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'canal_id es requerido' }, { status: 400 });
     }
     if (!access_token && !refresh_token) {
-      return NextResponse.json({ success: false, error: 'Debes proporcionar al menos access_token o refresh_token' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Debes proporcionar al menos el refresh_token' }, { status: 400 });
     }
 
     const safeId = getSafeChannelId(canal_id);
 
-    const credentialsPayload = {
-      token: access_token ?? '',
-      refresh_token: refresh_token ?? '',
-      token_uri: 'https://oauth2.googleapis.com/token',
-      scopes: ['https://www.googleapis.com/auth/youtube.upload'],
-      saved_at: new Date().toISOString(),
-      canal_id: safeId,
-      method: 'manual_token',
-    };
-
-    // Guardar en Supabase
     const { getSupabase } = await import('@/lib/supabase');
     const supabase = getSupabase();
-    const { data } = await supabase
-      .from('configuracion_app')
-      .select('youtube_tokens')
-      .eq('id', 'singleton')
-      .single();
-
-    const currentTokens = (data?.youtube_tokens && typeof data.youtube_tokens === 'object')
-      ? data.youtube_tokens
-      : {};
-    currentTokens[safeId] = credentialsPayload;
 
     const { error } = await supabase
-      .from('configuracion_app')
-      .upsert({ id: 'singleton', youtube_tokens: currentTokens }, { onConflict: 'id' });
+      .from('youtube_tokens')
+      .upsert({
+        canal_id: safeId,
+        access_token: access_token ?? '',
+        refresh_token: refresh_token ?? '',
+        token_uri: 'https://oauth2.googleapis.com/token',
+        scopes: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube',
+        method: 'manual_token',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'canal_id' });
 
     if (error) {
-      return NextResponse.json({ success: false, error: `Error al guardar en Supabase: ${error.message}` }, { status: 500 });
+      console.error('[YouTube Status POST] Supabase error:', JSON.stringify(error));
+      return NextResponse.json({
+        success: false,
+        error: `Error al guardar en Supabase: ${error.message}`,
+        hint: 'Ejecuta el SQL de migración en tu panel de Supabase para crear la tabla youtube_tokens.',
+        supabase_code: error.code,
+      }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -138,11 +128,15 @@ export async function POST(req: NextRequest) {
       message: `Tokens para @${canal_id} guardados correctamente. La app ya puede publicar automáticamente.`,
     });
   } catch (err: any) {
-    console.error('[YouTube Status POST] Error:', err);
-    return NextResponse.json({ success: false, error: err.message ?? 'Error inesperado.' }, { status: 500 });
+    console.error('[YouTube Status POST] Error inesperado:', err);
+    return NextResponse.json({
+      success: false,
+      error: err.message ?? 'Error inesperado al guardar los tokens.',
+    }, { status: 500 });
   }
 }
 
+// ── DELETE: revocar token de un canal ──
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -162,34 +156,25 @@ export async function DELETE(req: NextRequest) {
           path.join(process.cwd(), '..', 'backend', 'youtube', 'tokens', `token_${safeId}.json`),
           path.join(process.cwd(), 'backend', 'youtube', 'tokens', `token_${safeId}.json`),
         ];
-      for (const p of possiblePaths) {
-        if (fs.existsSync(/*turbopackIgnore: true*/ p)) {
-          fs.unlinkSync(/*turbopackIgnore: true*/ p);
-          deleted = true;
+        for (const p of possiblePaths) {
+          if (fs.existsSync(/*turbopackIgnore: true*/ p)) {
+            fs.unlinkSync(/*turbopackIgnore: true*/ p);
+            deleted = true;
+          }
         }
-      }
-    } catch {}
-  }
+      } catch {}
+    }
 
-    // 2. Eliminar de Supabase si existe
+    // 2. Eliminar fila en tabla youtube_tokens de Supabase
     try {
       const { getSupabase } = await import('@/lib/supabase');
       const supabase = getSupabase();
-      const { data } = await supabase
-        .from('configuracion_app')
-        .select('youtube_tokens')
-        .eq('id', 'singleton')
-        .single();
+      const { error } = await supabase
+        .from('youtube_tokens')
+        .delete()
+        .eq('canal_id', safeId);
 
-      if (data?.youtube_tokens && typeof data.youtube_tokens === 'object' && data.youtube_tokens[safeId]) {
-        const updatedTokens = { ...data.youtube_tokens };
-        delete updatedTokens[safeId];
-        await supabase
-          .from('configuracion_app')
-          .update({ youtube_tokens: updatedTokens })
-          .eq('id', 'singleton');
-        deleted = true;
-      }
+      if (!error) deleted = true;
     } catch {}
 
     return NextResponse.json({

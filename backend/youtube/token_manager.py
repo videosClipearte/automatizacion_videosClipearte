@@ -135,29 +135,34 @@ class TokenManager:
         }
 
     def _load_token_from_supabase(self, canal_id: str) -> Optional[Dict[str, Any]]:
-        """Intenta descargar el token del canal desde Supabase si se autorizó en la Web / Vercel."""
+        """Intenta descargar el token del canal desde la tabla youtube_tokens de Supabase."""
         try:
             from config import SUPABASE_URL, SUPABASE_KEY
             import requests as req
+            safe_id = canal_id.replace("@", "").replace(" ", "_").lower()
             headers = {
                 "apikey": SUPABASE_KEY,
                 "Authorization": f"Bearer {SUPABASE_KEY}",
                 "Content-Type": "application/json",
             }
             resp = req.get(
-                f"{SUPABASE_URL}/rest/v1/configuracion_app?id=eq.singleton&select=youtube_tokens",
+                f"{SUPABASE_URL}/rest/v1/youtube_tokens?canal_id=eq.{safe_id}&select=*",
                 headers=headers,
                 timeout=10,
             )
             data = resp.json()
             if data and isinstance(data, list) and len(data) > 0:
-                yt_tokens = data[0].get("youtube_tokens")
-                if yt_tokens and isinstance(yt_tokens, dict):
-                    safe_id = canal_id.replace("@", "").replace(" ", "_").lower()
-                    token_data = yt_tokens.get(safe_id)
-                    if token_data and (token_data.get("token") or token_data.get("refresh_token")):
-                        logger.info(f"[{canal_id}] Token descargado exitosamente desde Supabase.")
-                        return token_data
+                row = data[0]
+                token_data = {
+                    "token": row.get("access_token", ""),
+                    "refresh_token": row.get("refresh_token", ""),
+                    "token_uri": row.get("token_uri", "https://oauth2.googleapis.com/token"),
+                    "scopes": row.get("scopes", "https://www.googleapis.com/auth/youtube.upload").split(),
+                    "canal_id": safe_id,
+                }
+                if token_data.get("token") or token_data.get("refresh_token"):
+                    logger.info(f"[{canal_id}] Token descargado exitosamente desde tabla youtube_tokens.")
+                    return token_data
         except Exception as e:
             logger.debug(f"[{canal_id}] No se pudo consultar token en Supabase: {e}")
         return None
