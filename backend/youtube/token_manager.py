@@ -134,22 +134,68 @@ class TokenManager:
             }
         }
 
+    def _load_token_from_supabase(self, canal_id: str) -> Optional[Dict[str, Any]]:
+        """Intenta descargar el token del canal desde Supabase si se autorizó en la Web / Vercel."""
+        try:
+            from config import SUPABASE_URL, SUPABASE_KEY
+            import requests as req
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+            }
+            resp = req.get(
+                f"{SUPABASE_URL}/rest/v1/configuracion_app?id=eq.singleton&select=youtube_tokens",
+                headers=headers,
+                timeout=10,
+            )
+            data = resp.json()
+            if data and isinstance(data, list) and len(data) > 0:
+                yt_tokens = data[0].get("youtube_tokens")
+                if yt_tokens and isinstance(yt_tokens, dict):
+                    safe_id = canal_id.replace("@", "").replace(" ", "_").lower()
+                    token_data = yt_tokens.get(safe_id)
+                    if token_data and (token_data.get("token") or token_data.get("refresh_token")):
+                        logger.info(f"[{canal_id}] Token descargado exitosamente desde Supabase.")
+                        return token_data
+        except Exception as e:
+            logger.debug(f"[{canal_id}] No se pudo consultar token en Supabase: {e}")
+        return None
+
     def get_credentials(self, canal_id: str) -> Optional[Credentials]:
         """
         Obtiene credenciales validas para un canal.
         - Si existe token guardado y es valido -> lo retorna directamente.
+        - Si no está en disco local, intenta descargarlo desde Supabase.
         - Si el access_token expiro pero hay refresh_token -> lo renueva automaticamente.
         - Si no hay token -> retorna None (necesita autorizacion inicial).
         """
         token_path = self._token_path(canal_id)
 
-        if not token_path.exists():
+        token_data = None
+        if token_path.exists():
+            try:
+                with open(token_path, "r", encoding="utf-8") as f:
+                    token_data = json.load(f)
+            except Exception as e:
+                logger.error(f"[{canal_id}] Error leyendo token local: {e}")
+
+        # Si no existe en disco, verificar en Supabase
+        if not token_data:
+            token_data = self._load_token_from_supabase(canal_id)
+            if token_data:
+                # Guardar en disco local para cache
+                try:
+                    with open(token_path, "w", encoding="utf-8") as f:
+                        json.dump(token_data, f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+
+        if not token_data:
             logger.info(f"[{canal_id}] No hay token guardado. Se requiere autorizacion inicial.")
             return None
 
         try:
-            with open(token_path, "r", encoding="utf-8") as f:
-                token_data = json.load(f)
 
             creds = Credentials(
                 token=token_data.get("token"),
@@ -247,4 +293,4 @@ class TokenManager:
             token_path.unlink()
             logger.info(f"[{canal_id}] Token eliminado.")
             return True
-        return False
+        return False

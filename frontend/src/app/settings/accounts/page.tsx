@@ -82,10 +82,34 @@ export default function AccountsPage() {
     }
   }, []);
 
-  // Check status for every YouTube account on first render
+  // Modal de ayuda si faltan credenciales de Google
+  const [oauthHelpAccount, setOauthHelpAccount] = useState<Account | null>(null);
+  const [copiedCommand, setCopiedCommand] = useState(false);
+
+  // Check YouTube token status for all YouTube accounts on mount + detectar retorno de Google OAuth
   useEffect(() => {
     accounts.forEach(a => { if (a.plataforma === 'youtube') checkYtStatus(a); });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const ytConnected = params.get('yt_connected');
+      const ytError = params.get('yt_error');
+
+      if (ytConnected) {
+        const cleanUser = ytConnected.replace(/^@/, '');
+        showNotification(`✅ Canal @${cleanUser} conectado a YouTube exitosamente. La app ya puede publicar automáticamente.`);
+        const acc = accounts.find(a => a.username.toLowerCase() === cleanUser.toLowerCase());
+        if (acc) {
+          if (!acc.activo) updateAccount(acc.id, { activo: true });
+          checkYtStatus(acc);
+        }
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (ytError) {
+        showNotification(`⚠️ No se pudo conectar YouTube: ${ytError}`);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
+  }, [accounts, checkYtStatus, updateAccount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Trigger YouTube OAuth
   const handleYtAuthorize = async (account: Account) => {
@@ -93,7 +117,7 @@ export default function AccountsPage() {
       ...prev,
       [account.id]: { ...(prev[account.id] ?? { authorized: false, revoking: false }), loading: true },
     }));
-    showNotification(`🔑 Abriendo Google OAuth para @${account.username}… Completa el inicio de sesión en la ventana del navegador que se abrirá.`);
+    showNotification(`🔑 Conectando con Google OAuth para @${account.username}…`);
     try {
       const res = await fetch('/api/youtube/authorize', {
         method: 'POST',
@@ -101,14 +125,25 @@ export default function AccountsPage() {
         body: JSON.stringify({ canal_id: account.username }),
       });
       const data = await res.json();
+
+      // Si Google OAuth generó la URL de consentimiento (Web OAuth estándar):
+      if (data.authUrl) {
+        showNotification(`🔑 Abriendo pantalla de inicio de sesión de Google para @${account.username}…`);
+        window.location.href = data.authUrl;
+        return;
+      }
+
       setYtStatus(prev => ({
         ...prev,
         [account.id]: { authorized: !!data.success, loading: false, revoking: false },
       }));
+
       if (data.success) {
         showNotification(`✅ Canal @${account.username} conectado a YouTube. La app ya puede publicar automáticamente.`);
-        // Activate the account if it was inactive
         if (!account.activo) updateAccount(account.id, { activo: true });
+      } else if (data.needs_credentials) {
+        setOauthHelpAccount(account);
+        showNotification(`⚠️ Falta registrar Client ID de Google en Configuración → Integraciones.`);
       } else {
         showNotification(`⚠️ No se pudo conectar @${account.username}: ${data.error ?? data.message}`);
       }
@@ -683,6 +718,98 @@ export default function AccountsPage() {
           );
         })}
       </div>
+
+      {/* Modal Informativo / Asistente para Conexión de YouTube */}
+      <AnimatePresence>
+        {oauthHelpAccount && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-lg rounded-2xl glass-strong border border-red-500/30 p-5 shadow-2xl space-y-4"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400">
+                    <YoutubeIcon size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Conectar YouTube: @{oauthHelpAccount.username}</h3>
+                    <p className="text-[11px] text-[var(--text-muted)]">Configuración de autorización OAuth2 de Google</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setOauthHelpAccount(null)}
+                  className="w-7 h-7 rounded-lg glass border border-white/10 flex items-center justify-center text-slate-400 hover:text-white"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-200 leading-relaxed">
+                Google exige que tu aplicación tenga un <strong>Client ID</strong> y <strong>Client Secret</strong> registrados en Google Cloud Console para publicar videos automáticamente.
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3 rounded-xl glass border border-[var(--border)] space-y-2">
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-cyan-400" />
+                    Opción 1: Conectar en la Web (Vercel & Local)
+                  </p>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Agrega tu Google Client ID en la pestaña de Integraciones. Puedes usar el mismo proyecto de Google Cloud que Google Drive.
+                  </p>
+                  <a
+                    href="/settings/integrations"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 border border-red-500/35 hover:bg-red-500/30 text-red-300 text-xs font-semibold transition-all"
+                  >
+                    Ir a Configuración → Integraciones →
+                  </a>
+                </div>
+
+                <div className="p-3 rounded-xl glass border border-[var(--border)] space-y-2">
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Target size={13} className="text-emerald-400" />
+                    Opción 2: Ejecutar en tu PC (Backend Python Local)
+                  </p>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Si ejecutas el backend de automatización en tu computadora, abre tu terminal (PowerShell) en la carpeta del proyecto y ejecuta:
+                  </p>
+                  <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-black/60 border border-white/10">
+                    <code className="text-[11px] font-mono text-emerald-300 truncate">
+                      python backend/youtube/authorize.py --channel={oauthHelpAccount.username}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`python backend/youtube/authorize.py --channel=${oauthHelpAccount.username}`);
+                        setCopiedCommand(true);
+                        setTimeout(() => setCopiedCommand(false), 2000);
+                      }}
+                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold shrink-0 flex items-center gap-1"
+                    >
+                      {copiedCommand ? <Check size={11} className="text-emerald-400" /> : null}
+                      <span>{copiedCommand ? 'Copiado' : 'Copiar'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => setOauthHelpAccount(null)}
+                  className="px-4 py-2 rounded-xl glass border border-white/10 text-xs font-semibold text-white hover:bg-white/5 transition-all"
+                >
+                  Entendido
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
+

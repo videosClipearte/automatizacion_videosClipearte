@@ -2,7 +2,7 @@
 """
 Publicador de Videos/Shorts en YouTube via YouTube Data API v3.
 - Sube videos a YouTube usando las credenciales OAuth2 por canal.
-- Detecta automáticamente si es un Short (duracion <= 60s o flag explicit).
+- Detecta automÃ¡ticamente si es un Short (duracion <= 60s o flag explicit).
 - Incluye titulo, descripcion, tags, categoria, privacidad y miniatura.
 - Retorna la URL del video publicado y su ID de YouTube.
 """
@@ -206,4 +206,4 @@ class YouTubePublisher:
                 }
             return {"success": False, "error": "No se encontro informacion del canal."}
         except Exception as e:
-            return {"success": False, "canal_id": canal_id, "error": str(e)}
+            return {"success": False, "canal_id": canal_id, "error": str(e)}

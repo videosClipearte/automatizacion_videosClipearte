@@ -23,6 +23,14 @@ import {
   loadAppConfig, saveAppConfig, clearConfigCache
 } from '@/lib/services/appConfigService';
 
+function YoutubeIcon({ size = 16, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+    </svg>
+  );
+}
+
 export default function IntegrationsPage() {
   // Telegram Bot state
   const [telegramToken, setTelegramToken] = useState('');
@@ -61,6 +69,13 @@ export default function IntegrationsPage() {
   const [connectingDriveOAuth, setConnectingDriveOAuth] = useState(false);
   const [driveOAuthToken, setDriveOAuthToken] = useState<string | null>(null);
   const [driveFeedback, setDriveFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+
+  // YouTube Data API v3 state
+  const [youtubeClientId, setYoutubeClientId] = useState('');
+  const [youtubeClientSecret, setYoutubeClientSecret] = useState('');
+  const [showYoutubeSecret, setShowYoutubeSecret] = useState(false);
+  const [savingYoutube, setSavingYoutube] = useState(false);
+  const [youtubeFeedback, setYoutubeFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Supabase state
   const [supabaseUrl, setSupabaseUrl] = useState('');
@@ -117,6 +132,8 @@ export default function IntegrationsPage() {
       setDriveAutoDelete(cfg.drive_auto_delete_after_verify);
       setDriveRetentionHours(cfg.drive_retention_hours);
       setDriveOAuthToken(getGoogleDriveToken());
+      setYoutubeClientId(cfg.youtube_client_id || '');
+      setYoutubeClientSecret(cfg.youtube_client_secret || '');
       setCurrentOrigin(typeof window !== 'undefined' ? window.location.origin : '');
     });
   }, []);
@@ -587,10 +604,35 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
     setTimeout(() => setCopiedSql(false), 3000);
   };
 
+  const handleSaveYoutube = async () => {
+    setSavingYoutube(true);
+    const result = await saveAppConfig({
+      youtube_client_id: youtubeClientId.trim(),
+      youtube_client_secret: youtubeClientSecret.trim(),
+    });
+    setSavingYoutube(false);
+    setYoutubeFeedback({
+      success: result.success,
+      msg: result.success ? 'Credenciales de YouTube Data API guardadas exitosamente.' : `Error: ${result.error}`,
+    });
+    setTimeout(() => setYoutubeFeedback(null), 4000);
+  };
+
+  const handleCopyDriveToYoutube = () => {
+    setYoutubeClientId(driveClientId);
+    setYoutubeClientSecret(driveClientSecret);
+    setYoutubeFeedback({
+      success: true,
+      msg: 'Credenciales de Google Drive copiadas a YouTube.',
+    });
+    setTimeout(() => setYoutubeFeedback(null), 3000);
+  };
+
   const handleSaveAll = () => {
     handleSaveTelegram();
     handleSaveGemini();
     handleSaveDrive();
+    handleSaveYoutube();
     handleSaveSupabase();
     setGlobalSaved(true);
     setTimeout(() => setGlobalSaved(false), 3500);
@@ -1351,6 +1393,129 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
             {driveFeedback.msg}
           </div>
         )}
+      </GlassCard>
+
+      {/* ── CARD 5: YOUTUBE DATA API V3 ── */}
+      <GlassCard>
+        <div className="flex items-center justify-between pb-4 border-b border-[var(--border)] mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+              <YoutubeIcon size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">YouTube Data API v3</h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30 font-semibold">
+                  Publicación Automática
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)]">Subida de videos y YouTube Shorts con token OAuth2 por canal</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Guía de Origen y Callback para Google Cloud */}
+        <div className="mb-4 p-3 rounded-xl bg-red-500/[0.06] border border-red-500/20 space-y-2">
+          <p className="text-xs font-bold text-white flex items-center gap-1.5">
+            <Sparkles size={13} className="text-red-400" />
+            Configuración en Google Cloud Console:
+          </p>
+          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+            Habilita <strong>YouTube Data API v3</strong> en tu proyecto de Google Cloud y agrega esta <strong>URI de redireccionamiento autorizada</strong> en tu Client ID de OAuth 2.0:
+          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 rounded-lg bg-black/50 border border-red-500/20">
+            <span className="text-xs font-mono font-bold text-red-300 truncate">
+              {currentOrigin}/api/youtube/callback
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  navigator.clipboard.writeText(`${window.location.origin}/api/youtube/callback`);
+                }
+              }}
+              className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold shrink-0 transition-colors"
+            >
+              Copiar Callback URI
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1.5">
+                Google OAuth Client ID (YouTube)
+              </label>
+              <input
+                type="text"
+                value={youtubeClientId}
+                onChange={(e) => setYoutubeClientId(e.target.value)}
+                placeholder="apps.googleusercontent.com"
+                className="w-full px-3 py-2 rounded-xl text-xs glass border border-[var(--border)] focus:border-red-500/60 focus:outline-none font-mono text-white placeholder:text-slate-600"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1.5">
+                Google OAuth Client Secret (YouTube)
+              </label>
+              <div className="relative">
+                <input
+                  type={showYoutubeSecret ? 'text' : 'password'}
+                  value={youtubeClientSecret}
+                  onChange={(e) => setYoutubeClientSecret(e.target.value)}
+                  placeholder="GOCSPX-..."
+                  className="w-full px-3 py-2 pr-9 rounded-xl text-xs glass border border-[var(--border)] focus:border-red-500/60 focus:outline-none font-mono text-white placeholder:text-slate-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowYoutubeSecret((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white"
+                >
+                  {showYoutubeSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            {/* Botón para copiar de Google Drive si comparten el mismo proyecto de Google Cloud */}
+            {driveClientId && (
+              <button
+                type="button"
+                onClick={handleCopyDriveToYoutube}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 text-xs font-semibold transition-all"
+                title="Rellena Client ID y Client Secret con los mismos valores de Google Drive"
+              >
+                <Copy size={12} className="text-cyan-400" />
+                <span>Usar las mismas credenciales de Drive</span>
+              </button>
+            )}
+
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={handleSaveYoutube}
+                disabled={savingYoutube}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30 text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
+              >
+                {savingYoutube ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                <span>Guardar Credenciales YouTube</span>
+              </button>
+            </div>
+          </div>
+
+          {youtubeFeedback && (
+            <div className={`p-2.5 rounded-xl border text-xs ${
+              youtubeFeedback.success
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                : 'bg-red-500/10 border-red-500/20 text-red-300'
+            }`}>
+              {youtubeFeedback.msg}
+            </div>
+          )}
+        </div>
       </GlassCard>
     </motion.div>
   );
