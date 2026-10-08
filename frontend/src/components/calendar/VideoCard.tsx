@@ -50,18 +50,26 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
       </div>
 
       {/* Status dot */}
-      {!done && (
-        <span
-          className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-[var(--bg-base)]"
-          style={{
-            backgroundColor:
-              video.estado === 'PROGRAMADO' ? '#a78bfa'
-              : video.estado === 'ENVIADO'   ? '#60a5fa'
-              : video.estado === 'ERROR_DE_RED' ? '#f87171'
-              : '#fbbf24',
-          }}
-        />
-      )}
+      <span
+        className={cn(
+          "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-[var(--bg-base)]",
+          video.estado === 'ENVIADO' && account?.plataforma === 'youtube' && "animate-pulse ring-2 ring-red-400/50"
+        )}
+        style={{
+          backgroundColor:
+            video.estado === 'PUBLICADO' ? '#10b981'
+            : video.estado === 'ENVIADO' && account?.plataforma === 'youtube' ? '#ef4444'
+            : video.estado === 'ENVIADO' ? '#60a5fa'
+            : video.estado === 'PROGRAMADO' ? '#a78bfa'
+            : video.estado === 'ERROR_DE_RED' ? '#f87171'
+            : '#fbbf24',
+        }}
+        title={
+          video.estado === 'ENVIADO' && account?.plataforma === 'youtube'
+            ? 'Subiendo a YouTube...'
+            : video.estado
+        }
+      />
     </div>
   );
 }

@@ -10,7 +10,7 @@ export interface AppNotification {
   leido: boolean;
   video_id?: string;
   cuenta_id?: string;
-  origen: 'telegram' | 'scraper' | 'playwright' | 'drive' | 'sistema' | 'programador';
+  origen: 'telegram' | 'scraper' | 'playwright' | 'drive' | 'sistema' | 'programador' | 'youtube';
   created_at: string;
 }
 

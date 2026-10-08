@@ -6,7 +6,6 @@ import {
   Plus, Users, ChevronDown, Check, Globe, Send, Play, FilterX
 } from 'lucide-react';
 import { CalendarView } from '@/components/calendar/CalendarView';
-import { PublishMonitor } from '@/components/youtube/PublishMonitor';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 
@@ -229,24 +228,6 @@ export default function CalendarPage() {
       <div className="flex-1 min-h-0 flex flex-col">
         <CalendarView />
       </div>
-
-      {/* YouTube Publish Monitor */}
-      {accounts.some(a => a.plataforma === 'youtube') && (
-        <div className="mt-4 rounded-2xl glass-strong border border-red-500/20 p-4">
-          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/5">
-            <div className="w-7 h-7 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="text-red-400">
-                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">Monitor de Publicaciones YouTube</p>
-              <p className="text-[10px] text-[var(--text-muted)]">Estado en tiempo real del proceso de subida</p>
-            </div>
-          </div>
-          <PublishMonitor pollIntervalMs={4000} />
-        </div>
-      )}
 
       {/* Floating action button */}
       <motion.button

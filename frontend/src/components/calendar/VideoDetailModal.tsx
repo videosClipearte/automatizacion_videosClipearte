@@ -62,6 +62,12 @@ export function VideoDetailModal() {
   const [confirmPostUrl, setConfirmPostUrl] = useState('');
   const [confirmVistas, setConfirmVistas] = useState('');
 
+  // Estado de subida y monitoreo en vivo para YouTube
+  const [publishingToYouTube, setPublishingToYouTube] = useState(false);
+  const [ytLogs, setYtLogs] = useState<any[]>([]);
+  const [loadingYtLogs, setLoadingYtLogs] = useState(false);
+  const [ytLogsOpen, setYtLogsOpen] = useState(false);
+
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -119,8 +125,104 @@ export function VideoDetailModal() {
       setTelegramFeedback(null);
       setEditFeedback(null);
       setUploadProgress(0);
+      setYtLogs([]);
+      setYtLogsOpen(false);
     }
   }, [video]);
+
+  // Consultar logs de YouTube para este video
+  const fetchYtLogs = async () => {
+    if (!video) return;
+    setLoadingYtLogs(true);
+    try {
+      const res = await fetch(`/api/youtube/logs?publicacion_id=${encodeURIComponent(video.id)}&limit=30`);
+      const data = await res.json();
+      if (data.success && data.logs) {
+        setYtLogs(data.logs);
+      }
+    } catch {
+      // Ignorar fallo de red
+    } finally {
+      setLoadingYtLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (video && account?.plataforma === 'youtube') {
+      fetchYtLogs();
+    }
+  }, [video?.id, account?.plataforma]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Subir directamente a YouTube desde el modal
+  const handlePublishToYouTube = async () => {
+    if (!video || !account) return;
+    if (!video.drive_file_url || video.drive_file_url === '#') {
+      setTelegramFeedback({
+        success: false,
+        msg: '⚠️ Este video no tiene enlace de Google Drive. Modifícalo para agregarlo.'
+      });
+      return;
+    }
+
+    setPublishingToYouTube(true);
+    setYtLogsOpen(true);
+    setTelegramFeedback({
+      success: true,
+      msg: '⏳ Iniciando subida a YouTube... Descargando video y conectando a la API.'
+    });
+
+    try {
+      const res = await fetch('/api/youtube/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          publicacion_id: video.id,
+          canal_id: account.username,
+          video_url: video.drive_file_url,
+          titulo: video.titulo,
+          descripcion: video.descripcion_aprobada_ia || video.titulo,
+          privacidad: 'public',
+          made_for_kids: false,
+        }),
+      });
+
+      const data = await res.json();
+      await fetchYtLogs();
+
+      if (data.success) {
+        await updateVideo(video.id, {
+          estado: 'PUBLICADO',
+          publicado_en: new Date(),
+          post_url_publica: data.video_url,
+        });
+        setTelegramFeedback({
+          success: true,
+          msg: `🎉 ¡Video publicado exitosamente como Short en YouTube! URL: ${data.video_url}`
+        });
+        createNotification({
+          tipo: 'success',
+          titulo: 'Video publicado en YouTube',
+          mensaje: `"${video.titulo}" se publicó exitosamente como Short en @${account.username}.`,
+          video_id: video.id,
+          cuenta_id: video.cuenta_id,
+          origen: 'youtube',
+        });
+      } else {
+        setTelegramFeedback({
+          success: false,
+          msg: `❌ Falló la publicación en YouTube: ${data.error || 'Error desconocido'}. Revisa los logs abajo para más detalles.`
+        });
+      }
+    } catch (err: any) {
+      setTelegramFeedback({
+        success: false,
+        msg: `❌ Error de conexión: ${err.message}`
+      });
+    } finally {
+      setPublishingToYouTube(false);
+      await fetchYtLogs();
+    }
+  };
 
   // Extraer audio del video de reemplazo para Gemini IA (mas rapido que fotogramas)
   useEffect(() => {
@@ -738,6 +840,135 @@ export function VideoDetailModal() {
                       </p>
                     )}
                   </div>
+
+                  {/* ── SECCIÓN DE ESTADO Y PUBLICACIÓN EN YOUTUBE ── */}
+                  {account?.plataforma === 'youtube' && (
+                    <div className="p-3.5 rounded-xl border border-red-500/25 bg-red-950/20 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-white">Estado de Publicación en YouTube</p>
+                            <p className="text-[10px] text-[var(--text-muted)]">
+                              Canal: @{account.username}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Indicador de estado actual */}
+                        {video.estado === 'PUBLICADO' ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
+                            <CheckCircle2 size={10} /> Publicado en YouTube
+                          </span>
+                        ) : video.estado === 'ENVIADO' || publishingToYouTube ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 font-bold flex items-center gap-1 animate-pulse">
+                            <Loader2 size={10} className="animate-spin" /> Subiendo a YouTube...
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
+                            Programado para subir
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Enlace directo al Short si ya está publicado */}
+                      {video.post_url_publica && (
+                        <a
+                          href={video.post_url_publica}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold hover:bg-red-500/25 transition-all"
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <ExternalLink size={12} className="shrink-0" />
+                            <span className="truncate">Ver Short en YouTube: {video.post_url_publica}</span>
+                          </div>
+                          <span className="text-[10px] opacity-75 shrink-0 ml-2">Abrir →</span>
+                        </a>
+                      )}
+
+                      {/* Botón para forzar subida ahora si no está publicado */}
+                      {video.estado !== 'PUBLICADO' && (
+                        <button
+                          type="button"
+                          onClick={handlePublishToYouTube}
+                          disabled={publishingToYouTube}
+                          className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-red-600/30 border border-red-500/40 text-red-200 text-xs font-bold hover:bg-red-600/40 transition-all active:scale-98 disabled:opacity-50"
+                        >
+                          {publishingToYouTube ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin" />
+                              <span>Subiendo a YouTube (Descargando de Drive)...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={12} />
+                              <span>Subir a YouTube Ahora (como Short)</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Desplegable de logs de proceso */}
+                      <div className="pt-1 border-t border-white/5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!ytLogsOpen) fetchYtLogs();
+                            setYtLogsOpen(v => !v);
+                          }}
+                          className="w-full flex items-center justify-between text-[11px] text-slate-300 hover:text-white py-1"
+                        >
+                          <span className="font-semibold flex items-center gap-1.5">
+                            Historial del proceso ({ytLogs.length} eventos)
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {ytLogsOpen ? 'Ocultar ▲' : 'Ver detalle ▼'}
+                          </span>
+                        </button>
+
+                        {ytLogsOpen && (
+                          <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {loadingYtLogs && ytLogs.length === 0 && (
+                              <p className="text-[10px] text-slate-400 text-center py-2">Cargando eventos...</p>
+                            )}
+                            {ytLogs.length === 0 && !loadingYtLogs && (
+                              <p className="text-[10px] text-slate-400 text-center py-2">
+                                No hay registros de subida para este video aún.
+                              </p>
+                            )}
+                            {ytLogs.map((log: any) => (
+                              <div
+                                key={log.id}
+                                className={cn(
+                                  "p-2 rounded text-[10px] border leading-relaxed",
+                                  log.nivel === 'ERROR' ? "bg-red-500/10 border-red-500/30 text-red-200" :
+                                  log.nivel === 'SUCCESS' ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-200" :
+                                  log.nivel === 'WARN' ? "bg-amber-500/10 border-amber-500/30 text-amber-200" :
+                                  "bg-white/[0.03] border-white/10 text-slate-300"
+                                )}
+                              >
+                                <div className="flex items-center justify-between font-mono font-bold text-[9px] opacity-75 mb-0.5">
+                                  <span>{log.paso}</span>
+                                  <span>{new Date(log.created_at).toLocaleTimeString('es-VE')}</span>
+                                </div>
+                                <p className="font-medium">{log.mensaje}</p>
+                                {log.detalle && (
+                                  <p className="mt-1 opacity-75 text-[9px] bg-black/30 p-1.5 rounded whitespace-pre-wrap font-mono">
+                                    {log.detalle}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Dates & Timeline */}
                   <div className="p-3 rounded-xl bg-white/[0.02] border border-[var(--border)] space-y-2 text-xs">

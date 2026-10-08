@@ -163,11 +163,24 @@ async function getValidAccessToken(
     const supabase = getSupabase();
     const safeId = getSafeChannelId(canal_id);
 
-    const { data, error } = await supabase
+    // 1. Buscar coincidencia exacta por safeId o canal_id
+    let { data, error } = await supabase
       .from('youtube_tokens')
-      .select('access_token, refresh_token, updated_at')
-      .eq('canal_id', safeId)
+      .select('canal_id, access_token, refresh_token, updated_at')
+      .or(`canal_id.eq.${safeId},canal_id.eq.${canal_id}`)
+      .limit(1)
       .maybeSingle();
+
+    // 2. Si no se encontró y solo hay 1 fila en youtube_tokens, usarla como fallback inteligente
+    if (!data) {
+      const { data: allTokens } = await supabase
+        .from('youtube_tokens')
+        .select('canal_id, access_token, refresh_token, updated_at')
+        .limit(2);
+      if (allTokens && allTokens.length === 1) {
+        data = allTokens[0];
+      }
+    }
 
     if (error || !data) {
       await writeLog(publicacion_id, 'ERROR', 'TOKEN_LOOKUP',

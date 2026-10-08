@@ -208,6 +208,45 @@ export function PublicationScheduler() {
             estado: 'ENVIADO',
             enviado_en: new Date(),
           });
+
+          // ── Si la cuenta es YouTube: Disparar subida automática directamente ──
+          if (account?.plataforma === 'youtube' && video.drive_file_url) {
+            console.log(`[PublicationScheduler] Cuenta es YouTube. Iniciando subida a YouTube para "${video.titulo}"...`);
+            fetch('/api/youtube/publish', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                publicacion_id: video.id,
+                canal_id: account.username,
+                video_url: video.drive_file_url,
+                titulo: video.titulo,
+                descripcion: video.descripcion_aprobada_ia || video.titulo,
+                privacidad: 'public',
+                made_for_kids: false,
+              }),
+            })
+              .then(async (r) => {
+                const resData = await r.json().catch(() => ({}));
+                if (resData.success) {
+                  await updateVideoRef.current(video.id, {
+                    estado: 'PUBLICADO',
+                    publicado_en: new Date(),
+                    post_url_publica: resData.video_url,
+                  });
+                  createNotification({
+                    tipo: 'success',
+                    titulo: 'Video publicado en YouTube',
+                    mensaje: `"${video.titulo}" fue publicado exitosamente en @${account.username}.`,
+                    video_id: video.id,
+                    cuenta_id: video.cuenta_id,
+                    origen: 'youtube',
+                  });
+                } else {
+                  console.warn(`[PublicationScheduler] Falló subida a YouTube:`, resData.error);
+                }
+              })
+              .catch((e) => console.error('[PublicationScheduler] Error en fetch YouTube publish:', e));
+          }
         } catch (err: any) {
           console.error(`[PublicationScheduler] Error procesando video ${video.id}:`, err);
           await createNotification({

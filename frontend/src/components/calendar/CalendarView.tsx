@@ -514,26 +514,44 @@ export function CalendarView() {
                       <div className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-hidden my-0.5 justify-start">
                         {dayVideos.slice(0, 2).map(video => {
                           const acct = accounts.find(a => a.id === video.cuenta_id);
+                          const isYtUploading = acct?.plataforma === 'youtube' && video.estado === 'ENVIADO';
                           return (
                             <button
                               key={video.id}
                               onClick={(e) => { e.stopPropagation(); setSelectedVideoId(video.id); }}
-                              className="px-1 py-0.5 rounded text-left transition-all flex items-center gap-1 border bg-white/[0.04] hover:bg-white/[0.08] border-[var(--border)] hover:border-emerald-500/40 group/chip shrink-0"
-                              title={`${video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${video.estado}`}
+                              className={cn(
+                                "px-1 py-0.5 rounded text-left transition-all flex items-center gap-1 border shrink-0 group/chip",
+                                isYtUploading
+                                  ? "bg-red-500/10 border-red-500/40 text-red-200"
+                                  : "bg-white/[0.04] hover:bg-white/[0.08] border-[var(--border)] hover:border-emerald-500/40 text-white"
+                              )}
+                              title={`${video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${isYtUploading ? 'Subiendo a YouTube' : video.estado}`}
                             >
-                              <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                              <span className={cn(
+                                "w-1.5 h-1.5 rounded-full shrink-0",
+                                isYtUploading && "animate-pulse"
+                              )}
                                 style={{ backgroundColor:
                                   video.estado === 'PUBLICADO' ? '#10b981' :
+                                  isYtUploading ? '#ef4444' :
                                   video.estado === 'ENVIADO'   ? '#60a5fa' :
                                   video.estado === 'ERROR_DE_RED' ? '#f87171' : '#a78bfa' }}
                               />
                               <span className="shrink-0">{getPlatformIcon(acct?.plataforma)}</span>
-                              <span className="text-[9px] font-mono text-cyan-400 font-semibold shrink-0">
+                              <span className={cn(
+                                "text-[9px] font-mono font-semibold shrink-0",
+                                isYtUploading ? "text-red-400" : "text-cyan-400"
+                              )}>
                                 {format(new Date(video.programado_para), 'HH:mm')}
                               </span>
-                              <span className="text-[9px] text-white font-medium truncate flex-1 group-hover/chip:text-emerald-300">
+                              <span className="text-[9px] font-medium truncate flex-1 group-hover/chip:text-emerald-300">
                                 {video.titulo}
                               </span>
+                              {isYtUploading && (
+                                <span className="text-[8px] px-1 py-0 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-bold shrink-0">
+                                  Subiendo
+                                </span>
+                              )}
                             </button>
                           );
                         })}
@@ -659,9 +677,16 @@ export function CalendarView() {
                                 {video.titulo}
                               </p>
                               <div className="flex items-center justify-between">
-                                <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', getStatusClass(video.estado))}>
-                                  {video.estado}
-                                </span>
+                                {acct?.plataforma === 'youtube' && video.estado === 'ENVIADO' ? (
+                                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-red-500/15 border border-red-500/30 text-red-300 flex items-center gap-1 animate-pulse">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                                    Subiendo a YouTube...
+                                  </span>
+                                ) : (
+                                  <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', getStatusClass(video.estado))}>
+                                    {video.estado}
+                                  </span>
+                                )}
                                 {video.vistas_obtenidas > 0 && (
                                   <span className="text-[9px] text-[var(--text-muted)] flex items-center gap-0.5">
                                     <Eye size={9} /> {(video.vistas_obtenidas / 1000).toFixed(1)}k
@@ -789,9 +814,16 @@ export function CalendarView() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0">
-                                  <span className={cn('text-xs px-2.5 py-1 rounded-lg font-semibold', getStatusClass(video.estado))}>
-                                    {video.estado}
-                                  </span>
+                                  {acct?.plataforma === 'youtube' && video.estado === 'ENVIADO' ? (
+                                    <span className="text-xs px-3 py-1 rounded-lg font-bold bg-red-500/15 border border-red-500/30 text-red-300 flex items-center gap-1.5 animate-pulse">
+                                      <span className="w-2 h-2 rounded-full bg-red-400" />
+                                      Subiendo a YouTube...
+                                    </span>
+                                  ) : (
+                                    <span className={cn('text-xs px-2.5 py-1 rounded-lg font-semibold', getStatusClass(video.estado))}>
+                                      {video.estado}
+                                    </span>
+                                  )}
                                   {video.vistas_obtenidas > 0 && (
                                     <span className="text-xs font-mono text-emerald-400 font-bold">
                                       {(video.vistas_obtenidas / 1000).toFixed(1)}k

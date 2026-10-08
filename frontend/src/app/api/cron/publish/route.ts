@@ -143,6 +143,7 @@ export async function GET(request: Request) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              publicacion_id: video.id,
               canal_id: account.username,
               video_url: video.drive_file_url,
               titulo: video.titulo,
@@ -161,7 +162,7 @@ export async function GET(request: Request) {
               .update({
                 estado: 'PUBLICADO',
                 publicado_en: new Date().toISOString(),
-                plataforma_url: youtubeResult.video_url,
+                post_url_publica: youtubeResult.video_url,
               })
               .eq('id', video.id);
 
