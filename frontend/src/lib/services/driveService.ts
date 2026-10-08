@@ -118,6 +118,8 @@ export async function requestGoogleDriveOAuthToken(
         const client = (window as any).google.accounts.oauth2.initTokenClient({
           client_id: cleanClientId,
           scope: 'https://www.googleapis.com/auth/drive.file',
+          include_granted_scopes: false,
+          prompt: 'consent',
           callback: (response: any) => {
             if (response.error) {
               resolve({
@@ -138,7 +140,7 @@ export async function requestGoogleDriveOAuthToken(
         });
 
         // Solicita el token abriendo el popup de consentimiento
-        client.requestAccessToken();
+        client.requestAccessToken({ prompt: 'consent' });
       } catch (err: any) {
         resolve({ success: false, error: `Error inicializando cliente OAuth: ${err?.message || err}` });
       }
