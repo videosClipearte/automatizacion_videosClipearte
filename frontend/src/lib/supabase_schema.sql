@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS public.publicaciones (
     titulo TEXT NOT NULL,
     descripcion_aprobada_ia TEXT DEFAULT '',
     thumbnail_color TEXT DEFAULT '#10b981',
+    thumbnail_url TEXT,
     drive_file_url TEXT DEFAULT '',
     programado_para TIMESTAMPTZ NOT NULL,
     enviado_en TIMESTAMPTZ,
@@ -225,5 +226,8 @@ CREATE TRIGGER trg_publicaciones_updated_at
 CREATE TRIGGER trg_config_updated_at
   BEFORE UPDATE ON public.configuracion_app
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- Migraciones idempotentes seguras
+ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
 
 -- FIN: Tablas limpias y listas. Sin datos mock ni sensibles.

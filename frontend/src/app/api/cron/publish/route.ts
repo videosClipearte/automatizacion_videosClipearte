@@ -148,6 +148,7 @@ export async function GET(request: Request) {
               video_url: video.drive_file_url,
               titulo: video.titulo,
               descripcion: video.descripcion_aprobada_ia || video.titulo,
+              thumbnail_url: video.thumbnail_url,
               tags: video.hashtags ? String(video.hashtags).split(' ').filter(Boolean).map((t: string) => t.replace('#', '')) : [],
               privacidad: 'public',
               made_for_kids: false,

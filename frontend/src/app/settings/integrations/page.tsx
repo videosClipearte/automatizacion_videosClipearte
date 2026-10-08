@@ -555,6 +555,7 @@ CREATE TABLE IF NOT EXISTS public.publicaciones (
   titulo TEXT NOT NULL,
   descripcion_aprobada_ia TEXT,
   thumbnail_color TEXT DEFAULT '#10b981',
+  thumbnail_url TEXT,
   drive_file_url TEXT,
   programado_para TIMESTAMPTZ NOT NULL,
   enviado_en TIMESTAMPTZ,

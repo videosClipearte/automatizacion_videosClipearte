@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Trash2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -122,6 +123,35 @@ export function ScheduleModal() {
   const [driveSuccessUrl, setDriveSuccessUrl] = useState<string | null>(null);
   const [manualDriveUrl, setManualDriveUrl] = useState('');
 
+  // Thumbnail state (especialmente para YouTube)
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
+  const [thumbnailBase64, setThumbnailBase64] = useState<string | null>(null);
+
+  const handleThumbnailChange = useCallback((file: File | null) => {
+    if (!file) {
+      setThumbnailFile(null);
+      setThumbnailPreview(null);
+      setThumbnailBase64(null);
+      return;
+    }
+    setThumbnailFile(file);
+    const objectUrl = URL.createObjectURL(file);
+    setThumbnailPreview(objectUrl);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setThumbnailBase64(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (thumbnailPreview) URL.revokeObjectURL(thumbnailPreview);
+    };
+  }, [thumbnailPreview]);
+
   // Sincronizar fecha y hora con el horario local del dispositivo
   const getDeviceScheduleTime = useCallback((date?: Date | null): { fecha: string; hora: string } => {
     const now = new Date();
@@ -179,6 +209,12 @@ export function ScheduleModal() {
   const selectedCuentaId = watch('cuenta_id');
   const selectedCampanaId = watch('campana_id');
 
+  const selectedAccount = useMemo(() => {
+    return accounts.find((a) => a.id === selectedCuentaId);
+  }, [accounts, selectedCuentaId]);
+
+  const isYouTube = selectedAccount?.plataforma?.toLowerCase() === 'youtube';
+
   // Cuentas filtradas según la campaña seleccionada
   const selectedCampaignForFilter = campaigns.find((c) => c.id === selectedCampanaId);
   const filteredAccounts = selectedCampaignForFilter
@@ -201,6 +237,9 @@ export function ScheduleModal() {
       setDriveError(null);
       setDriveSuccessUrl(null);
       setUploadProgress(0);
+      setThumbnailFile(null);
+      setThumbnailPreview(null);
+      setThumbnailBase64(null);
 
       // 1. Sincronizar fecha y hora con el dispositivo
       const { fecha, hora } = getDeviceScheduleTime(scheduleModalDate);
@@ -288,7 +327,8 @@ export function ScheduleModal() {
         setDriveSuccessUrl(null);
         setDriveError(null);
         const cleanName = accepted[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
-        setVideoTitle(cleanName);
+        // Preservar el título si el usuario ya escribió uno personalizado
+        setVideoTitle((prev) => (prev && prev.trim() ? prev : cleanName));
         setValue(
           'descripcion',
           `🎬 ${cleanName} - ¡Nuevo video listo para romperla en redes! 🚀 #tendencia #viral #creadores`
@@ -475,9 +515,15 @@ export function ScheduleModal() {
 
   const onSubmit = async (data: FormData) => {
     const programadoPara = new Date(`${data.fecha}T${data.hora}`);
-    const cleanTitle = (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || 'Video sin título').replace(/[_-]/g, ' ');
+    let cleanTitle = (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || 'Video sin título').replace(/[_-]/g, ' ');
+
+    // Si es YouTube, garantizar etiqueta #Shorts para categorización como Reel/Short
+    if (isYouTube && !/#shorts\b/i.test(cleanTitle)) {
+      cleanTitle = `${cleanTitle} #Shorts`;
+    }
 
     let driveFileUrl = manualDriveUrl.trim() || '#';
+    let finalThumbnailUrl = thumbnailBase64 || undefined;
 
     // Subir video a Google Drive si hay archivo y no se proveyó enlace manual
     if (videoFile && !manualDriveUrl.trim()) {
@@ -513,6 +559,22 @@ export function ScheduleModal() {
           (pct) => setUploadProgress(pct)
         );
 
+        // Si se subió una miniatura personalizada, subirla también a Drive
+        if (thumbnailFile) {
+          try {
+            const thumbUploadRes = await uploadVideoToGoogleDrive(
+              thumbnailFile,
+              folderId,
+              token
+            );
+            if (thumbUploadRes.success && thumbUploadRes.fileUrl) {
+              finalThumbnailUrl = thumbUploadRes.fileUrl;
+            }
+          } catch (tUpErr) {
+            console.warn('[ScheduleModal] No se pudo subir miniatura a Drive, usando base64:', tUpErr);
+          }
+        }
+
         setUploadingDrive(false);
 
         if (uploadRes.success && uploadRes.fileUrl) {
@@ -542,7 +604,8 @@ export function ScheduleModal() {
       campana_id: data.campana_id,
       titulo: cleanTitle,
       descripcion_aprobada_ia: data.descripcion,
-      thumbnail_color: '#10b981',
+      thumbnail_color: isYouTube ? '#ef4444' : '#10b981',
+      thumbnail_url: finalThumbnailUrl,
       drive_file_url: driveFileUrl,
       programado_para: programadoPara,
       estado: 'PROGRAMADO',
@@ -554,14 +617,17 @@ export function ScheduleModal() {
 
     createNotification({
       tipo: driveFileUrl && driveFileUrl !== '#' ? 'success' : 'info',
-      titulo: 'Nuevo video programado',
+      titulo: isYouTube ? 'Nuevo YouTube Short programado' : 'Nuevo video programado',
       mensaje: `"${cleanTitle}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
       cuenta_id: data.cuenta_id,
-      origen: 'sistema',
+      origen: isYouTube ? 'youtube' : 'sistema',
     });
 
     closeScheduleModal();
     setVideoFile(null);
+    setThumbnailFile(null);
+    setThumbnailPreview(null);
+    setThumbnailBase64(null);
   };
 
   const currentFecha = watch('fecha');
@@ -856,28 +922,153 @@ export function ScheduleModal() {
                 </div>
               )}
 
-              {/* Campo de Título del Video y Verificador Anti-Duplicados */}
-              {videoFile && (
-                <div className="space-y-2">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-[var(--text-secondary)]">
-                        Título del Video
-                      </label>
-                      <span className="text-[10px] text-cyan-400 font-mono">
-                        Anti-Duplicados en tiempo real
-                      </span>
+              {/* Opciones de Título y Miniatura: Especializadas si es YouTube, estándar para otras redes */}
+              {isYouTube ? (
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/40 via-[#180d12] to-red-950/30 border border-red-500/35 text-xs space-y-3 shadow-[0_0_25px_rgba(239,68,68,0.12)]">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-red-300 font-bold">
+                      <Play size={15} className="text-red-400 fill-red-400" />
+                      <span>Configuración YouTube Short (Reel)</span>
                     </div>
-                    <input
-                      type="text"
-                      value={videoTitle}
-                      onChange={(e) => setVideoTitle(e.target.value)}
-                      placeholder="Título o nombre del video..."
-                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-400/60 outline-none bg-[#0d1422] transition-colors hover:border-cyan-500/30"
-                    />
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 font-semibold flex items-center gap-1">
+                      <Sparkles size={10} className="text-red-400" />
+                      Modo Short Activo
+                    </span>
                   </div>
 
-                  {/* Estado del Verificador Anti-Duplicados */}
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Este video se publicará en YouTube como un <b>Short / Reel vertical</b>. Se incluirá automáticamente la etiqueta <code>#Shorts</code> para asegurar que el algoritmo lo reconozca en el reproductor de Shorts.
+                  </p>
+
+                  {/* Título personalizado para YouTube */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-200">
+                        Título del Short en YouTube
+                      </label>
+                      <span className="text-[10px] text-red-300 font-mono">
+                        {videoTitle.length}/100 caracteres
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={videoTitle}
+                        onChange={(e) => setVideoTitle(e.target.value.slice(0, 100))}
+                        placeholder="Escribe un título atractivo para tu Short..."
+                        className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-red-500/40 focus:border-red-400 outline-none bg-black/50 transition-colors pr-20"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-semibold">
+                        #Shorts
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[var(--text-muted)]">
+                      Ingresa aquí el título para tu Short. No se usará el nombre técnico del archivo de video.
+                    </p>
+                  </div>
+
+                  {/* Subir Miniatura para YouTube */}
+                  <div className="space-y-1.5 pt-2 border-t border-red-500/20">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <ImageIcon size={13} className="text-red-400" />
+                        <span>Miniatura Personalizada para YouTube (Opcional)</span>
+                      </label>
+                      {thumbnailFile && (
+                        <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                          <CheckCircle2 size={11} /> {(thumbnailFile.size / 1024).toFixed(0)} KB
+                        </span>
+                      )}
+                    </div>
+
+                    {thumbnailPreview ? (
+                      <div className="p-2.5 rounded-xl bg-black/60 border border-red-500/30 flex items-center gap-3">
+                        <div className="w-16 h-20 rounded-lg overflow-hidden border border-white/20 shrink-0 bg-black/80 flex items-center justify-center">
+                          <img
+                            src={thumbnailPreview}
+                            alt="Miniatura YouTube"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1 text-left">
+                          <p className="text-xs font-semibold text-white truncate">
+                            {thumbnailFile?.name || 'miniatura.jpg'}
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Esta imagen se aplicará como portada de tu Short al publicar en YouTube.
+                          </p>
+                          <label className="inline-block mt-1 text-[11px] text-red-300 hover:text-red-200 underline cursor-pointer">
+                            Cambiar miniatura
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleThumbnailChange(f);
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleThumbnailChange(null)}
+                          className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 hover:text-red-300 shrink-0 cursor-pointer transition-colors"
+                          title="Eliminar miniatura"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center p-3.5 rounded-xl border border-dashed border-red-500/35 hover:border-red-400 hover:bg-red-500/5 cursor-pointer transition-colors text-center group">
+                        <Upload size={18} className="text-red-400 group-hover:scale-110 transition-transform mb-1" />
+                        <span className="text-xs text-white font-medium">
+                          Subir imagen de miniatura (.jpg o .png)
+                        </span>
+                        <span className="text-[10px] text-slate-400 mt-0.5">
+                          Recomendado vertical: 1080x1920 (9:16) o estándar 1280x720
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleThumbnailChange(f);
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Campo de Título Normal para otras redes (Instagram, TikTok, Facebook) */
+                videoFile && (
+                  <div className="space-y-2">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                          Título del Video
+                        </label>
+                        <span className="text-[10px] text-cyan-400 font-mono">
+                          Anti-Duplicados en tiempo real
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={videoTitle}
+                        onChange={(e) => setVideoTitle(e.target.value)}
+                        placeholder="Título o nombre del video..."
+                        className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-400/60 outline-none bg-[#0d1422] transition-colors hover:border-cyan-500/30"
+                      />
+                    </div>
+                  </div>
+                )
+              )}
+
+              {/* Verificador Anti-Duplicados en tiempo real */}
+              {videoTitle && (
+                <div className="space-y-2">
                   {duplicateAnalysis.status === 'exact_duplicate' && duplicateAnalysis.exactMatch && (
                     <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/70 via-rose-950/50 to-red-950/70 border border-red-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(239,68,68,0.18)]">
                       <div className="flex items-center gap-2 text-red-300 font-bold">

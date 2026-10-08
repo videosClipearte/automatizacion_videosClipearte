@@ -181,6 +181,7 @@ export function VideoDetailModal() {
           video_url: video.drive_file_url,
           titulo: video.titulo,
           descripcion: video.descripcion_aprobada_ia || video.titulo,
+          thumbnail_url: video.thumbnail_url,
           privacidad: 'public',
           made_for_kids: false,
         }),
@@ -775,21 +776,34 @@ export function VideoDetailModal() {
                 <>
                   {/* Thumbnail preview */}
                   <div
-                    className="w-full h-36 rounded-xl flex items-center justify-center relative overflow-hidden"
+                    className="w-full h-40 rounded-xl flex items-center justify-center relative overflow-hidden bg-black/40 border border-white/10"
                     style={{
-                      background: `linear-gradient(135deg, ${video.thumbnail_color}44, ${video.thumbnail_color}18)`,
-                      border: `1px solid ${video.thumbnail_color}44`
+                      background: video.thumbnail_url ? undefined : `linear-gradient(135deg, ${video.thumbnail_color}44, ${video.thumbnail_color}18)`,
+                      borderColor: video.thumbnail_url ? 'rgba(255,255,255,0.15)' : `${video.thumbnail_color}44`
                     }}
                   >
-                    <div className="text-center">
-                      <div
-                        className="w-14 h-14 rounded-full mx-auto mb-2 flex items-center justify-center text-lg font-bold text-white shadow-lg"
-                        style={{ background: `linear-gradient(135deg, ${video.thumbnail_color}, ${video.thumbnail_color}aa)` }}
-                      >
-                        {account?.username?.slice(0, 2).toUpperCase() ?? 'VD'}
+                    {video.thumbnail_url ? (
+                      <div className="relative w-full h-full flex items-center justify-center bg-black/60 group">
+                        <img
+                          src={video.thumbnail_url}
+                          alt={video.titulo}
+                          className="w-full h-full object-contain"
+                        />
+                        <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/70 text-[10px] text-white font-medium border border-white/20 backdrop-blur-sm">
+                          Miniatura
+                        </span>
                       </div>
-                      <p className="text-xs text-[var(--text-muted)] font-medium">Contenido Multimedia</p>
-                    </div>
+                    ) : (
+                      <div className="text-center">
+                        <div
+                          className="w-14 h-14 rounded-full mx-auto mb-2 flex items-center justify-center text-lg font-bold text-white shadow-lg"
+                          style={{ background: `linear-gradient(135deg, ${video.thumbnail_color}, ${video.thumbnail_color}aa)` }}
+                        >
+                          {account?.username?.slice(0, 2).toUpperCase() ?? 'VD'}
+                        </div>
+                        <p className="text-xs text-[var(--text-muted)] font-medium">Contenido Multimedia</p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Account & Campaign info */}

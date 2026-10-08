@@ -221,6 +221,7 @@ export function PublicationScheduler() {
                 video_url: video.drive_file_url,
                 titulo: video.titulo,
                 descripcion: video.descripcion_aprobada_ia || video.titulo,
+                thumbnail_url: video.thumbnail_url,
                 privacidad: 'public',
                 made_for_kids: false,
               }),

@@ -240,6 +240,8 @@ export async function POST(req: NextRequest) {
     titulo,
     descripcion,
     tags,
+    thumbnail_url,
+    thumbnail_base64,
     privacidad = 'public',
     made_for_kids = false,
     categoria_id = '22',
@@ -257,7 +259,7 @@ export async function POST(req: NextRequest) {
     }
 
     await writeLog(pid, 'INFO', 'INICIO',
-      `Iniciando publicación de "${titulo}" para @${canal_id}`,
+      `Iniciando publicación en modo Short/Reel de "${titulo}" para @${canal_id}`,
       `URL de origen: ${video_url}`);
 
     // ── Paso 1: Verificar token ───────────────────────────────────────────
@@ -375,14 +377,88 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'No se obtuvo el contenido del video.' }, { status: 500 });
     }
 
-    // ── Paso 4: Iniciar sesión de upload resumable en YouTube ─────────────
-    await writeLog(pid, 'INFO', 'YOUTUBE_INIT', 'Iniciando sesión de subida en YouTube Data API...');
+    // ── Paso 3b: Preparar miniatura personalizada (si existe) ────────────
+    let thumbBuffer: Buffer | null = null;
+    let thumbContentType = 'image/jpeg';
+    let thumbDriveFileId: string | null = null;
+
+    if (thumbnail_base64 && typeof thumbnail_base64 === 'string') {
+      try {
+        const match = thumbnail_base64.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          thumbContentType = match[1];
+          thumbBuffer = Buffer.from(match[2], 'base64');
+        } else {
+          thumbBuffer = Buffer.from(thumbnail_base64, 'base64');
+        }
+        await writeLog(pid, 'INFO', 'THUMBNAIL', 'Miniatura personalizada en base64 recibida y lista.');
+      } catch (tErr: any) {
+        await writeLog(pid, 'WARN', 'THUMBNAIL', 'Error decodificando miniatura en base64:', tErr.message);
+      }
+    } else if (thumbnail_url && typeof thumbnail_url === 'string' && thumbnail_url !== '#') {
+      try {
+        if (thumbnail_url.startsWith('data:image/')) {
+          const match = thumbnail_url.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            thumbContentType = match[1];
+            thumbBuffer = Buffer.from(match[2], 'base64');
+          }
+        } else {
+          thumbDriveFileId = getDriveFileId(thumbnail_url);
+          if (thumbDriveFileId) {
+            const driveThumbRes = await downloadViaDriveApi(thumbDriveFileId, tokenData.token);
+            if (driveThumbRes.ok) {
+              thumbBuffer = driveThumbRes.buffer;
+              thumbContentType = driveThumbRes.contentType;
+            }
+          }
+          if (!thumbBuffer) {
+            const thumbDlUrl = getDriveDownloadUrl(thumbnail_url) || thumbnail_url;
+            const res = await fetch(thumbDlUrl);
+            if (res.ok) {
+              thumbBuffer = Buffer.from(await res.arrayBuffer());
+              thumbContentType = res.headers.get('content-type') || 'image/jpeg';
+            }
+          }
+        }
+        if (thumbBuffer) {
+          await writeLog(pid, 'INFO', 'THUMBNAIL', 'Miniatura descargada exitosamente.');
+        }
+      } catch (tErr: any) {
+        await writeLog(pid, 'WARN', 'THUMBNAIL', 'Error obteniendo miniatura desde URL:', tErr.message);
+      }
+    }
+
+    // ── Paso 4: Iniciar sesión de upload resumable en YouTube (Modo Short) ─
+    await writeLog(pid, 'INFO', 'YOUTUBE_INIT', 'Iniciando sesión de subida en YouTube Data API (Modo Short)...');
+
+    // YouTube categoriza como Short cuando:
+    // 1. El video es vertical / cuadrado (duración <= 3min).
+    // 2. Se incluye explícitamente el hashtag #Shorts en el título y/o descripción.
+    let shortTitle = (titulo || '').trim();
+    if (!/#shorts\b/i.test(shortTitle)) {
+      shortTitle = `${shortTitle} #Shorts`;
+    }
+    // YouTube limita el título a 100 caracteres
+    if (shortTitle.length > 100) {
+      shortTitle = shortTitle.slice(0, 92).trim() + ' #Shorts';
+    }
+
+    let shortDesc = (descripcion || '').trim();
+    if (!/#shorts\b/i.test(shortDesc)) {
+      shortDesc = shortDesc ? `${shortDesc}\n\n#Shorts` : '#Shorts';
+    }
+
+    const shortTags: string[] = Array.isArray(tags) ? [...tags] : [];
+    if (!shortTags.some((t) => t.toLowerCase() === 'shorts')) {
+      shortTags.unshift('Shorts', 'shorts');
+    }
 
     const metadata = {
       snippet: {
-        title: titulo,
-        description: descripcion || '',
-        tags: Array.isArray(tags) ? tags : [],
+        title: shortTitle,
+        description: shortDesc,
+        tags: shortTags,
         categoryId: String(categoria_id),
       },
       status: {
@@ -468,8 +544,44 @@ export async function POST(req: NextRequest) {
     const videoUrl = `https://www.youtube.com/shorts/${videoId}`;
 
     await writeLog(pid, 'SUCCESS', 'YOUTUBE_UPLOAD',
-      `✅ Video publicado exitosamente en YouTube.`,
+      `✅ Video publicado exitosamente en YouTube como Short.`,
       `URL: ${videoUrl} | ID: ${videoId}`);
+
+    // ── Paso 5b: Subir miniatura personalizada a YouTube si está disponible ─
+    let thumbnailUploaded = false;
+    if (thumbBuffer && thumbBuffer.length > 0) {
+      await writeLog(pid, 'INFO', 'THUMBNAIL', 'Subiendo miniatura personalizada a YouTube...');
+      try {
+        const thumbRes = await fetch(
+          `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${tokenData.token}`,
+              'Content-Type': thumbContentType.split(';')[0],
+              'Content-Length': String(thumbBuffer.length),
+            },
+            body: new Uint8Array(thumbBuffer),
+          }
+        );
+
+        if (thumbRes.ok) {
+          thumbnailUploaded = true;
+          await writeLog(pid, 'SUCCESS', 'THUMBNAIL', '✅ Miniatura personalizada establecida exitosamente en YouTube.');
+        } else {
+          const errTxt = await thumbRes.text();
+          let hint = '';
+          if (thumbRes.status === 403) {
+            hint = 'Aviso: Para aplicar miniaturas personalizadas, el canal de YouTube debe estar verificado con número de teléfono en YouTube Studio (Configuración → Canal → Elegibilidad de funciones). El video fue publicado exitosamente con la miniatura automática de YouTube.';
+          }
+          await writeLog(pid, 'WARN', 'THUMBNAIL',
+            `No se pudo aplicar la miniatura personalizada (HTTP ${thumbRes.status}).`,
+            `${hint} ${errTxt.slice(0, 300)}`);
+        }
+      } catch (thumbErr: any) {
+        await writeLog(pid, 'WARN', 'THUMBNAIL', 'Error al subir miniatura a YouTube.', thumbErr.message);
+      }
+    }
 
     // ── Paso 6: Actualizar estado en Supabase ────────────────────────────
     try {
@@ -478,6 +590,7 @@ export async function POST(req: NextRequest) {
       await supabase
         .from('publicaciones')
         .update({
+          titulo: shortTitle,
           estado: 'PUBLICADO',
           publicado_en: new Date().toISOString(),
           post_url_publica: videoUrl,
@@ -488,7 +601,7 @@ export async function POST(req: NextRequest) {
       await writeLog(pid, 'WARN', 'BD_UPDATE', 'No se pudo actualizar el estado en la BD', dbErr.message);
     }
 
-    // ── Paso 7: Eliminar el video de Google Drive ─────────────────────────
+    // ── Paso 7: Eliminar el video y miniatura de Google Drive ─────────────
     let driveDeleted = false;
     if (driveFileId) {
       await writeLog(pid, 'INFO', 'DRIVE_DELETE', 'Eliminando video de Google Drive...');
@@ -509,16 +622,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await writeLog(pid, 'SUCCESS', 'FIN', `Proceso completado para "${titulo}".`);
+    if (thumbDriveFileId) {
+      try {
+        await deleteDriveFile(thumbDriveFileId, tokenData.token);
+        await writeLog(pid, 'INFO', 'DRIVE_DELETE', '🗑️ Archivo de miniatura eliminado de Google Drive.');
+      } catch {
+        // Ignorar fallo de borrado de miniatura
+      }
+    }
+
+    await writeLog(pid, 'SUCCESS', 'FIN', `Proceso completado para "${shortTitle}".`);
 
     return NextResponse.json({
       success: true,
       video_id: videoId,
       video_url: videoUrl,
       canal_id,
-      titulo,
+      titulo: shortTitle,
+      thumbnail_uploaded: thumbnailUploaded,
       drive_deleted: driveDeleted,
-      message: `"${titulo}" publicado exitosamente como Short en @${canal_id}`,
+      message: `"${shortTitle}" publicado exitosamente como Short en @${canal_id}`,
     });
 
   } catch (err: any) {

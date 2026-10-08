@@ -42,6 +42,7 @@ export interface Video {
   titulo: string;
   descripcion_aprobada_ia: string;
   thumbnail_color: string;
+  thumbnail_url?: string;
   drive_file_url: string;
   programado_para: Date;
   enviado_en?: Date;
@@ -97,6 +98,7 @@ function mapVideo(row: any): Video {
     titulo: row.titulo,
     descripcion_aprobada_ia: row.descripcion_aprobada_ia ?? '',
     thumbnail_color: row.thumbnail_color ?? '#10b981',
+    thumbnail_url: row.thumbnail_url ?? (row.thumbnail_color && (row.thumbnail_color.startsWith('http') || row.thumbnail_color.startsWith('data:image')) ? row.thumbnail_color : undefined),
     drive_file_url: row.drive_file_url ?? '',
     programado_para: new Date(row.programado_para),
     enviado_en: row.enviado_en ? new Date(row.enviado_en) : undefined,
@@ -318,7 +320,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ── Videos ────────────────────────────────────────────────────────────────
   addVideo: async (video) => {
     const db = getSupabase();
-    const row = {
+    const row: any = {
       id: video.id,
       cuenta_id: video.cuenta_id,
       campana_id: video.campana_id || null,
@@ -333,7 +335,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       auto_reprogramacion: video.auto_reprogramacion,
       reintentos_alerta: video.reintentos_alerta,
     };
-    await db.from('publicaciones').insert(row);
+    if (video.thumbnail_url) {
+      row.thumbnail_url = video.thumbnail_url;
+    }
+    const { error: insErr } = await db.from('publicaciones').insert(row);
+    if (insErr && row.thumbnail_url) {
+      console.warn('[addVideo] Error insertando con thumbnail_url, reintentando sin él:', insErr.message);
+      delete row.thumbnail_url;
+      await db.from('publicaciones').insert(row);
+    }
     set((s) => {
       const videos = [...s.videos, video];
       return { videos, metrics: computeMetrics(videos) };
@@ -371,6 +381,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (finalUpdates.reintentos_alerta !== undefined) dbUpdates.reintentos_alerta = finalUpdates.reintentos_alerta;
     if (finalUpdates.post_url_publica !== undefined) dbUpdates.post_url_publica = finalUpdates.post_url_publica;
     if (finalUpdates.thumbnail_color !== undefined) dbUpdates.thumbnail_color = finalUpdates.thumbnail_color;
+    if (finalUpdates.thumbnail_url !== undefined) dbUpdates.thumbnail_url = finalUpdates.thumbnail_url;
     if (finalUpdates.drive_file_url !== undefined) dbUpdates.drive_file_url = finalUpdates.drive_file_url;
     if (finalUpdates.campana_id !== undefined) dbUpdates.campana_id = finalUpdates.campana_id;
 
@@ -381,7 +392,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       dbUpdates.reintentos_alerta = 0;
     }
 
-    await db.from('publicaciones').update(dbUpdates).eq('id', id);
+    const { error: updErr } = await db.from('publicaciones').update(dbUpdates).eq('id', id);
+    if (updErr && dbUpdates.thumbnail_url) {
+      console.warn('[updateVideo] Error actualizando con thumbnail_url, reintentando sin él:', updErr.message);
+      delete dbUpdates.thumbnail_url;
+      await db.from('publicaciones').update(dbUpdates).eq('id', id);
+    }
 
     if (isRescheduledToFuture) {
       try {

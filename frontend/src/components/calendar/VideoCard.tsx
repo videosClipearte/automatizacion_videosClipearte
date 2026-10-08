@@ -36,17 +36,25 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
           boxShadow: done ? 'none' : `0 0 8px ${video.thumbnail_color}44`,
         }}
       >
-        {/* Platform gradient fill */}
-        <div
-          className="w-full h-full rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-          style={{
-            background: done
-              ? 'linear-gradient(135deg, #1f2937, #374151)'
-              : `linear-gradient(135deg, ${video.thumbnail_color}88, ${video.thumbnail_color}cc)`,
-          }}
-        >
-          {account?.username?.slice(0, 1).toUpperCase() ?? 'V'}
-        </div>
+        {/* Platform gradient fill or custom thumbnail image */}
+        {video.thumbnail_url ? (
+          <img
+            src={video.thumbnail_url}
+            alt={video.titulo}
+            className="w-full h-full object-cover rounded-full"
+          />
+        ) : (
+          <div
+            className="w-full h-full rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+            style={{
+              background: done
+                ? 'linear-gradient(135deg, #1f2937, #374151)'
+                : `linear-gradient(135deg, ${video.thumbnail_color}88, ${video.thumbnail_color}cc)`,
+            }}
+          >
+            {account?.username?.slice(0, 1).toUpperCase() ?? 'V'}
+          </div>
+        )}
       </div>
 
       {/* Status dot */}
