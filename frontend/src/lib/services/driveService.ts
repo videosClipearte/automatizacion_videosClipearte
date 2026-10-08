@@ -117,7 +117,7 @@ export async function requestGoogleDriveOAuthToken(
       try {
         const client = (window as any).google.accounts.oauth2.initTokenClient({
           client_id: cleanClientId,
-          scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive',
+          scope: 'https://www.googleapis.com/auth/drive.file',
           callback: (response: any) => {
             if (response.error) {
               resolve({
