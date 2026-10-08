@@ -1,6 +1,6 @@
 // src/app/api/youtube/publish/route.ts
 // Sube un video a YouTube como Short directamente desde Vercel usando la YouTube Data API v3.
-// No requiere Python. Usa los tokens guardados en la tabla youtube_tokens de Supabase.
+// Registra cada paso en la tabla publicacion_logs de Supabase para visibilidad en tiempo real.
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -10,10 +10,97 @@ function getSafeChannelId(canal_id: string): string {
   return canal_id.replace(/^@/, '').replace(/ /g, '_').toLowerCase();
 }
 
-/** Renueva el access_token usando el refresh_token via Google OAuth */
-async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+// ── Logging en Supabase ───────────────────────────────────────────────────────
+type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'SUCCESS';
+
+async function writeLog(
+  publicacion_id: string,
+  nivel: LogLevel,
+  paso: string,
+  mensaje: string,
+  detalle?: string
+): Promise<void> {
   try {
-    // Intentar leer client_id/secret de Supabase o env vars
+    const { getSupabase } = await import('@/lib/supabase');
+    const supabase = getSupabase();
+    await supabase.from('publicacion_logs').insert({
+      publicacion_id,
+      nivel,
+      paso,
+      mensaje,
+      detalle: detalle ?? null,
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    // no falla si la tabla no existe aún
+    console.warn('[YouTube Publish] No se pudo escribir log:', e);
+  }
+}
+
+// ── Extraer ID de archivo de Drive ────────────────────────────────────────────
+function getDriveFileId(url: string): string | null {
+  if (!url) return null;
+  const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+// ── Descargar vía Drive API autenticada (archivos privados) ──────────────────
+async function downloadViaDriveApi(
+  fileId: string,
+  token: string
+): Promise<{ ok: true; buffer: Buffer; contentType: string } | { ok: false; status: number; error: string }> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    return { ok: false, status: res.status, error: txt.slice(0, 300) };
+  }
+  const contentType = res.headers.get('content-type') || 'video/mp4';
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return { ok: true, buffer, contentType };
+}
+
+// ── Eliminar archivo de Drive tras publicar ───────────────────────────────────
+async function deleteDriveFile(fileId: string, token: string): Promise<{ ok: boolean; status: number; error?: string }> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (res.ok || res.status === 204) return { ok: true, status: res.status };
+  const txt = await res.text().catch(() => '');
+  return { ok: false, status: res.status, error: txt.slice(0, 300) };
+}
+
+// ── Convertir URL de Drive a URL descargable ──────────────────────────────────
+function getDriveDownloadUrl(url: string): string | null {
+  if (!url || url === '#') return null;
+
+  // Formato: https://drive.google.com/file/d/FILE_ID/view
+  const matchView = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchView) {
+    return `https://drive.google.com/uc?export=download&id=${matchView[1]}`;
+  }
+
+  // Formato: https://drive.google.com/open?id=FILE_ID
+  const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchOpen) {
+    return `https://drive.google.com/uc?export=download&id=${matchOpen[1]}`;
+  }
+
+  // Ya es una URL directa
+  if (url.startsWith('http')) return url;
+
+  return null;
+}
+
+// ── Renovar access_token con refresh_token ────────────────────────────────────
+async function refreshAccessToken(
+  refreshToken: string,
+  publicacion_id: string
+): Promise<string | null> {
+  try {
     let clientId = (process.env.YOUTUBE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '').trim();
     let clientSecret = (process.env.YOUTUBE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '').trim();
 
@@ -30,10 +117,15 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
           clientId = (data.youtube_client_id || data.drive_client_id || clientId).trim();
           clientSecret = (data.youtube_client_secret || data.drive_client_secret || clientSecret).trim();
         }
-      } catch { /* sin credenciales configuradas */ }
+      } catch { /* sin credenciales */ }
     }
 
-    if (!clientId || !clientSecret) return null;
+    if (!clientId || !clientSecret) {
+      await writeLog(publicacion_id, 'WARN', 'TOKEN_REFRESH',
+        'No se configuraron Client ID/Secret de Google. El token podría estar expirado.',
+        'Configura las credenciales en Configuración → Integraciones para habilitar la renovación automática.');
+      return null;
+    }
 
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -46,15 +138,26 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
       }),
     });
     const data = await res.json();
+
+    if (!res.ok || data.error) {
+      await writeLog(publicacion_id, 'WARN', 'TOKEN_REFRESH',
+        `Renovación de token falló: ${data.error ?? res.status}`,
+        data.error_description ?? 'Verifica que el refresh_token sea válido y tenga el scope youtube.upload');
+      return null;
+    }
+
     return data.access_token ?? null;
-  } catch (e) {
-    console.warn('[YouTube Publish] No se pudo renovar el token:', e);
+  } catch (e: any) {
+    await writeLog(publicacion_id, 'WARN', 'TOKEN_REFRESH', 'Error al renovar token', e.message);
     return null;
   }
 }
 
-/** Obtiene el access_token válido para un canal (desde Supabase, renovando si expiró) */
-async function getValidAccessToken(canal_id: string): Promise<{ token: string; refreshToken: string } | null> {
+// ── Obtener token válido desde Supabase ───────────────────────────────────────
+async function getValidAccessToken(
+  canal_id: string,
+  publicacion_id: string
+): Promise<{ token: string; refreshToken: string } | null> {
   try {
     const { getSupabase } = await import('@/lib/supabase');
     const supabase = getSupabase();
@@ -67,53 +170,72 @@ async function getValidAccessToken(canal_id: string): Promise<{ token: string; r
       .maybeSingle();
 
     if (error || !data) {
-      console.error(`[YouTube Publish] No se encontró token para ${canal_id}`);
+      await writeLog(publicacion_id, 'ERROR', 'TOKEN_LOOKUP',
+        `No se encontró token para el canal @${canal_id}`,
+        `Conecta la cuenta de YouTube en Configuración → Cuentas usando el botón "Conectar YouTube".`);
       return null;
     }
 
     let { access_token, refresh_token } = data;
 
-    // Si el access_token podría estar expirado (fue guardado hace más de 50 min), renovar
-    const updatedAt = new Date(data.updated_at).getTime();
-    const ageMinutes = (Date.now() - updatedAt) / 60000;
+    // Si no hay access_token o lleva más de 50 min, renovar
+    const ageMinutes = data.updated_at
+      ? (Date.now() - new Date(data.updated_at).getTime()) / 60000
+      : 999;
 
     if (!access_token || ageMinutes > 50) {
-      console.log(`[YouTube Publish] Token de ${canal_id} posiblemente expirado (${Math.round(ageMinutes)}min). Renovando...`);
+      await writeLog(publicacion_id, 'INFO', 'TOKEN_REFRESH',
+        `Token de @${canal_id} tiene ${Math.round(ageMinutes)}min de antigüedad. Renovando...`);
+
       if (refresh_token) {
-        const newToken = await refreshAccessToken(refresh_token);
+        const newToken = await refreshAccessToken(refresh_token, publicacion_id);
         if (newToken) {
           access_token = newToken;
-          // Actualizar en Supabase
           await supabase
             .from('youtube_tokens')
             .update({ access_token: newToken, updated_at: new Date().toISOString() })
             .eq('canal_id', safeId);
+          await writeLog(publicacion_id, 'SUCCESS', 'TOKEN_REFRESH', 'Token renovado exitosamente.');
+        } else {
+          await writeLog(publicacion_id, 'WARN', 'TOKEN_REFRESH',
+            'No se pudo renovar el token automáticamente. Se usará el token existente.',
+            'Si la subida falla con error 401, ve a Configuración → Cuentas y reconecta tu cuenta de YouTube con el scope youtube.upload');
         }
       }
     }
 
-    if (!access_token) return null;
+    if (!access_token) {
+      await writeLog(publicacion_id, 'ERROR', 'TOKEN_LOOKUP',
+        'El canal no tiene access_token válido.',
+        'Reconecta tu cuenta de YouTube en Configuración → Cuentas.');
+      return null;
+    }
+
     return { token: access_token, refreshToken: refresh_token };
   } catch (e: any) {
-    console.error('[YouTube Publish] Error al obtener token:', e.message);
+    await writeLog(publicacion_id, 'ERROR', 'TOKEN_LOOKUP', 'Error al consultar token en Supabase', e.message);
     return null;
   }
 }
 
+// ── Handler principal ─────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json().catch(() => ({}));
-    const {
-      canal_id,
-      video_url,       // URL pública del video (Google Drive, CDN, etc.)
-      titulo,
-      descripcion,
-      tags,
-      privacidad = 'public',
-      made_for_kids = false,
-      categoria_id = '22',
-    } = body as Record<string, any>;
+  const body: Record<string, any> = await req.json().catch(() => ({}));
+  const {
+    canal_id,
+    video_url,
+    titulo,
+    descripcion,
+    tags,
+    privacidad = 'public',
+    made_for_kids = false,
+    categoria_id = '22',
+  } = body;
 
+  const pid = body.publicacion_id ?? `yt-${Date.now()}`;
+
+  try {
+    // ── Validación de parámetros ──────────────────────────────────────────
     if (!canal_id || !video_url || !titulo) {
       return NextResponse.json({
         success: false,
@@ -121,30 +243,128 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // 1. Obtener token válido
-    const tokenData = await getValidAccessToken(canal_id);
+    await writeLog(pid, 'INFO', 'INICIO',
+      `Iniciando publicación de "${titulo}" para @${canal_id}`,
+      `URL de origen: ${video_url}`);
+
+    // ── Paso 1: Verificar token ───────────────────────────────────────────
+    await writeLog(pid, 'INFO', 'TOKEN', `Verificando credenciales de YouTube para @${canal_id}...`);
+    const tokenData = await getValidAccessToken(canal_id, pid);
+
     if (!tokenData) {
+      await writeLog(pid, 'ERROR', 'TOKEN',
+        `Sin credenciales válidas para @${canal_id}. Publicación cancelada.`,
+        'Conecta tu cuenta en Configuración → Cuentas → Conectar YouTube');
       return NextResponse.json({
         success: false,
         error: `No hay token de YouTube para @${canal_id}. Conecta la cuenta en Configuración → Cuentas.`,
         needs_auth: true,
       }, { status: 401 });
     }
+    await writeLog(pid, 'SUCCESS', 'TOKEN', `Credenciales de @${canal_id} verificadas.`);
 
-    // 2. Descargar el video desde la URL (Drive u otro CDN)
-    console.log(`[YouTube Publish] Descargando video: ${video_url}`);
-    const videoRes = await fetch(video_url);
-    if (!videoRes.ok) {
+    // ── Paso 2: Preparar URL de descarga ─────────────────────────────────
+    const driveFileId = getDriveFileId(video_url);
+    const downloadUrl = getDriveDownloadUrl(video_url);
+    if (!downloadUrl) {
+      await writeLog(pid, 'ERROR', 'DESCARGA',
+        'La URL del video no es válida o no es descargable.',
+        `URL recibida: ${video_url}. Asegúrate de que el archivo de Drive sea público ("cualquiera con el enlace puede ver").`);
       return NextResponse.json({
         success: false,
-        error: `No se pudo descargar el video desde: ${video_url} (HTTP ${videoRes.status})`,
-      }, { status: 500 });
+        error: 'URL del video inválida o no descargable. El archivo de Drive debe ser público.',
+      }, { status: 400 });
     }
-    const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
-    const contentType = videoRes.headers.get('content-type') || 'video/mp4';
 
-    // 3. Subir a YouTube vía resumable upload
-    // Paso 3a: Iniciar sesión de upload resumable
+    // ── Paso 3: Descargar el video ────────────────────────────────────────
+    await writeLog(pid, 'INFO', 'DESCARGA', `Descargando video desde Google Drive...`, downloadUrl);
+
+    let videoBuffer: Buffer | null = null;
+    let contentType: string = 'video/mp4';
+
+    // 3a) Intento autenticado con Drive API (funciona con archivos privados)
+    if (driveFileId) {
+      try {
+        const apiRes = await downloadViaDriveApi(driveFileId, tokenData.token);
+        if (apiRes.ok) {
+          videoBuffer = apiRes.buffer;
+          contentType = apiRes.contentType;
+          const mb = (videoBuffer.length / 1024 / 1024).toFixed(1);
+          await writeLog(pid, 'SUCCESS', 'DESCARGA', `Video descargado desde Drive API (${mb} MB).`);
+        } else {
+          await writeLog(pid, 'WARN', 'DESCARGA',
+            `Descarga autenticada de Drive falló (HTTP ${apiRes.status}). Probando descarga pública...`,
+            apiRes.status === 403 || apiRes.status === 401
+              ? 'El token no tiene permiso de Drive. En OAuth Playground agrega el scope https://www.googleapis.com/auth/drive junto a los de YouTube.'
+              : apiRes.error);
+        }
+      } catch (e: any) {
+        await writeLog(pid, 'WARN', 'DESCARGA', 'Error en descarga autenticada de Drive. Probando descarga pública...', e.message);
+      }
+    }
+
+    if (!videoBuffer) try {
+      // Google Drive a veces redirige con una cookie de confirmación para archivos grandes
+      const videoRes = await fetch(downloadUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'Accept': 'video/mp4,video/*,*/*',
+        },
+        redirect: 'follow',
+      });
+
+      if (!videoRes.ok) {
+        // Intento alternativo: URL de descarga directa con confirmación
+        const altUrl = downloadUrl.replace('export=download', 'export=download&confirm=t');
+        const altRes = await fetch(altUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow' });
+
+        if (!altRes.ok) {
+          await writeLog(pid, 'ERROR', 'DESCARGA',
+            `No se pudo descargar el video (HTTP ${videoRes.status}).`,
+            `Verifica que el archivo en Google Drive sea público: click derecho → Compartir → "Cualquiera con el enlace".`);
+          return NextResponse.json({
+            success: false,
+            error: `No se pudo descargar el video (HTTP ${videoRes.status}). El archivo debe ser público en Drive.`,
+          }, { status: 500 });
+        }
+
+        contentType = altRes.headers.get('content-type') || 'video/mp4';
+        const arr = await altRes.arrayBuffer();
+        videoBuffer = Buffer.from(arr);
+      } else {
+        contentType = videoRes.headers.get('content-type') || 'video/mp4';
+        const arr = await videoRes.arrayBuffer();
+        videoBuffer = Buffer.from(arr);
+      }
+
+      // Validar que es un video (no una página de error HTML)
+      if (contentType.includes('text/html')) {
+        await writeLog(pid, 'ERROR', 'DESCARGA',
+          'Google Drive devolvió una página HTML en lugar del video.',
+          'El archivo no es público. Ve a Drive → click derecho en el archivo → Compartir → "Cualquiera con el enlace puede ver".');
+        return NextResponse.json({
+          success: false,
+          error: 'Google Drive requiere que el archivo sea público para descargarlo automáticamente.',
+          solucion: 'En Google Drive: click derecho en el video → Compartir → "Cualquiera con el enlace".',
+        }, { status: 400 });
+      }
+
+      const dlMB = (videoBuffer.length / 1024 / 1024).toFixed(1);
+      await writeLog(pid, 'SUCCESS', 'DESCARGA', `Video descargado exitosamente (${dlMB} MB, ${contentType}).`);
+
+    } catch (dlErr: any) {
+      await writeLog(pid, 'ERROR', 'DESCARGA', `Error al descargar el video: ${dlErr.message}`);
+      return NextResponse.json({ success: false, error: `Error descargando video: ${dlErr.message}` }, { status: 500 });
+    }
+
+    if (!videoBuffer) {
+      await writeLog(pid, 'ERROR', 'DESCARGA', 'No se obtuvo el contenido del video.');
+      return NextResponse.json({ success: false, error: 'No se obtuvo el contenido del video.' }, { status: 500 });
+    }
+
+    // ── Paso 4: Iniciar sesión de upload resumable en YouTube ─────────────
+    await writeLog(pid, 'INFO', 'YOUTUBE_INIT', 'Iniciando sesión de subida en YouTube Data API...');
+
     const metadata = {
       snippet: {
         title: titulo,
@@ -166,7 +386,7 @@ export async function POST(req: NextRequest) {
         headers: {
           Authorization: `Bearer ${tokenData.token}`,
           'Content-Type': 'application/json; charset=UTF-8',
-          'X-Upload-Content-Type': contentType,
+          'X-Upload-Content-Type': contentType.split(';')[0],
           'X-Upload-Content-Length': String(videoBuffer.length),
         },
         body: JSON.stringify(metadata),
@@ -175,56 +395,108 @@ export async function POST(req: NextRequest) {
 
     if (!initRes.ok) {
       const errText = await initRes.text();
-      console.error('[YouTube Publish] Error iniciando upload:', errText);
+      let hint = '';
 
-      // Si el error es 401, el token expiró
       if (initRes.status === 401) {
-        return NextResponse.json({
-          success: false,
-          error: 'Token de YouTube expirado. Por favor reconecta tu cuenta en Configuración → Cuentas.',
-          needs_reauth: true,
-          canal_id,
-        }, { status: 401 });
+        hint = 'El access_token de YouTube ha expirado. Reconecta tu cuenta en Configuración → Cuentas con el scope "youtube.upload".';
+        await writeLog(pid, 'ERROR', 'YOUTUBE_INIT',
+          '❌ Token de YouTube expirado o sin permiso de subida (401).',
+          hint);
+        return NextResponse.json({ success: false, error: 'Token expirado. Reconecta tu cuenta de YouTube.', needs_reauth: true }, { status: 401 });
       }
 
-      return NextResponse.json({
-        success: false,
-        error: `Error al iniciar upload en YouTube (HTTP ${initRes.status}): ${errText.slice(0, 300)}`,
-      }, { status: 500 });
+      if (initRes.status === 403) {
+        hint = 'El token no tiene el permiso "youtube.upload". En Google OAuth Playground, asegúrate de seleccionar el scope: https://www.googleapis.com/auth/youtube.upload';
+        await writeLog(pid, 'ERROR', 'YOUTUBE_INIT',
+          '❌ Sin permiso para subir videos a YouTube (403 Forbidden).',
+          hint);
+        return NextResponse.json({ success: false, error: hint, needs_reauth: true }, { status: 403 });
+      }
+
+      await writeLog(pid, 'ERROR', 'YOUTUBE_INIT',
+        `Error al iniciar upload en YouTube (HTTP ${initRes.status}).`,
+        errText.slice(0, 500));
+      return NextResponse.json({ success: false, error: `Error YouTube API: ${errText.slice(0, 200)}` }, { status: 500 });
     }
 
     const uploadUrl = initRes.headers.get('location');
     if (!uploadUrl) {
-      return NextResponse.json({
-        success: false,
-        error: 'YouTube no devolvió URL de upload resumable.',
-      }, { status: 500 });
+      await writeLog(pid, 'ERROR', 'YOUTUBE_INIT', 'YouTube no devolvió URL de upload. Reintenta más tarde.');
+      return NextResponse.json({ success: false, error: 'YouTube no devolvió URL de upload.' }, { status: 500 });
     }
 
-    // Paso 3b: Subir el video
-    console.log(`[YouTube Publish] Subiendo ${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB a YouTube...`);
+    await writeLog(pid, 'SUCCESS', 'YOUTUBE_INIT', 'Sesión de subida iniciada. Transfiriendo video a YouTube...');
+
+    // ── Paso 5: Subir el video ────────────────────────────────────────────
+    const sizeMB = (videoBuffer.length / 1024 / 1024).toFixed(1);
+    await writeLog(pid, 'INFO', 'YOUTUBE_UPLOAD',
+      `Subiendo ${sizeMB} MB a YouTube...`,
+      'Este proceso puede tardar 1-3 minutos dependiendo del tamaño del video.');
+
     const uploadRes = await fetch(uploadUrl, {
       method: 'PUT',
       headers: {
-        'Content-Type': contentType,
+        'Content-Type': contentType.split(';')[0],
         'Content-Length': String(videoBuffer.length),
       },
-      body: videoBuffer,
+      body: new Uint8Array(videoBuffer),
     });
 
     if (!uploadRes.ok) {
       const errText = await uploadRes.text();
-      return NextResponse.json({
-        success: false,
-        error: `Error durante el upload del video (HTTP ${uploadRes.status}): ${errText.slice(0, 300)}`,
-      }, { status: 500 });
+      await writeLog(pid, 'ERROR', 'YOUTUBE_UPLOAD',
+        `❌ Error durante la subida del video (HTTP ${uploadRes.status}).`,
+        errText.slice(0, 500));
+      return NextResponse.json({ success: false, error: `Error upload (${uploadRes.status}): ${errText.slice(0, 200)}` }, { status: 500 });
     }
 
     const videoData = await uploadRes.json();
     const videoId = videoData.id;
     const videoUrl = `https://www.youtube.com/shorts/${videoId}`;
 
-    console.log(`[YouTube Publish] ✅ Video publicado: ${videoUrl}`);
+    await writeLog(pid, 'SUCCESS', 'YOUTUBE_UPLOAD',
+      `✅ Video publicado exitosamente en YouTube.`,
+      `URL: ${videoUrl} | ID: ${videoId}`);
+
+    // ── Paso 6: Actualizar estado en Supabase ────────────────────────────
+    try {
+      const { getSupabase } = await import('@/lib/supabase');
+      const supabase = getSupabase();
+      await supabase
+        .from('publicaciones')
+        .update({
+          estado: 'PUBLICADO',
+          publicado_en: new Date().toISOString(),
+          post_url_publica: videoUrl,
+        })
+        .eq('id', pid);
+      await writeLog(pid, 'SUCCESS', 'BD_UPDATE', 'Publicación marcada como PUBLICADO en la base de datos.');
+    } catch (dbErr: any) {
+      await writeLog(pid, 'WARN', 'BD_UPDATE', 'No se pudo actualizar el estado en la BD', dbErr.message);
+    }
+
+    // ── Paso 7: Eliminar el video de Google Drive ─────────────────────────
+    let driveDeleted = false;
+    if (driveFileId) {
+      await writeLog(pid, 'INFO', 'DRIVE_DELETE', 'Eliminando video de Google Drive...');
+      try {
+        const del = await deleteDriveFile(driveFileId, tokenData.token);
+        if (del.ok) {
+          driveDeleted = true;
+          await writeLog(pid, 'SUCCESS', 'DRIVE_DELETE', '🗑️ Video eliminado de Google Drive.');
+        } else {
+          await writeLog(pid, 'WARN', 'DRIVE_DELETE',
+            `No se pudo eliminar el video de Drive (HTTP ${del.status}). Elimínalo manualmente.`,
+            del.status === 403 || del.status === 401
+              ? 'El token no tiene permiso de Drive. En OAuth Playground agrega el scope https://www.googleapis.com/auth/drive y vuelve a conectar la cuenta.'
+              : del.error);
+        }
+      } catch (e: any) {
+        await writeLog(pid, 'WARN', 'DRIVE_DELETE', 'Error al eliminar el video de Drive.', e.message);
+      }
+    }
+
+    await writeLog(pid, 'SUCCESS', 'FIN', `Proceso completado para "${titulo}".`);
 
     return NextResponse.json({
       success: true,
@@ -232,14 +504,14 @@ export async function POST(req: NextRequest) {
       video_url: videoUrl,
       canal_id,
       titulo,
-      message: `Video "${titulo}" publicado exitosamente como Short en @${canal_id}`,
+      drive_deleted: driveDeleted,
+      message: `"${titulo}" publicado exitosamente como Short en @${canal_id}`,
     });
 
   } catch (err: any) {
-    console.error('[YouTube Publish] Error inesperado:', err);
-    return NextResponse.json({
-      success: false,
-      error: err.message ?? 'Error inesperado al publicar en YouTube.',
-    }, { status: 500 });
+    await writeLog(pid, 'ERROR', 'FATAL',
+      `Error inesperado: ${err.message}`,
+      err.stack?.slice(0, 500) ?? '');
+    return NextResponse.json({ success: false, error: err.message ?? 'Error inesperado.' }, { status: 500 });
   }
 }
