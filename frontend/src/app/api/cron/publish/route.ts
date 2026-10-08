@@ -130,11 +130,68 @@ export async function GET(request: Request) {
         }
       }
 
+      let youtubeResult: any = null;
+
+      // ── Si la cuenta es YouTube: subir el video directamente a YouTube ──
+      if (account?.plataforma === 'youtube' && video.drive_file_url) {
+        try {
+          const host = request instanceof Request
+            ? new URL(request.url).origin
+            : 'https://automatizacion-clipearte.vercel.app';
+
+          const ytRes = await fetch(`${host}/api/youtube/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              canal_id: account.username,
+              video_url: video.drive_file_url,
+              titulo: video.titulo,
+              descripcion: video.descripcion_aprobada_ia || video.titulo,
+              tags: video.hashtags ? String(video.hashtags).split(' ').filter(Boolean).map((t: string) => t.replace('#', '')) : [],
+              privacidad: 'public',
+              made_for_kids: false,
+            }),
+          });
+
+          youtubeResult = await ytRes.json();
+
+          if (youtubeResult.success) {
+            // Marcar como PUBLICADO con la URL de YouTube
+            await db.from('publicaciones')
+              .update({
+                estado: 'PUBLICADO',
+                publicado_en: new Date().toISOString(),
+                plataforma_url: youtubeResult.video_url,
+              })
+              .eq('id', video.id);
+
+            // Notificar éxito en Telegram
+            if (botToken && targetChat) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: targetChat,
+                  text: `✅ *Video publicado en YouTube*\n\n📺 *${video.titulo}*\n🔗 ${youtubeResult.video_url}`,
+                  parse_mode: 'Markdown',
+                }),
+              });
+            }
+          } else {
+            console.warn(`[Cron/Publish] YouTube upload falló para ${video.id}:`, youtubeResult.error);
+          }
+        } catch (ytErr: any) {
+          console.error(`[Cron/Publish] Error al publicar en YouTube:`, ytErr.message);
+          youtubeResult = { success: false, error: ytErr.message };
+        }
+      }
+
       results.push({
         id: video.id,
         titulo: video.titulo,
         enviadoTelegram: sentTelegram,
         confirmationMessageId,
+        youtube: youtubeResult,
         skipped: false,
       });
     }
