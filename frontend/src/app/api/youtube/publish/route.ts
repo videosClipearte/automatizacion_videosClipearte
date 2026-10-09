@@ -270,6 +270,7 @@ export async function POST(req: NextRequest) {
     privacidad = 'public',
     made_for_kids = false,
     categoria_id = '22',
+    drive_token,
   } = body;
 
   const pid = body.publicacion_id ?? `yt-${Date.now()}`;
@@ -323,9 +324,10 @@ export async function POST(req: NextRequest) {
     let contentType: string = 'video/mp4';
 
     // 3a) Intento autenticado con Drive API (funciona con archivos privados)
+    const tokenForDrive = (drive_token || '').trim() || tokenData.token;
     if (driveFileId) {
       try {
-        const apiRes = await downloadViaDriveApi(driveFileId, tokenData.token);
+        const apiRes = await downloadViaDriveApi(driveFileId, tokenForDrive);
         if (apiRes.ok) {
           videoBuffer = apiRes.buffer;
           contentType = apiRes.contentType;
@@ -720,15 +722,18 @@ export async function POST(req: NextRequest) {
     if (driveFileId) {
       await writeLog(pid, 'INFO', 'DRIVE_DELETE', 'Eliminando video de Google Drive...');
       try {
-        const del = await deleteDriveFile(driveFileId, tokenData.token);
+        let del = await deleteDriveFile(driveFileId, tokenForDrive);
+        if (!del.ok && tokenData.token && tokenData.token !== tokenForDrive) {
+          del = await deleteDriveFile(driveFileId, tokenData.token);
+        }
         if (del.ok) {
           driveDeleted = true;
-          await writeLog(pid, 'SUCCESS', 'DRIVE_DELETE', '🗑️ Video eliminado de Google Drive.');
+          await writeLog(pid, 'SUCCESS', 'DRIVE_DELETE', '🗑️ Video eliminado de Google Drive exitosamente.');
         } else {
           await writeLog(pid, 'WARN', 'DRIVE_DELETE',
-            `No se pudo eliminar el video de Drive (HTTP ${del.status}). Elimínalo manualmente.`,
+            `No se pudo eliminar el video de Drive automáticamente (HTTP ${del.status}).`,
             del.status === 403 || del.status === 401
-              ? 'El token no tiene permiso de Drive. En OAuth Playground agrega el scope https://www.googleapis.com/auth/drive y vuelve a conectar la cuenta.'
+              ? 'Para permitir que el sistema borre el video de Drive automáticamente, asegúrate de que el token tenga el scope https://www.googleapis.com/auth/drive o conecta Google Drive en Integraciones.'
               : del.error);
         }
       } catch (e: any) {
@@ -738,7 +743,7 @@ export async function POST(req: NextRequest) {
 
     if (thumbDriveFileId) {
       try {
-        await deleteDriveFile(thumbDriveFileId, tokenData.token);
+        await deleteDriveFile(thumbDriveFileId, tokenForDrive);
         await writeLog(pid, 'INFO', 'DRIVE_DELETE', '🗑️ Archivo de miniatura eliminado de Google Drive.');
       } catch {
         // Ignorar fallo de borrado de miniatura

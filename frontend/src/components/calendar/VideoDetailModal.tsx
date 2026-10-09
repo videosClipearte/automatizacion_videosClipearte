@@ -184,6 +184,7 @@ export function VideoDetailModal() {
           thumbnail_url: video.thumbnail_url,
           privacidad: 'public',
           made_for_kids: false,
+          drive_token: getGoogleDriveToken() || undefined,
         }),
       });
 

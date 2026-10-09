@@ -16,6 +16,7 @@ import { getStoredSupabaseConfig, getSupabase } from '@/lib/supabase';
 import { createNotification } from '@/lib/services/notificationService';
 import { verifyScraperPost } from '@/lib/services/scraperService';
 import { isToday } from 'date-fns';
+import { getGoogleDriveToken } from '@/lib/services/driveService';
 
 // UTC offset local (-4 para VE/BOL/CHI/CL)
 const TZ_OFFSET = -4;
@@ -224,6 +225,7 @@ export function PublicationScheduler() {
                 thumbnail_url: video.thumbnail_url,
                 privacidad: 'public',
                 made_for_kids: false,
+                drive_token: getGoogleDriveToken() || undefined,
               }),
             })
               .then(async (r) => {
