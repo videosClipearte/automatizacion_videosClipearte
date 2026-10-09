@@ -86,6 +86,8 @@ export default function AccountsPage() {
   const [tokenModalAccount, setTokenModalAccount] = useState<Account | null>(null);
   const [manualAccessToken, setManualAccessToken] = useState('');
   const [manualRefreshToken, setManualRefreshToken] = useState('');
+  const [manualClientId, setManualClientId] = useState('');
+  const [manualClientSecret, setManualClientSecret] = useState('');
   const [savingTokens, setSavingTokens] = useState(false);
 
   // Check YouTube token status for all YouTube accounts on mount + detectar retorno de Google OAuth
@@ -114,9 +116,14 @@ export default function AccountsPage() {
   }, [accounts, checkYtStatus, updateAccount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Abrir modal de ingreso manual de tokens
-  const handleYtAuthorize = (account: Account) => {
+  const handleYtAuthorize = async (account: Account) => {
     setManualAccessToken('');
     setManualRefreshToken('');
+    try {
+      const cfg = await loadAppConfig();
+      setManualClientId(cfg.youtube_client_id || cfg.drive_client_id || '');
+      setManualClientSecret(cfg.youtube_client_secret || cfg.drive_client_secret || '');
+    } catch {}
     setTokenModalAccount(account);
   };
 
@@ -136,6 +143,8 @@ export default function AccountsPage() {
           canal_id: tokenModalAccount.username,
           access_token: manualAccessToken.trim(),
           refresh_token: manualRefreshToken.trim(),
+          client_id: manualClientId.trim(),
+          client_secret: manualClientSecret.trim(),
         }),
       });
       const data = await res.json();
@@ -817,6 +826,41 @@ export default function AccountsPage() {
                     placeholder="ya29..."
                     className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-cyan-500/30 focus:border-cyan-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] resize-none font-mono"
                   />
+                </div>
+
+                {/* Credenciales OAuth para renovación automática */}
+                <div className="pt-2 border-t border-white/10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                      <span>Credenciales de Google Cloud</span>
+                      <span className="text-[10px] text-emerald-400 font-normal">(Para renovación automática cada hora)</span>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-[var(--text-muted)] block mb-1">OAuth Client ID</span>
+                      <input
+                        type="text"
+                        value={manualClientId}
+                        onChange={e => setManualClientId(e.target.value)}
+                        placeholder="...apps.googleusercontent.com"
+                        className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-white/10 focus:border-red-500/50 outline-none bg-transparent placeholder:text-slate-600 font-mono text-[11px]"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[var(--text-muted)] block mb-1">OAuth Client Secret</span>
+                      <input
+                        type="password"
+                        value={manualClientSecret}
+                        onChange={e => setManualClientSecret(e.target.value)}
+                        placeholder="GOCSPX-..."
+                        className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-white/10 focus:border-red-500/50 outline-none bg-transparent placeholder:text-slate-600 font-mono text-[11px]"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-[var(--text-muted)] leading-relaxed">
+                    💡 Guarda aquí las mismas Client ID y Secret con las que autorizaste en OAuth Playground para que el sistema renueve el token automáticamente en segundo plano.
+                  </p>
                 </div>
               </div>
 

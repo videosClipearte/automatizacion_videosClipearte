@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { canal_id, access_token, refresh_token } = body as Record<string, string>;
+    const { canal_id, access_token, refresh_token, client_id, client_secret } = body as Record<string, string>;
 
     if (!canal_id) {
       return NextResponse.json({ success: false, error: 'canal_id es requerido' }, { status: 400 });
@@ -120,6 +120,20 @@ export async function POST(req: NextRequest) {
         hint: 'Ejecuta el SQL de migración en tu panel de Supabase para crear la tabla youtube_tokens.',
         supabase_code: error.code,
       }, { status: 500 });
+    }
+
+    // Si se enviaron client_id o client_secret, guardarlos en configuracion_app para renovación automática
+    if (client_id || client_secret) {
+      try {
+        const updates: Record<string, any> = {};
+        if (client_id) updates.youtube_client_id = client_id.trim();
+        if (client_secret) updates.youtube_client_secret = client_secret.trim();
+        await supabase
+          .from('configuracion_app')
+          .upsert({ id: 'singleton', ...updates }, { onConflict: 'id' });
+      } catch (cfgErr) {
+        console.warn('[YouTube Status] No se pudo guardar client_id/secret en configuracion_app:', cfgErr);
+      }
     }
 
     return NextResponse.json({
