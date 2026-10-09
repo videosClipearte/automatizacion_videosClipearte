@@ -485,27 +485,46 @@ export async function POST(req: NextRequest) {
     if (!initRes.ok) {
       const errText = await initRes.text();
       let hint = '';
+      let googleMessage = '';
+      let googleReason = '';
+
+      try {
+        const parsed = JSON.parse(errText);
+        googleMessage = parsed?.error?.message || '';
+        googleReason = parsed?.error?.errors?.[0]?.reason || '';
+      } catch {
+        // errText no es JSON
+      }
 
       if (initRes.status === 401) {
-        hint = 'El access_token de YouTube ha expirado. Reconecta tu cuenta en Configuración → Cuentas con el scope "youtube.upload".';
+        hint = `El access_token de YouTube ha expirado. Reconecta tu cuenta en Configuración → Cuentas con el scope "youtube.upload". ${googleMessage ? `(${googleMessage})` : ''}`;
         await writeLog(pid, 'ERROR', 'YOUTUBE_INIT',
           '❌ Token de YouTube expirado o sin permiso de subida (401).',
           hint);
-        return NextResponse.json({ success: false, error: 'Token expirado. Reconecta tu cuenta de YouTube.', needs_reauth: true }, { status: 401 });
+        return NextResponse.json({ success: false, error: hint, needs_reauth: true }, { status: 401 });
       }
 
       if (initRes.status === 403) {
-        hint = 'El token no tiene el permiso "youtube.upload". En Google OAuth Playground, asegúrate de seleccionar el scope: https://www.googleapis.com/auth/youtube.upload';
+        if (googleReason === 'quotaExceeded') {
+          hint = `Cuota diaria de YouTube API agotada (10,000 unidades/día). Cada video consume 1,600 unidades. Se reinicia a medianoche PST. ${googleMessage ? `(${googleMessage})` : ''}`;
+        } else if (googleReason === 'uploadLimitExceeded') {
+          hint = `Límite diario de subida alcanzado para este canal en YouTube. YouTube restringe canales nuevos o sin verificar por teléfono. ${googleMessage ? `(${googleMessage})` : ''}`;
+        } else if (googleReason === 'accessNotConfigured') {
+          hint = `La API 'YouTube Data API v3' no está habilitada en tu proyecto de Google Cloud Console. Ve a APIs & Services y habilítala.`;
+        } else {
+          hint = `El token no tiene el permiso "youtube.upload" o la cuenta de Google seleccionada en OAuth Playground no administra el canal @${canal_id}. ${googleMessage ? `Detalle Google: "${googleMessage}"` : 'En OAuth Playground selecciona https://www.googleapis.com/auth/youtube.upload'}`;
+        }
+
         await writeLog(pid, 'ERROR', 'YOUTUBE_INIT',
-          '❌ Sin permiso para subir videos a YouTube (403 Forbidden).',
-          hint);
-        return NextResponse.json({ success: false, error: hint, needs_reauth: true }, { status: 403 });
+          `❌ Sin permiso para subir videos a YouTube (403 Forbidden - ${googleReason || 'Sin razón'}).`,
+          `${hint}\nRespuesta cruda de Google: ${errText.slice(0, 300)}`);
+        return NextResponse.json({ success: false, error: hint, needs_reauth: true, details: googleMessage || errText.slice(0, 200) }, { status: 403 });
       }
 
       await writeLog(pid, 'ERROR', 'YOUTUBE_INIT',
         `Error al iniciar upload en YouTube (HTTP ${initRes.status}).`,
         errText.slice(0, 500));
-      return NextResponse.json({ success: false, error: `Error YouTube API: ${errText.slice(0, 200)}` }, { status: 500 });
+      return NextResponse.json({ success: false, error: `Error YouTube API (${initRes.status}): ${googleMessage || errText.slice(0, 200)}` }, { status: 500 });
     }
 
     const uploadUrl = initRes.headers.get('location');
