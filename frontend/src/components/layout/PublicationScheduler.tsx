@@ -244,6 +244,17 @@ export function PublicationScheduler() {
                   });
                 } else {
                   console.warn(`[PublicationScheduler] Falló subida a YouTube:`, resData.error);
+                  // Actualizar estado del video a ERROR para visibilidad en calendario
+                  await updateVideoRef.current(video.id, { estado: 'ERROR_DE_RED' });
+                  // Crear notificación de error visible para el usuario
+                  createNotification({
+                    tipo: 'error',
+                    titulo: '❌ Falló la publicación en YouTube',
+                    mensaje: `"${video.titulo}" no se pudo publicar en @${account.username}. Error: ${resData.error || 'Desconocido'}${resData.needs_reauth ? ' — Reconecta la cuenta en Configuración → Cuentas con el scope youtube.upload.' : ''}`,
+                    video_id: video.id,
+                    cuenta_id: video.cuenta_id,
+                    origen: 'youtube',
+                  });
                 }
               })
               .catch((e) => console.error('[PublicationScheduler] Error en fetch YouTube publish:', e));

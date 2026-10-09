@@ -181,10 +181,40 @@ export async function GET(request: Request) {
             }
           } else {
             console.warn(`[Cron/Publish] YouTube upload falló para ${video.id}:`, youtubeResult.error);
+            // ── Notificar fallo en Telegram ──────────────────────────────────
+            if (botToken && targetChat) {
+              const errorMsg = youtubeResult.error || 'Error desconocido';
+              const needsReauth = youtubeResult.needs_reauth || youtubeResult.needs_auth;
+              let alertText = `❌ *Falló la publicación en YouTube*\n\n📺 *${video.titulo}*\n👤 Canal: @${account?.username || 'canal'}\n\n🚨 *Error:* ${errorMsg}`;
+              if (needsReauth) {
+                alertText += `\n\n⚠️ *Acción requerida:* Ve a Configuración → Cuentas → Conectar YouTube y vuelve a generar los tokens con el scope \`youtube.upload\`.`;
+              }
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: targetChat,
+                  text: alertText,
+                  parse_mode: 'Markdown',
+                }),
+              }).catch(() => {/* ignorar error de Telegram */});
+            }
           }
         } catch (ytErr: any) {
           console.error(`[Cron/Publish] Error al publicar en YouTube:`, ytErr.message);
           youtubeResult = { success: false, error: ytErr.message };
+          // ── Notificar excepción en Telegram ──────────────────────────────────
+          if (botToken && targetChat) {
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: targetChat,
+                text: `❌ *Error inesperado al publicar en YouTube*\n\n📺 *${video.titulo}*\n👤 Canal: @${account?.username || 'canal'}\n\n🚨 *Error:* ${ytErr.message}\n\n⚙️ Revisa los logs en Supabase para más detalles.`,
+                parse_mode: 'Markdown',
+              }),
+            }).catch(() => {/* ignorar */});
+          }
         }
       }
 

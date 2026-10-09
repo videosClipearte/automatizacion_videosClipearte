@@ -318,45 +318,78 @@ export function VideoDetailModal() {
     }
 
     try {
-      let res;
-      const targetModel = cfg.gemini_model || 'gemini-3.8-flash';
+      const targetModel = cfg.gemini_model && !['gemini-3.8-flash', 'gemini-2.0-flash-latest'].includes(cfg.gemini_model)
+        ? cfg.gemini_model
+        : 'gemini-flash-lite-latest';
+
       const systemInstruction = [
         cfg.gemini_system_prompt || 'Actúa como un experto en copywriting para redes sociales.',
         `Red Social: ${platform.toUpperCase()}`,
         `REGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}`,
         `HASHTAGS OBLIGATORIOS: ${hashtags}`,
       ].join('\n');
-      if (extractedReplacementAudio) {
-        res = await generateDescriptionFromAudio(
-          cfg.gemini_api_key,
-          targetModel,
-          extractedReplacementAudio.audioBase64,
-          extractedReplacementAudio.mimeType,
-          editTitle,
-          campaignRules,
-          platform,
-          hashtags,
-          systemInstruction,
-          cfg.gemini_temperature ?? 0.7
-        );
-      } else {
-        const userPrompt = [
-          `Escribe la descripcion para publicar en ${platform.toUpperCase()} sobre el video titulado "${editTitle}".`,
-          `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPANA:`,
-          campaignRules,
-          `HASHTAGS QUE DEBES INCLUIR SIN EXCEPCION: ${hashtags}`,
-          `INSTRUCCIONES: Devuelve UNICAMENTE el texto final listo para publicar. Sin encabezados, sin JSON, sin comillas al inicio.`,
-        ].join('\n');
-        res = await generateWithGemini(
-          cfg.gemini_api_key,
-          targetModel,
-          userPrompt,
-          systemInstruction,
-          cfg.gemini_temperature ?? 0.7
-        );
+
+      const userPrompt = [
+        `Escribe la descripcion para publicar en ${platform.toUpperCase()} sobre el video titulado "${editTitle}".`,
+        `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPANA:`,
+        campaignRules,
+        `HASHTAGS QUE DEBES INCLUIR SIN EXCEPCION: ${hashtags}`,
+        `INSTRUCCIONES: Devuelve UNICAMENTE el texto final listo para publicar. Sin encabezados, sin JSON, sin comillas al inicio.`,
+      ].join('\n');
+
+      let res: any = null;
+      let attempt = 0;
+      const maxAttempts = 3;
+
+      while (attempt < maxAttempts) {
+        attempt++;
+        if (attempt > 1) {
+          setEditFeedback({
+            success: true,
+            msg: `🔄 Reintentando automáticamente con Gemini (intento ${attempt} de ${maxAttempts})...`,
+          });
+          await new Promise((r) => setTimeout(r, 1500 * (attempt - 1)));
+        }
+
+        try {
+          if (extractedReplacementAudio) {
+            res = await generateDescriptionFromAudio(
+              cfg.gemini_api_key,
+              targetModel,
+              extractedReplacementAudio.audioBase64,
+              extractedReplacementAudio.mimeType,
+              editTitle,
+              campaignRules,
+              platform,
+              hashtags,
+              systemInstruction,
+              cfg.gemini_temperature ?? 0.7
+            );
+          } else {
+            res = await generateWithGemini(
+              cfg.gemini_api_key,
+              targetModel,
+              userPrompt,
+              systemInstruction,
+              cfg.gemini_temperature ?? 0.7
+            );
+          }
+
+          if (res?.success && res?.text) {
+            break;
+          }
+
+          // Si el error es de clave inválida, no reintentar
+          if (res?.error && (res.error.toLowerCase().includes('invalida') || res.error.toLowerCase().includes('obligatoria'))) {
+            break;
+          }
+        } catch (callErr: any) {
+          console.warn(`[VideoDetailModal] Error en intento ${attempt}:`, callErr);
+          if (attempt >= maxAttempts) throw callErr;
+        }
       }
 
-      if (res.success && res.text) {
+      if (res?.success && res?.text) {
         setEditDescripcion(res.text);
         if (res.subtitlesJson) {
           setExtractedSubtitles(res.subtitlesJson);
@@ -365,13 +398,13 @@ export function VideoDetailModal() {
           success: true,
           msg: extractedReplacementAudio
             ? `Subtitulos extraidos y descripcion generada usando ${res.usedModel || targetModel}.`
-            : `Copy regenerado con exito respetando las reglas de la campana.`,
+            : `Copy generado con exito usando ${res.usedModel || targetModel}.`,
         });
       } else {
-        setEditFeedback({ success: false, msg: `Aviso: ${res.error || 'No se pudo generar'}` });
+        setEditFeedback({ success: false, msg: `Aviso: ${res?.error || 'No se pudo generar con Gemini tras reintentos automáticos'}` });
       }
     } catch {
-      setEditFeedback({ success: false, msg: 'Error de conexión con Gemini.' });
+      setEditFeedback({ success: false, msg: 'Error de conexión con Gemini tras varios reintentos automáticos.' });
     } finally {
       setGeneratingAI(false);
     }

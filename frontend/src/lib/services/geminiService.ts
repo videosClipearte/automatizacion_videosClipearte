@@ -1,4 +1,4 @@
-﻿// src/lib/services/geminiService.ts
+// src/lib/services/geminiService.ts
 import { VideoAnalysisPayload } from './videoCompressorService';
 
 export interface GeminiConfig {
@@ -35,7 +35,7 @@ export function getStoredGeminiConfig(): GeminiConfig {
   }
   return {
     apiKey: '',
-    model: 'gemini-2.0-flash-latest',
+    model: 'gemini-flash-lite-latest',
     systemPrompt: 'Actua como un experto en copywriting para redes sociales. Genera descripciones dinamicas, juveniles y llamativas con hashtags de tendencia.',
     temperature: 0.7,
   };
@@ -47,18 +47,14 @@ export function saveStoredGeminiConfig(config: GeminiConfig): void {
   }
 }
 
-// Mapa de modelos retirados -> sucesor activo oficial
+// Mapa de modelos retirados o alias -> modelo oficial activo
 const RETIRED_MODEL_MAP: Record<string, string> = {
-  'gemini-2.0-flash':                    'gemini-2.0-flash-latest',
-  'gemini-2.0-flash-lite':               'gemini-2.0-flash-latest',
-  'gemini-2.5-flash':                    'gemini-2.0-flash-latest',
-  'gemini-2.5-flash-lite-preview-06-17': 'gemini-2.0-flash-latest',
-  'gemini-1.5-flash':                    'gemini-2.0-flash-latest',
-  'gemini-1.5-flash-latest':             'gemini-2.0-flash-latest',
-  'gemini-1.5-pro':                      'gemini-2.0-flash-latest',
-  'gemini-3.8-flash':                    'gemini-2.0-flash-latest',
-  'gemini-3.5-flash':                    'gemini-2.0-flash-latest',
-  'gemini-3.5-flash-lite':               'gemini-2.0-flash-latest',
+  'gemini-1.5-flash':                    'gemini-flash-lite-latest',
+  'gemini-1.5-flash-latest':             'gemini-flash-lite-latest',
+  'gemini-1.5-pro':                      'gemini-flash-lite-latest',
+  'gemini-3.8-flash':                    'gemini-flash-lite-latest',
+  'gemini-3.5-flash':                    'gemini-flash-lite-latest',
+  'gemini-3.5-flash-lite':               'gemini-flash-lite-latest',
 };
 
 /**
@@ -117,14 +113,16 @@ async function callGoogleGeminiDirect(
     };
   }
 
-  const rawModel = (modelName || 'gemini-2.0-flash-latest').replace(/^models\//, '').trim();
+  const rawModel = (modelName || 'gemini-flash-lite-latest').replace(/^models\//, '').trim();
   const resolvedModel = RETIRED_MODEL_MAP[rawModel] ?? rawModel;
 
   const KNOWN_MODELS = [
     resolvedModel,
-    'gemini-2.0-flash-latest',
+    'gemini-flash-lite-latest',
+    'gemini-2.0-flash-lite',
+    'gemini-2.0-flash-lite-preview-02-05',
     'gemini-2.0-flash',
-    'gemini-2.5-flash-preview-05-20',
+    'gemini-2.0-flash-latest',
     'gemini-1.5-flash-latest',
     'gemini-1.5-flash',
     'gemini-1.5-pro-latest',
@@ -142,48 +140,70 @@ async function callGoogleGeminiDirect(
   for (const currentModel of modelsToTry) {
     for (const apiVersion of apiVersions) {
       const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/models/${currentModel}:generateContent?key=${cleanKey}`;
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+      
+      // Hasta 2 intentos por endpoint/modelo para sobrellevar micro-cortes o rate-limits temporales
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
 
-        let responseJson: any = null;
-        try { responseJson = JSON.parse(await response.text()); } catch (e: any) {
-          lastErrorMessage = `Respuesta no valida de la API (${response.status})`;
-          continue;
-        }
+          let responseJson: any = null;
+          try { responseJson = JSON.parse(await response.text()); } catch (e: any) {
+            lastErrorMessage = `Respuesta no valida de la API (${response.status})`;
+            if (attempt === 1) {
+              await new Promise((r) => setTimeout(r, 1000));
+              continue;
+            }
+            continue;
+          }
 
-        if (response.ok) {
-          const candidateText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (candidateText) {
+          if (response.ok) {
+            const candidateText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (candidateText) {
+              return {
+                success: true,
+                text: cleanCopyText(candidateText),
+                usedModel: currentModel,
+              };
+            }
+          }
+
+          const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
+
+          if (response.status === 403 || (response.status === 400 && errMsg.toLowerCase().includes('api key not valid'))) {
             return {
-              success: true,
-              text: cleanCopyText(candidateText),
-              usedModel: currentModel,
+              success: false,
+              text: '',
+              error: 'Clave API de Gemini invalida. Genera una nueva en aistudio.google.com/app/apikey.',
             };
           }
+
+          const isNotFound = response.status === 404 || errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('no longer available');
+          if (!isNotFound) allModelsNotFound = false;
+
+          lastErrorMessage = errMsg;
+
+          // Si es 429 (rate limit) o 500/503 (servidor saturado), reintentar automáticamente con pausa
+          if ((response.status === 429 || response.status >= 500) && attempt === 1) {
+            console.warn(`[Gemini] Error transitorio (${response.status}) en ${currentModel}. Reintentando automáticamente en 1.5s...`);
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
+
+          console.warn(`[Gemini] ${currentModel} (${apiVersion}): ${errMsg.slice(0, 120)}`);
+          break; // Pasar al siguiente si no fue error transitorio
+        } catch (err: any) {
+          lastErrorMessage = err?.message || 'Error de conexion';
+          if (attempt === 1) {
+            console.warn(`[Gemini] Excepción de conexión en ${currentModel}. Reintentando automáticamente...`);
+            await new Promise((r) => setTimeout(r, 1200));
+            continue;
+          }
+          console.warn(`[Gemini] ${currentModel} (${apiVersion}) excepcion: ${lastErrorMessage}`);
         }
-
-        const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
-
-        if (response.status === 403 || (response.status === 400 && errMsg.toLowerCase().includes('api key not valid'))) {
-          return {
-            success: false,
-            text: '',
-            error: 'Clave API de Gemini invalida. Genera una nueva en aistudio.google.com/app/apikey.',
-          };
-        }
-
-        const isNotFound = response.status === 404 || errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('no longer available');
-        if (!isNotFound) allModelsNotFound = false;
-
-        lastErrorMessage = errMsg;
-        console.warn(`[Gemini] ${currentModel} (${apiVersion}): ${errMsg.slice(0, 120)}`);
-      } catch (err: any) {
-        lastErrorMessage = err?.message || 'Error de conexion';
-        console.warn(`[Gemini] ${currentModel} (${apiVersion}) excepcion: ${lastErrorMessage}`);
       }
     }
   }
@@ -191,7 +211,7 @@ async function callGoogleGeminiDirect(
   if (allModelsNotFound) {
     console.warn('[Gemini] Todos los modelos conocidos fallaron. Consultando lista dinamica...');
     const availableModels = await listAvailableModels(cleanKey);
-    const flashModels = availableModels.filter(m => m.includes('flash'));
+    const flashModels = availableModels.filter(m => m.includes('flash') || m.includes('lite'));
     const dynamicList = flashModels.length > 0 ? flashModels : availableModels.slice(0, 3);
 
     for (const currentModel of dynamicList) {
@@ -234,14 +254,17 @@ async function callGoogleGeminiDirect(
 
 /**
  * Genera copy textual estandar (sin video) con Gemini.
+ * Incluye reintentos automáticos si ocurre un error transitorio.
  */
 export async function generateWithGemini(
   apiKey: string,
-  model: string,
+  model: string = 'gemini-flash-lite-latest',
   userPrompt: string,
   systemInstruction?: string,
-  temperature: number = 0.7
+  temperature: number = 0.7,
+  maxRetries: number = 2
 ): Promise<GeminiAnalysisResult> {
+  const targetModel = model && model.trim() ? model : 'gemini-flash-lite-latest';
   const body: any = {
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
     generationConfig: { temperature, maxOutputTokens: 500 },
@@ -249,17 +272,35 @@ export async function generateWithGemini(
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
-  return callGoogleGeminiDirect(apiKey, model, body);
+
+  let result: GeminiAnalysisResult = { success: false, text: '' };
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    result = await callGoogleGeminiDirect(apiKey, targetModel, body);
+    if (result.success && result.text) return result;
+    
+    // Si la clave es inválida, no reintentar inútilmente
+    if (result.error && (result.error.toLowerCase().includes('invalida') || result.error.toLowerCase().includes('obligatoria'))) {
+      return result;
+    }
+
+    if (attempt <= maxRetries) {
+      console.warn(`[Gemini] Intento ${attempt} falló (${result.error}). Reintentando automáticamente en ${(attempt * 1.5).toFixed(1)}s...`);
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+  }
+
+  return result;
 }
 
 /**
  * NUEVO (rapido): Envia el audio del video a Gemini.
  * Gemini transcribe el habla y genera la descripcion con las reglas de campana
- * en UNA SOLA llamada API. Sin fotogramas. Tiempo estimado: 1.5-4 segundos.
+ * en UNA SOLA llamada API.
+ * Incluye reintentos automáticos si la IA falla.
  */
 export async function generateDescriptionFromAudio(
   apiKey: string,
-  model: string,
+  model: string = 'gemini-flash-lite-latest',
   audioBase64: string,
   audioMimeType: string,
   videoTitle: string,
@@ -267,8 +308,10 @@ export async function generateDescriptionFromAudio(
   platform: string,
   hashtags: string,
   systemInstruction?: string,
-  temperature: number = 0.7
+  temperature: number = 0.7,
+  maxRetries: number = 2
 ): Promise<GeminiAnalysisResult> {
+  const targetModel = model && model.trim() ? model : 'gemini-flash-lite-latest';
   const userPrompt = `Escucha el audio de este video titulado "${videoTitle}".
 
 1. Identifica el dialogo o subtitulos hablados (maximo 3 lineas de contexto).
@@ -301,24 +344,41 @@ NO pongas comillas al inicio o al final.`.trim();
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  return callGoogleGeminiDirect(apiKey, model, body);
+  let result: GeminiAnalysisResult = { success: false, text: '' };
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    result = await callGoogleGeminiDirect(apiKey, targetModel, body);
+    if (result.success && result.text) return result;
+
+    if (result.error && (result.error.toLowerCase().includes('invalida') || result.error.toLowerCase().includes('obligatoria'))) {
+      return result;
+    }
+
+    if (attempt <= maxRetries) {
+      console.warn(`[Gemini Audio] Intento ${attempt} falló (${result.error}). Reintentando automáticamente en ${(attempt * 1.5).toFixed(1)}s...`);
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+  }
+
+  return result;
 }
 
 /**
  * LEGACY: Analiza fotogramas del video con Gemini Vision.
- * Fallback si el audio no esta disponible.
+ * Fallback si el audio no esta disponible. Con reintentos automáticos.
  */
 export async function generateDescriptionFromVideo(
   apiKey: string,
-  model: string,
+  model: string = 'gemini-flash-lite-latest',
   videoPayload: VideoAnalysisPayload,
   videoTitle: string,
   campaignRules: string,
   platform: string,
   hashtags: string,
   systemInstruction?: string,
-  temperature: number = 0.7
+  temperature: number = 0.7,
+  maxRetries: number = 2
 ): Promise<GeminiAnalysisResult> {
+  const targetModel = model && model.trim() ? model : 'gemini-flash-lite-latest';
   const imageParts: any[] = videoPayload.frames.map((frameBase64) => ({
     inline_data: { mime_type: 'image/jpeg', data: frameBase64 },
   }));
@@ -340,5 +400,20 @@ Devuelve UNICAMENTE el texto listo para publicar, sin encabezados, sin comillas,
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  return callGoogleGeminiDirect(apiKey, model, body);
+  let result: GeminiAnalysisResult = { success: false, text: '' };
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    result = await callGoogleGeminiDirect(apiKey, targetModel, body);
+    if (result.success && result.text) return result;
+
+    if (result.error && (result.error.toLowerCase().includes('invalida') || result.error.toLowerCase().includes('obligatoria'))) {
+      return result;
+    }
+
+    if (attempt <= maxRetries) {
+      console.warn(`[Gemini Video] Intento ${attempt} falló (${result.error}). Reintentando automáticamente en ${(attempt * 1.5).toFixed(1)}s...`);
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+  }
+
+  return result;
 }

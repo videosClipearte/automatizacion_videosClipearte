@@ -745,18 +745,51 @@ export default function AccountsPage() {
               </div>
 
               {/* Instrucciones */}
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
-                <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Sparkles size={12} className="text-cyan-400" />
-                  Cómo obtener los tokens:
-                </p>
-                <ol className="text-[11px] text-[var(--text-muted)] space-y-1 list-decimal list-inside leading-relaxed">
-                  <li>Ve a <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline hover:text-cyan-300">developers.google.com/oauthplayground</a></li>
-                  <li>En el paso 1, selecciona el scope: <code className="text-emerald-300 bg-black/40 px-1 rounded">YouTube Data API v3 → .../auth/youtube</code></li>
-                  <li>Haz click en <strong className="text-white">Authorize APIs</strong> e inicia sesión con tu cuenta de Google</li>
-                  <li>En el paso 2, haz click en <strong className="text-white">Exchange authorization code for tokens</strong></li>
-                  <li>Copia el <code className="text-amber-300 bg-black/40 px-1 rounded">access_token</code> y el <code className="text-emerald-300 bg-black/40 px-1 rounded">refresh_token</code> y pégalos abajo</li>
-                </ol>
+              <div className="space-y-2.5">
+                {/* ALERTA: Credenciales propias para evitar expiración */}
+                <div className="p-3 rounded-xl bg-amber-950/50 border border-amber-500/40 space-y-1.5">
+                  <p className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                    <AlertCircle size={12} className="text-amber-400 shrink-0" />
+                    ⚠️ IMPORTANTE: Usa tus propias credenciales OAuth para que el token no expire en 7 días
+                  </p>
+                  <ol className="text-[11px] text-amber-200/80 space-y-1 list-decimal list-inside leading-relaxed">
+                    <li>En OAuth Playground, haz clic en el ícono de engranaje ⚙️ (arriba a la derecha)</li>
+                    <li>Activa <strong className="text-white">"Use your own OAuth credentials"</strong></li>
+                    <li>Pega tu <strong className="text-white">OAuth Client ID</strong> y <strong className="text-white">OAuth Client Secret</strong> (los de Google Cloud Console que ya tienes configurados en Integraciones)</li>
+                    <li>Cierra el panel de configuración</li>
+                  </ol>
+                </div>
+
+                {/* Instrucciones principales */}
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Sparkles size={12} className="text-cyan-400" />
+                    Cómo obtener los tokens (con scopes correctos):
+                  </p>
+                  <ol className="text-[11px] text-[var(--text-muted)] space-y-1.5 list-decimal list-inside leading-relaxed">
+                    <li>Ve a <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline hover:text-cyan-300">developers.google.com/oauthplayground</a></li>
+                    <li>En el paso 1 (Select &amp; authorize APIs), selecciona <strong className="text-white">ESTOS TRES scopes</strong> de YouTube Data API v3:
+                      <div className="mt-1 ml-3 space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <span className="text-emerald-400">✓</span>
+                          <code className="text-emerald-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube.upload</code>
+                          <span className="text-amber-300 font-bold">(OBLIGATORIO para subir videos)</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-emerald-400">✓</span>
+                          <code className="text-emerald-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube</code>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-emerald-400">✓</span>
+                          <code className="text-emerald-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube.readonly</code>
+                        </div>
+                      </div>
+                    </li>
+                    <li>Haz click en <strong className="text-white">Authorize APIs</strong> → inicia sesión con Google → acepta todos los permisos</li>
+                    <li>En el paso 2, haz click en <strong className="text-white">Exchange authorization code for tokens</strong></li>
+                    <li>Copia el <code className="text-amber-300 bg-black/40 px-1 rounded">refresh_token</code> (no expira) y el <code className="text-cyan-300 bg-black/40 px-1 rounded">access_token</code> y pégalos abajo</li>
+                  </ol>
+                </div>
               </div>
 
               {/* Inputs */}

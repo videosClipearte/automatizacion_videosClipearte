@@ -62,11 +62,18 @@ function getTokens(text: string): string[] {
   const stopwords = new Set([
     'para', 'este', 'esta', 'esto', 'como', 'que', 'los', 'las', 'del',
     'con', 'una', 'uno', 'por', 'son', 'sus', 'pero', 'todo', 'cada',
-    'the', 'and', 'for', 'are', 'with', 'this', 'from', 'your', 'un', 'el', 'la', 'de', 'en', 'a'
+    'the', 'and', 'for', 'are', 'with', 'this', 'from', 'your', 'un', 'el', 'la', 'de', 'en', 'a', 'shorts'
   ]);
   return normalizeText(text)
     .split(/\s+/)
     .filter(w => w.length > 2 && !stopwords.has(w));
+}
+
+function cleanTitleForComparison(text: string): string {
+  return normalizeText(text)
+    .replace(/\bshorts\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Helper de icono de plataforma social
@@ -105,6 +112,9 @@ export function ScheduleModal() {
 
   const [videoFile, setVideoFile] = useState<File | null>(scheduleModalFile);
   const [videoTitle, setVideoTitle] = useState<string>(
+    scheduleModalFile ? scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim() : ''
+  );
+  const [shortTitle, setShortTitle] = useState<string>(
     scheduleModalFile ? scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim() : ''
   );
   const [generatingAI, setGeneratingAI] = useState(false);
@@ -270,6 +280,7 @@ export function ScheduleModal() {
         setVideoFile(scheduleModalFile);
         const cleanName = scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
         setVideoTitle(cleanName);
+        setShortTitle(cleanName);
         setValue(
           'descripcion',
           `🎬 ${cleanName} - Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
@@ -277,6 +288,7 @@ export function ScheduleModal() {
       } else {
         setVideoFile(null);
         setVideoTitle('');
+        setShortTitle('');
       }
     }
   }, [
@@ -329,6 +341,7 @@ export function ScheduleModal() {
         const cleanName = accepted[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
         // Preservar el título si el usuario ya escribió uno personalizado
         setVideoTitle((prev) => (prev && prev.trim() ? prev : cleanName));
+        setShortTitle((prev) => (prev && prev.trim() ? prev : cleanName));
         setValue(
           'descripcion',
           `🎬 ${cleanName} - ¡Nuevo video listo para romperla en redes! 🚀 #tendencia #viral #creadores`
@@ -392,8 +405,9 @@ export function ScheduleModal() {
     }
 
     const platform = selectedAccount.plataforma || 'instagram';
-    const videoTitle =
-      videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || 'Nuevo video';
+    const effectiveTitle = isYouTube && shortTitle.trim()
+      ? shortTitle.trim()
+      : (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || 'Nuevo video');
 
     const platformInstructions: Record<string, string> = {
       tiktok:
@@ -417,11 +431,14 @@ export function ScheduleModal() {
 
     const hashtags = selectedCampaign?.hashtags_base || '#viral #trending';
 
-    // Cargar credenciales y modelo configurado en tiempo real desde Supabase
+    // Cargar credenciales y modelo configurado en tiempo real desde Supabase (priorizando gemini-flash-lite-latest)
     const cfg = await loadAppConfig();
 
     const apiKey = cfg.gemini_api_key;
-    const model = cfg.gemini_model || 'gemini-3.8-flash';
+    const model = cfg.gemini_model && !['gemini-3.8-flash', 'gemini-2.0-flash-latest'].includes(cfg.gemini_model)
+      ? cfg.gemini_model
+      : 'gemini-flash-lite-latest';
+
     const systemPrompt = [
       cfg.gemini_system_prompt || 'Actúa como un experto en copywriting para redes sociales.',
       `Red Social Objetivo: ${platform.toUpperCase()}.`,
@@ -430,7 +447,7 @@ export function ScheduleModal() {
       `HASHTAGS OBLIGATORIOS: ${hashtags}`,
     ].join('\n');
     const userPrompt = [
-      `Escribe la descripción para publicar en ${platform.toUpperCase()} sobre el video titulado "${videoTitle}".`,
+      `Escribe la descripción para publicar en ${platform.toUpperCase()} sobre el video titulado "${effectiveTitle}".`,
       ``,
       `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPAÑA:`,
       campaignRules,
@@ -449,13 +466,13 @@ export function ScheduleModal() {
       setAiFeedback('⚠️ Configura tu Gemini API Key en Settings → Integraciones para redacción con IA.');
       let fallbackCopy = '';
       if (platform === 'tiktok') {
-        fallbackCopy = `🔥 POV: No te esperabas esto de "${videoTitle}". ${campaignRules.slice(0, 80)} ¿Qué opinas? 👇 ${hashtags} #fyp`;
+        fallbackCopy = `🔥 POV: No te esperabas esto de "${effectiveTitle}". ${campaignRules.slice(0, 80)} ¿Qué opinas? 👇 ${hashtags} #fyp`;
       } else if (platform === 'youtube') {
-        fallbackCopy = `⚡ ${videoTitle} en 60 segundos. ${campaignRules.slice(0, 80)} ¡Suscríbete al canal! ${hashtags} #shorts`;
+        fallbackCopy = `⚡ ${effectiveTitle} en 60 segundos. ${campaignRules.slice(0, 80)} ¡Suscríbete al canal! ${hashtags} #shorts`;
       } else if (platform === 'facebook') {
-        fallbackCopy = `📢 ¡Hola a todos! Les presentamos nuestro nuevo video: "${videoTitle}". ${campaignRules.slice(0, 90)} Déjanos tu opinión 👇 ${hashtags}`;
+        fallbackCopy = `📢 ¡Hola a todos! Les presentamos nuestro nuevo video: "${effectiveTitle}". ${campaignRules.slice(0, 90)} Déjanos tu opinión 👇 ${hashtags}`;
       } else {
-        fallbackCopy = `✨ ${videoTitle} ✨\n\n${campaignRules.slice(0, 90)}\n\nGuarda este Reel y compártelo 📌🔥\n\n${hashtags}`;
+        fallbackCopy = `✨ ${effectiveTitle} ✨\n\n${campaignRules.slice(0, 90)}\n\nGuarda este Reel y compártelo 📌🔥\n\n${hashtags}`;
       }
       setValue('descripcion', fallbackCopy);
       setGeneratingAI(false);
@@ -463,51 +480,77 @@ export function ScheduleModal() {
     }
 
     try {
-      let res;
-      if (extractedAudio) {
-        // RUTA PRINCIPAL: audio -> Gemini transcribe + genera descripcion en 1 llamada
-        setAiFeedback(`🎙️ Extrayendo subtitulos y generando descripcion con ${model}...`);
-        res = await generateDescriptionFromAudio(
-          apiKey,
-          model,
-          extractedAudio.audioBase64,
-          extractedAudio.mimeType,
-          videoTitle,
-          campaignRules,
-          platform,
-          hashtags,
-          systemPrompt,
-          cfg.gemini_temperature ?? 0.7
-        );
-      } else {
-        // FALLBACK: solo texto si no hay audio
-        setAiFeedback(`🤖 Generando copy con ${model}...`);
-        res = await generateWithGemini(
-          apiKey,
-          model,
-          userPrompt,
-          systemPrompt,
-          cfg.gemini_temperature ?? 0.7
-        );
+      let res: any = null;
+      let attempt = 0;
+      const maxAttempts = 3;
+
+      while (attempt < maxAttempts) {
+        attempt++;
+        if (attempt > 1) {
+          setAiFeedback(`🔄 Reintentando automáticamente con ${model} (intento ${attempt} de ${maxAttempts})...`);
+          await new Promise((r) => setTimeout(r, 1500 * (attempt - 1)));
+        }
+
+        try {
+          if (extractedAudio) {
+            setAiFeedback(attempt > 1
+              ? `🔄 Reintentando audio y descripción con ${model} (${attempt}/${maxAttempts})...`
+              : `🎙️ Extrayendo subtítulos y generando descripción con ${model}...`);
+            res = await generateDescriptionFromAudio(
+              apiKey,
+              model,
+              extractedAudio.audioBase64,
+              extractedAudio.mimeType,
+              effectiveTitle,
+              campaignRules,
+              platform,
+              hashtags,
+              systemPrompt,
+              cfg.gemini_temperature ?? 0.7
+            );
+          } else {
+            setAiFeedback(attempt > 1
+              ? `🔄 Reintentando generación de copy con ${model} (${attempt}/${maxAttempts})...`
+              : `🤖 Generando copy con ${model}...`);
+            res = await generateWithGemini(
+              apiKey,
+              model,
+              userPrompt,
+              systemPrompt,
+              cfg.gemini_temperature ?? 0.7
+            );
+          }
+
+          if (res?.success && res?.text) {
+            break;
+          }
+
+          if (res?.error && (res.error.toLowerCase().includes('invalida') || res.error.toLowerCase().includes('obligatoria'))) {
+            break;
+          }
+        } catch (callErr) {
+          console.warn(`[ScheduleModal] Error en intento ${attempt}:`, callErr);
+          if (attempt >= maxAttempts) throw callErr;
+        }
       }
 
-      if (res.success && res.text) {
+      if (res?.success && res?.text) {
         setValue('descripcion', res.text);
         if (res.subtitlesJson) {
           setExtractedSubtitles(res.subtitlesJson);
         }
         const usedName = res.usedModel || model;
         if (extractedAudio) {
-          setAiFeedback(`✨ Subtitulos extraidos y descripcion generada con ${usedName}.`);
+          setAiFeedback(`✨ Subtítulos extraídos y descripción generada con ${usedName}.`);
         } else {
-          setAiFeedback(`✨ Descripcion generada con exito usando ${usedName}.`);
+          setAiFeedback(`✨ Descripción generada con éxito usando ${usedName}.`);
         }
       } else {
-        setAiFeedback(`⚠️ ${res.error || 'No se pudo generar con Gemini'}`);
+        setAiFeedback(`⚠️ ${res?.error || 'No se pudo generar con Gemini tras reintentos automáticos'}`);
       }
     } catch {
-      setValue('descripcion', `🎬 ${videoTitle} - ¡Nuevo video disponible! ${hashtags}`);
-      setAiFeedback('⚠️ Fallo de conexión con Gemini.');
+      setValue('descripcion', `🎬 ${effectiveTitle} - ¡Nuevo video disponible! ${hashtags}`);
+      setAiFeedback('⚠️ Fallo de conexión con Gemini tras varios reintentos automáticos.');
     } finally {
       setGeneratingAI(false);
     }
@@ -515,11 +558,18 @@ export function ScheduleModal() {
 
   const onSubmit = async (data: FormData) => {
     const programadoPara = new Date(`${data.fecha}T${data.hora}`);
-    let cleanTitle = (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || 'Video sin título').replace(/[_-]/g, ' ');
+    let baseTitle = isYouTube
+      ? (shortTitle.trim() || videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || 'Short sin título')
+      : (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || 'Video sin título');
+
+    let cleanTitle = baseTitle.replace(/[_-]/g, ' ');
 
     // Si es YouTube, garantizar etiqueta #Shorts para categorización como Reel/Short
     if (isYouTube && !/#shorts\b/i.test(cleanTitle)) {
       cleanTitle = `${cleanTitle} #Shorts`;
+    }
+    if (isYouTube && cleanTitle.length > 100) {
+      cleanTitle = cleanTitle.slice(0, 92).trim() + ' #Shorts';
     }
 
     let driveFileUrl = manualDriveUrl.trim() || '#';
@@ -680,41 +730,63 @@ export function ScheduleModal() {
   const totalScheduled = accountQuotaStats.reduce((sum, item) => sum + item.count, 0);
   const selectedAccountStat = accountQuotaStats.find(s => s.id === selectedCuentaId);
 
-  // Análisis anti-duplicados en tiempo real (idéntico al Verificador Anti-Duplicados de Títulos)
+  // Análisis anti-duplicados en tiempo real (verifica el archivo de video y el short de YouTube)
   const duplicateAnalysis = useMemo(() => {
-    const query = (videoTitle || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || '').trim();
-    if (!query || !videoFile) {
-      return { status: 'idle', exactMatch: null, matchAccount: null, similarMatches: [], topScore: 0 };
+    const fileQuery = (videoTitle || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || '').trim();
+    if (!fileQuery || !videoFile) {
+      return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
-    const normQuery = normalizeText(query);
-    const queryTokens = getTokens(query);
+    const normFileQuery = cleanTitleForComparison(fileQuery);
+    const queryTokens = getTokens(fileQuery);
+    const normShortQuery = (isYouTube && shortTitle) ? cleanTitleForComparison(shortTitle) : '';
 
-    // 1. Coincidencia exacta
-    const exact = videos.find(v => v.estado !== 'CANCELADO' && normalizeText(v.titulo) === normQuery);
-    if (exact) {
-      const matchAccount = accounts.find(a => a.id === exact.cuenta_id);
+    // 1. Coincidencia exacta con el archivo de video
+    const exactFile = videos.find(v => v.estado !== 'CANCELADO' && cleanTitleForComparison(v.titulo) === normFileQuery);
+    if (exactFile) {
+      const matchAccount = accounts.find(a => a.id === exactFile.cuenta_id);
       return {
         status: 'exact_duplicate',
-        exactMatch: exact,
+        exactMatch: exactFile,
         matchAccount,
-        similarMatches: [{ video: exact, score: 100, account: matchAccount }],
+        matchSource: 'archivo',
+        similarMatches: [{ video: exactFile, score: 100, account: matchAccount }],
         topScore: 100,
       };
     }
 
+    // 1b. Si es YouTube y hay título de Short aparte, verificar si el título del Short coincide exactamente
+    if (normShortQuery && normShortQuery !== normFileQuery) {
+      const exactShort = videos.find(v => v.estado !== 'CANCELADO' && cleanTitleForComparison(v.titulo) === normShortQuery);
+      if (exactShort) {
+        const matchAccount = accounts.find(a => a.id === exactShort.cuenta_id);
+        return {
+          status: 'exact_duplicate',
+          exactMatch: exactShort,
+          matchAccount,
+          matchSource: 'short',
+          similarMatches: [{ video: exactShort, score: 100, account: matchAccount }],
+          topScore: 100,
+        };
+      }
+    }
+
     // 2. Coincidencia por subcadena o tokens
     if (queryTokens.length === 0) {
-      return { status: 'available', exactMatch: null, matchAccount: null, similarMatches: [], topScore: 0 };
+      return { status: 'available', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
     const scored = videos
       .filter(v => v.estado !== 'CANCELADO')
       .map(v => {
+        const vClean = cleanTitleForComparison(v.titulo);
         const vTokens = getTokens(v.titulo);
-        const vNorm = normalizeText(v.titulo);
 
-        if (normQuery.length > 6 && (vNorm.includes(normQuery) || normQuery.includes(vNorm))) {
+        if (normFileQuery.length > 5 && (vClean.includes(normFileQuery) || normFileQuery.includes(vClean))) {
+          return { video: v, score: 90, account: accounts.find(a => a.id === v.cuenta_id) };
+        }
+
+        if (normShortQuery && normShortQuery.length > 5 && (vClean.includes(normShortQuery) || normShortQuery.includes(vClean))) {
           return { video: v, score: 90, account: accounts.find(a => a.id === v.cuenta_id) };
         }
 
@@ -731,6 +803,7 @@ export function ScheduleModal() {
         status: 'similar_found',
         exactMatch: null,
         matchAccount: null,
+        matchSource: 'archivo',
         similarMatches: scored.slice(0, 3),
         topScore: scored[0].score,
       };
@@ -740,10 +813,11 @@ export function ScheduleModal() {
       status: 'available',
       exactMatch: null,
       matchAccount: null,
+      matchSource: 'archivo',
       similarMatches: [],
       topScore: 0,
     };
-  }, [videoTitle, videoFile, videos, accounts]);
+  }, [videoTitle, shortTitle, isYouTube, videoFile, videos, accounts]);
 
   const cfg = getCachedConfig();
   const folderIdConfigured = cfg.drive_folder_id;
@@ -922,8 +996,122 @@ export function ScheduleModal() {
                 </div>
               )}
 
-              {/* Opciones de Título y Miniatura: Especializadas si es YouTube, estándar para otras redes */}
-              {isYouTube ? (
+              {/* ── 1. TÍTULO DEL ARCHIVO DE VIDEO & VERIFICADOR ANTI-DUPLICADOS (Siempre presente al cargar un archivo) ── */}
+              {videoFile && (
+                <div className="space-y-2">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <FileVideo size={13} className="text-cyan-400" />
+                        <span>Título del Archivo de Video</span>
+                      </label>
+                      <span className="text-[10px] text-cyan-400 font-mono flex items-center gap-1">
+                        <ShieldCheck size={11} />
+                        Anti-Duplicados en tiempo real
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={videoTitle}
+                      onChange={(e) => setVideoTitle(e.target.value)}
+                      placeholder="Título o nombre del archivo del video..."
+                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-400/60 outline-none bg-[#0d1422] transition-colors hover:border-cyan-500/30"
+                    />
+                    <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                      Nombre o tema del archivo de video. El sistema verifica si este archivo ya existe o se ha publicado con anterioridad.
+                    </p>
+                  </div>
+
+                  {/* Estado del Verificador Anti-Duplicados para el archivo / short */}
+                  {(videoTitle || shortTitle) && (
+                    <div className="space-y-2 pt-1">
+                      {duplicateAnalysis.status === 'exact_duplicate' && duplicateAnalysis.exactMatch && (
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/70 via-rose-950/50 to-red-950/70 border border-red-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(239,68,68,0.18)]">
+                          <div className="flex items-center gap-2 text-red-300 font-bold">
+                            <ShieldAlert size={16} className="text-red-400 shrink-0 animate-pulse" />
+                            <span>
+                              🚨 ALERTA: {duplicateAnalysis.matchSource === 'short' ? 'El título del Short' : 'Este archivo de video'} ya existe y fue publicado antes
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-red-200/90 leading-relaxed">
+                            El Verificador Anti-Duplicados detectó que ya existe una publicación previa registrada con este video/título:
+                          </p>
+                          <div className="p-2.5 rounded-xl bg-black/50 border border-red-500/30 text-[11px] space-y-1">
+                            <div className="flex items-center justify-between text-white font-semibold">
+                              <span className="truncate">"{duplicateAnalysis.exactMatch.titulo}"</span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-mono uppercase">
+                                {duplicateAnalysis.exactMatch.estado}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-300 pt-0.5">
+                              <span>Cuenta: <b>@{duplicateAnalysis.matchAccount?.username || 'cuenta'}</b> ({duplicateAnalysis.matchAccount?.plataforma})</span>
+                              <span>
+                                {(() => {
+                                  try {
+                                    const d = duplicateAnalysis.exactMatch.publicado_en || duplicateAnalysis.exactMatch.programado_para;
+                                    return d ? format(new Date(d), 'dd/MM/yyyy HH:mm') : '';
+                                  } catch {
+                                    return '';
+                                  }
+                                })()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {duplicateAnalysis.status === 'similar_found' && (
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-orange-950/40 to-amber-950/60 border border-amber-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
+                          <div className="flex items-center gap-2 text-amber-300 font-bold">
+                            <AlertTriangle size={16} className="text-amber-400 shrink-0" />
+                            <span>⚠️ Posible video duplicado ({duplicateAnalysis.topScore}% de similitud detectada)</span>
+                          </div>
+                          <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                            Se encontraron publicaciones anteriores con títulos muy parecidos. Verifica si no se trata del mismo video:
+                          </p>
+                          <div className="space-y-1.5">
+                            {duplicateAnalysis.similarMatches.map(({ video, score, account }) => (
+                              <div key={video.id} className="p-2 rounded-xl bg-black/40 border border-amber-500/25 text-[10px] flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-white truncate">"{video.titulo}"</p>
+                                  <p className="text-[9px] text-slate-400">
+                                    @{account?.username} • {(() => {
+                                      try {
+                                        const d = video.publicado_en || video.programado_para;
+                                        return d ? format(new Date(d), 'dd/MM/yyyy') : '';
+                                      } catch { return ''; }
+                                    })()} • {video.estado}
+                                  </p>
+                                </div>
+                                <span className="text-[9px] font-mono font-bold text-amber-400 shrink-0 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                                  {score}% coincidencia
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {duplicateAnalysis.status === 'available' && (
+                        <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/25 text-xs flex items-center justify-between gap-2 text-emerald-300">
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
+                            <span className="font-medium">
+                              <b>Verificador Anti-Duplicados:</b> Archivo no publicado anteriormente. Título disponible.
+                            </span>
+                          </div>
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
+                            Disponible
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── 2. CONFIGURACIÓN YOUTUBE SHORT (Con título del short aparte y miniatura opcional) ── */}
+              {isYouTube && (
                 <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/40 via-[#180d12] to-red-950/30 border border-red-500/35 text-xs space-y-3 shadow-[0_0_25px_rgba(239,68,68,0.12)]">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-red-300 font-bold">
@@ -940,22 +1128,25 @@ export function ScheduleModal() {
                     Este video se publicará en YouTube como un <b>Short / Reel vertical</b>. Se incluirá automáticamente la etiqueta <code>#Shorts</code> para asegurar que el algoritmo lo reconozca en el reproductor de Shorts.
                   </p>
 
-                  {/* Título personalizado para YouTube */}
+                  {/* Título del Short aparte para YouTube */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-200">
-                        Título del Short en YouTube
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <span>Título del Short en YouTube (Aparte)</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-mono">
+                          Aparte
+                        </span>
                       </label>
                       <span className="text-[10px] text-red-300 font-mono">
-                        {videoTitle.length}/100 caracteres
+                        {shortTitle.length}/100 caracteres
                       </span>
                     </div>
                     <div className="relative">
                       <input
                         type="text"
-                        value={videoTitle}
-                        onChange={(e) => setVideoTitle(e.target.value.slice(0, 100))}
-                        placeholder="Escribe un título atractivo para tu Short..."
+                        value={shortTitle}
+                        onChange={(e) => setShortTitle(e.target.value.slice(0, 100))}
+                        placeholder="Escribe el título específico para este Short en YouTube..."
                         className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-red-500/40 focus:border-red-400 outline-none bg-black/50 transition-colors pr-20"
                       />
                       <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-semibold">
@@ -963,7 +1154,7 @@ export function ScheduleModal() {
                       </span>
                     </div>
                     <p className="text-[10px] text-[var(--text-muted)]">
-                      Ingresa aquí el título para tu Short. No se usará el nombre técnico del archivo de video.
+                      Título visible con el que se publicará tu Short en YouTube. Si lo dejas vacío, se usará el título del archivo del video.
                     </p>
                   </div>
 
@@ -1040,101 +1231,6 @@ export function ScheduleModal() {
                       </label>
                     )}
                   </div>
-                </div>
-              ) : (
-                /* Campo de Título Normal para otras redes (Instagram, TikTok, Facebook) */
-                videoFile && (
-                  <div className="space-y-2">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-[var(--text-secondary)]">
-                          Título del Video
-                        </label>
-                        <span className="text-[10px] text-cyan-400 font-mono">
-                          Anti-Duplicados en tiempo real
-                        </span>
-                      </div>
-                      <input
-                        type="text"
-                        value={videoTitle}
-                        onChange={(e) => setVideoTitle(e.target.value)}
-                        placeholder="Título o nombre del video..."
-                        className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-400/60 outline-none bg-[#0d1422] transition-colors hover:border-cyan-500/30"
-                      />
-                    </div>
-                  </div>
-                )
-              )}
-
-              {/* Verificador Anti-Duplicados en tiempo real */}
-              {videoTitle && (
-                <div className="space-y-2">
-                  {duplicateAnalysis.status === 'exact_duplicate' && duplicateAnalysis.exactMatch && (
-                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/70 via-rose-950/50 to-red-950/70 border border-red-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(239,68,68,0.18)]">
-                      <div className="flex items-center gap-2 text-red-300 font-bold">
-                        <ShieldAlert size={16} className="text-red-400 shrink-0 animate-pulse" />
-                        <span>🚨 ALERTA: Este video ya fue publicado o programado antes</span>
-                      </div>
-                      <p className="text-[11px] text-red-200/90 leading-relaxed">
-                        El Verificador Anti-Duplicados detectó que ya existe una publicación previa con este mismo título:
-                      </p>
-                      <div className="p-2.5 rounded-xl bg-black/50 border border-red-500/30 text-[11px] space-y-1">
-                        <div className="flex items-center justify-between text-white font-semibold">
-                          <span className="truncate">"{duplicateAnalysis.exactMatch.titulo}"</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-mono uppercase">
-                            {duplicateAnalysis.exactMatch.estado}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[10px] text-slate-300 pt-0.5">
-                          <span>Cuenta: <b>@{duplicateAnalysis.matchAccount?.username || 'cuenta'}</b> ({duplicateAnalysis.matchAccount?.plataforma})</span>
-                          <span>
-                            {format(new Date(duplicateAnalysis.exactMatch.publicado_en || duplicateAnalysis.exactMatch.programado_para), 'dd/MM/yyyy HH:mm')}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {duplicateAnalysis.status === 'similar_found' && (
-                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-orange-950/40 to-amber-950/60 border border-amber-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
-                      <div className="flex items-center gap-2 text-amber-300 font-bold">
-                        <AlertTriangle size={16} className="text-amber-400 shrink-0" />
-                        <span>⚠️ Posible video duplicado ({duplicateAnalysis.topScore}% de similitud)</span>
-                      </div>
-                      <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                        Se encontraron publicaciones anteriores con títulos muy parecidos. Verifica si no se trata del mismo video:
-                      </p>
-                      <div className="space-y-1.5">
-                        {duplicateAnalysis.similarMatches.map(({ video, score, account }) => (
-                          <div key={video.id} className="p-2 rounded-xl bg-black/40 border border-amber-500/25 text-[10px] flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-white truncate">"{video.titulo}"</p>
-                              <p className="text-[9px] text-slate-400">
-                                @{account?.username} • {format(new Date(video.publicado_en || video.programado_para), 'dd/MM/yyyy')} • {video.estado}
-                              </p>
-                            </div>
-                            <span className="text-[9px] font-mono font-bold text-amber-400 shrink-0 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
-                              {score}% coincidencia
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {duplicateAnalysis.status === 'available' && (
-                    <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/25 text-xs flex items-center justify-between gap-2 text-emerald-300">
-                      <div className="flex items-center gap-2 text-[11px]">
-                        <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
-                        <span className="font-medium">
-                          <b>Verificador Anti-Duplicados:</b> Título único. No se encontraron publicaciones previas con este nombre.
-                        </span>
-                      </div>
-                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
-                        Único
-                      </span>
-                    </div>
-                  )}
                 </div>
               )}
 

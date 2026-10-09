@@ -52,7 +52,7 @@ const DEFAULT_CONFIG: AppConfig = {
   drive_auto_delete_after_verify: false,
   drive_retention_hours: 24,
   gemini_api_key: '',
-  gemini_model: 'gemini-2.0-flash-latest',
+  gemini_model: 'gemini-flash-lite-latest',
   gemini_system_prompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas y llamativas con hashtags de tendencia.',
   gemini_temperature: 0.7,
   alerta_tolerancia_minutos: 60,
@@ -102,19 +102,15 @@ export async function loadAppConfig(): Promise<AppConfig> {
       return DEFAULT_CONFIG;
     }
 
-    // Migrar modelos retirados al sucesor activo oficial
-    const rawModel = data.gemini_model ?? 'gemini-2.0-flash-latest';
+    // Migrar modelos retirados o alias al modelo activo
+    const rawModel = data.gemini_model ?? 'gemini-flash-lite-latest';
     const retiredModelMap: Record<string, string> = {
-      'gemini-2.0-flash':                    'gemini-2.0-flash-latest',
-      'gemini-2.0-flash-lite':               'gemini-2.0-flash-latest',
-      'gemini-2.5-flash':                    'gemini-2.0-flash-latest',
-      'gemini-2.5-flash-lite-preview-06-17': 'gemini-2.0-flash-latest',
-      'gemini-1.5-flash':                    'gemini-2.0-flash-latest',
-      'gemini-1.5-flash-latest':             'gemini-2.0-flash-latest',
-      'gemini-1.5-pro':                      'gemini-2.0-flash-latest',
-      'gemini-3.8-flash':                    'gemini-2.0-flash-latest',
-      'gemini-3.5-flash':                    'gemini-2.0-flash-latest',
-      'gemini-3.5-flash-lite':               'gemini-2.0-flash-latest',
+      'gemini-1.5-flash':                    'gemini-flash-lite-latest',
+      'gemini-1.5-flash-latest':             'gemini-flash-lite-latest',
+      'gemini-1.5-pro':                      'gemini-flash-lite-latest',
+      'gemini-3.8-flash':                    'gemini-flash-lite-latest',
+      'gemini-3.5-flash':                    'gemini-flash-lite-latest',
+      'gemini-3.5-flash-lite':               'gemini-flash-lite-latest',
     };
     const activeModel = retiredModelMap[rawModel] ?? rawModel;
 
