@@ -52,6 +52,12 @@ const RETIRED_MODEL_MAP: Record<string, string> = {
   'gemini-1.5-flash':                    'gemini-flash-lite-latest',
   'gemini-1.5-flash-latest':             'gemini-flash-lite-latest',
   'gemini-1.5-pro':                      'gemini-flash-lite-latest',
+  'gemini-1.5-pro-latest':               'gemini-flash-lite-latest',
+  'gemini-pro':                          'gemini-flash-lite-latest',
+  'gemini-2.0-flash':                    'gemini-flash-lite-latest',
+  'gemini-2.0-flash-lite':               'gemini-flash-lite-latest',
+  'gemini-2.0-flash-latest':             'gemini-flash-lite-latest',
+  'gemini-2.0-flash-lite-preview-02-05': 'gemini-flash-lite-latest',
   'gemini-3.8-flash':                    'gemini-flash-lite-latest',
   'gemini-3.5-flash':                    'gemini-flash-lite-latest',
   'gemini-3.5-flash-lite':               'gemini-flash-lite-latest',
@@ -117,15 +123,13 @@ async function callGoogleGeminiDirect(
   const resolvedModel = RETIRED_MODEL_MAP[rawModel] ?? rawModel;
 
   const KNOWN_MODELS = [
-    resolvedModel,
     'gemini-flash-lite-latest',
-    'gemini-2.0-flash-lite',
-    'gemini-2.0-flash-lite-preview-02-05',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-latest',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro-latest',
+    'gemini-flash-latest',
+    resolvedModel,
+    'gemini-3.1-flash-lite',
+    'gemini-3.6-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash',
   ];
 
   const modelsToTry: string[] = [];
@@ -133,7 +137,7 @@ async function callGoogleGeminiDirect(
     if (m && !modelsToTry.includes(m)) modelsToTry.push(m);
   }
 
-  const apiVersions = ['v1beta', 'v1'];
+  const apiVersions = ['v1beta'];
   let lastErrorMessage = '';
   let allModelsNotFound = true;
 
@@ -357,6 +361,24 @@ NO pongas comillas al inicio o al final.`.trim();
       console.warn(`[Gemini Audio] Intento ${attempt} falló (${result.error}). Reintentando automáticamente en ${(attempt * 1.5).toFixed(1)}s...`);
       await new Promise((r) => setTimeout(r, 1500 * attempt));
     }
+  }
+
+  // Si falló con el audio (por formato o timeout), intentar generación directa de texto con las reglas de campaña
+  if (!result.success) {
+    console.warn('[Gemini Audio] Análisis de audio falló, generando copy directamente con título y reglas de campaña...');
+    const fallbackTextBody: any = {
+      contents: [{
+        role: 'user',
+        parts: [{
+          text: `Escribe una descripción optimizada para publicar en ${platform.toUpperCase()} sobre el video titulado "${videoTitle}".\n\nREGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}\n\nHashtags obligatorios: ${hashtags}\n\nDevuelve ÚNICAMENTE el texto final listo para publicar con emojis y los hashtags al final.`
+        }]
+      }],
+      generationConfig: { temperature, maxOutputTokens: 500 },
+    };
+    if (systemInstruction) {
+      fallbackTextBody.systemInstruction = { parts: [{ text: systemInstruction }] };
+    }
+    return callGoogleGeminiDirect(apiKey, targetModel, fallbackTextBody);
   }
 
   return result;

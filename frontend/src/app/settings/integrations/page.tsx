@@ -1120,9 +1120,11 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
               className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-purple-500/50 outline-none bg-transparent"
             >
               <option value="gemini-flash-lite-latest" className="bg-[#12121e]">⭐ gemini-flash-lite-latest — Flash Lite activo (Recomendado)</option>
-              <option value="gemini-2.0-flash-lite" className="bg-[#12121e]">gemini-2.0-flash-lite — Flash Lite 2.0</option>
-              <option value="gemini-2.0-flash-latest" className="bg-[#12121e]">gemini-2.0-flash-latest — Flash 2.0 estándar</option>
-              <option value="gemini-2.0-flash-exp" className="bg-[#12121e]">gemini-2.0-flash-exp — Flash experimental</option>
+              <option value="gemini-flash-latest" className="bg-[#12121e]">gemini-flash-latest — Flash más reciente</option>
+              <option value="gemini-3.1-flash-lite" className="bg-[#12121e]">gemini-3.1-flash-lite — Flash Lite 3.1</option>
+              <option value="gemini-3.6-flash" className="bg-[#12121e]">gemini-3.6-flash — Flash 3.6</option>
+              <option value="gemini-2.5-flash" className="bg-[#12121e]">gemini-2.5-flash — Flash 2.5</option>
+              <option value="gemini-2.5-flash-lite" className="bg-[#12121e]">gemini-2.5-flash-lite — Flash Lite 2.5</option>
             </select>
           </div>
         </div>

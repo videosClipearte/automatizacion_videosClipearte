@@ -435,30 +435,34 @@ export function ScheduleModal() {
     const cfg = await loadAppConfig();
 
     const apiKey = cfg.gemini_api_key;
-    const model = cfg.gemini_model && !['gemini-3.8-flash', 'gemini-2.0-flash-latest'].includes(cfg.gemini_model)
+    const model = (cfg.gemini_model && !cfg.gemini_model.includes('1.5') && !cfg.gemini_model.includes('2.0') && !cfg.gemini_model.includes('3.8'))
       ? cfg.gemini_model
       : 'gemini-flash-lite-latest';
 
     const systemPrompt = [
-      cfg.gemini_system_prompt || 'Actúa como un experto en copywriting para redes sociales.',
-      `Red Social Objetivo: ${platform.toUpperCase()}.`,
-      `Directrices de la plataforma: ${targetRule}`,
-      `REGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}`,
-      `HASHTAGS OBLIGATORIOS: ${hashtags}`,
-    ].join('\n');
-    const userPrompt = [
-      `Escribe la descripción para publicar en ${platform.toUpperCase()} sobre el video titulado "${effectiveTitle}".`,
+      `Eres un redactor experto en copywriting para redes sociales.`,
+      `Tu objetivo MÁS IMPORTANTE es cumplir de forma estricta e innegociable con las REGLAS DE CAMPAÑA establecidas por el usuario.`,
+      `Red Social: ${platform.toUpperCase()}.`,
+      `Directrices de plataforma: ${targetRule}`,
       ``,
-      `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPAÑA:`,
+      `🚨 REGLAS OBLIGATORIAS DE LA CAMPAÑA:`,
       campaignRules,
       ``,
-      `HASHTAGS QUE DEBES INCLUIR SIN EXCEPCIÓN: ${hashtags}`,
+      `HASHTAGS OBLIGATORIOS AL FINAL: ${hashtags}`,
+    ].join('\n');
+
+    const userPrompt = [
+      `Crea la descripción para publicar en ${platform.toUpperCase()} del video: "${effectiveTitle}".`,
       ``,
-      `INSTRUCCIONES DE FORMATO:`,
-      `- Devuelve ÚNICAMENTE el texto final listo para publicar`,
-      `- Usa emojis apropiados para ${platform.toUpperCase()}`,
-      `- Incluye los hashtags al final`,
-      `- NO incluyas encabezados, comillas ni bloques de código`,
+      `🚨 OBLIGATORIO: Debes aplicar estrictamente cada una de estas reglas de campaña:`,
+      campaignRules,
+      ``,
+      `Hashtags requeridos al final: ${hashtags}`,
+      ``,
+      `FORMATO DE SALIDA:`,
+      `- Genera ÚNICAMENTE el texto final listo para copiar y publicar.`,
+      `- No agregues introducciones, comentarios, comillas ni encabezados como "Copy:".`,
+      `- Incluye emojis adecuados y los hashtags requeridos al final.`,
     ].join('\n');
 
     if (!apiKey) {
@@ -546,11 +550,11 @@ export function ScheduleModal() {
           setAiFeedback(`✨ Descripción generada con éxito usando ${usedName}.`);
         }
       } else {
-        setAiFeedback(`⚠️ ${res?.error || 'No se pudo generar con Gemini tras reintentos automáticos'}`);
+        setAiFeedback(`⚠️ ${res?.error || 'No se pudo generar con Gemini. Verifica tu API Key en Integraciones.'}`);
       }
-    } catch {
-      setValue('descripcion', `🎬 ${effectiveTitle} - ¡Nuevo video disponible! ${hashtags}`);
-      setAiFeedback('⚠️ Fallo de conexión con Gemini tras varios reintentos automáticos.');
+    } catch (err: any) {
+      console.error('[ScheduleModal] Error generando con IA:', err);
+      setAiFeedback(`⚠️ Error al conectar con Gemini: ${err?.message || 'Error de conexión'}.`);
     } finally {
       setGeneratingAI(false);
     }
