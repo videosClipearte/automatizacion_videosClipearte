@@ -568,38 +568,72 @@ export async function POST(req: NextRequest) {
 
     // ── Paso 5b: Subir miniatura personalizada a YouTube si está disponible ─
     let thumbnailUploaded = false;
-    if (thumbBuffer && thumbBuffer.length > 0) {
-      await writeLog(pid, 'INFO', 'THUMBNAIL', 'Subiendo miniatura personalizada a YouTube...');
-      try {
-        const thumbRes = await fetch(
-          `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${tokenData.token}`,
-              'Content-Type': thumbContentType.split(';')[0],
-              'Content-Length': String(thumbBuffer.length),
-            },
-            body: new Uint8Array(thumbBuffer),
-          }
-        );
+    let thumbnailErrorReason = '';
 
-        if (thumbRes.ok) {
-          thumbnailUploaded = true;
-          await writeLog(pid, 'SUCCESS', 'THUMBNAIL', '✅ Miniatura personalizada establecida exitosamente en YouTube.');
-        } else {
-          const errTxt = await thumbRes.text();
-          let hint = '';
-          if (thumbRes.status === 403) {
-            hint = 'Aviso: Para aplicar miniaturas personalizadas, el canal de YouTube debe estar verificado con número de teléfono en YouTube Studio (Configuración → Canal → Elegibilidad de funciones). El video fue publicado exitosamente con la miniatura automática de YouTube.';
+    if (thumbBuffer && thumbBuffer.length > 0) {
+      await writeLog(pid, 'INFO', 'THUMBNAIL', 'Preparando subida de miniatura personalizada a YouTube...');
+      // Esperar 3 segundos para que YouTube termine de registrar el video recién subido
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      let attempts = 0;
+      const maxAttempts = 2;
+
+      while (attempts < maxAttempts && !thumbnailUploaded) {
+        attempts++;
+        try {
+          const thumbRes = await fetch(
+            `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${tokenData.token}`,
+                'Content-Type': thumbContentType.split(';')[0],
+                'Content-Length': String(thumbBuffer.length),
+              },
+              body: new Uint8Array(thumbBuffer),
+            }
+          );
+
+          if (thumbRes.ok) {
+            thumbnailUploaded = true;
+            await writeLog(pid, 'SUCCESS', 'THUMBNAIL', '✅ Miniatura personalizada enviada exitosamente a YouTube.');
+            break;
+          } else {
+            const errTxt = await thumbRes.text();
+            let hint = '';
+            let parsedReason = '';
+            try {
+              const errJson = JSON.parse(errTxt);
+              parsedReason = errJson?.error?.message || errJson?.error?.errors?.[0]?.reason || '';
+            } catch {
+              parsedReason = errTxt.slice(0, 200);
+            }
+
+            if (thumbRes.status === 403) {
+              hint = 'Para miniaturas personalizadas, el canal debe tener "Funciones intermedias" verificadas por teléfono en YouTube Studio (Configuración → Canal → Elegibilidad de funciones). Además, en el feed vertical de Shorts, YouTube prioriza fotogramas del propio video.';
+              thumbnailErrorReason = `Permiso denegado por YouTube (403): ${parsedReason || 'Verificación requerida o restricción de Shorts'}`;
+            } else if (thumbRes.status === 400 || thumbRes.status === 404) {
+              if (attempts < maxAttempts) {
+                await writeLog(pid, 'INFO', 'THUMBNAIL', `Video aún en procesamiento por YouTube (HTTP ${thumbRes.status}). Reintentando miniatura en 3s...`);
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+                continue;
+              }
+              thumbnailErrorReason = `YouTube rechazó la miniatura (HTTP ${thumbRes.status}): ${parsedReason}. Los Shorts suelen restringir miniaturas estáticas.`;
+            } else {
+              thumbnailErrorReason = `Error HTTP ${thumbRes.status}: ${parsedReason}`;
+            }
+
+            await writeLog(pid, 'WARN', 'THUMBNAIL',
+              `No se pudo aplicar la miniatura personalizada (HTTP ${thumbRes.status}).`,
+              `${hint ? `${hint}\n` : ''}${thumbnailErrorReason}`);
           }
-          await writeLog(pid, 'WARN', 'THUMBNAIL',
-            `No se pudo aplicar la miniatura personalizada (HTTP ${thumbRes.status}).`,
-            `${hint} ${errTxt.slice(0, 300)}`);
+        } catch (thumbErr: any) {
+          thumbnailErrorReason = thumbErr.message;
+          await writeLog(pid, 'WARN', 'THUMBNAIL', 'Error al subir miniatura a YouTube.', thumbErr.message);
         }
-      } catch (thumbErr: any) {
-        await writeLog(pid, 'WARN', 'THUMBNAIL', 'Error al subir miniatura a YouTube.', thumbErr.message);
       }
+    } else {
+      await writeLog(pid, 'INFO', 'THUMBNAIL', 'No se proporcionó miniatura personalizada; YouTube seleccionó automáticamente un fotograma del video.');
     }
 
     // ── Paso 6: Actualizar estado en Supabase ────────────────────────────
@@ -659,6 +693,7 @@ export async function POST(req: NextRequest) {
       canal_id,
       titulo: shortTitle,
       thumbnail_uploaded: thumbnailUploaded,
+      thumbnail_error: thumbnailErrorReason || undefined,
       drive_deleted: driveDeleted,
       message: `"${shortTitle}" publicado exitosamente como Short en @${canal_id}`,
     });
