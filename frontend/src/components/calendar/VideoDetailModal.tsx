@@ -50,7 +50,8 @@ export function VideoDetailModal() {
     accounts,
     campaigns,
     deleteVideo,
-    updateVideo
+    updateVideo,
+    driveUploads,
   } = useAppStore();
 
   const [sendingTelegram, setSendingTelegram] = useState(false);
@@ -866,13 +867,37 @@ export function VideoDetailModal() {
                     )}
                   </div>
 
-                  {/* Google Drive Link (si existe) */}
+                  {/* Google Drive Link (o progreso de subida en segundo plano) */}
                   <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-white">
-                      <HardDrive size={13} className="text-cyan-400" />
-                      <span>Google Drive</span>
+                    <div className="flex items-center justify-between text-xs font-semibold text-white">
+                      <div className="flex items-center gap-2">
+                        <HardDrive size={13} className="text-cyan-400" />
+                        <span>Google Drive</span>
+                      </div>
+                      {driveUploads?.[video.id]?.status === 'uploading' && (
+                        <span className="text-[11px] font-mono text-cyan-300 font-bold">
+                          {driveUploads[video.id].progress}%
+                        </span>
+                      )}
                     </div>
-                    {video.drive_file_url && video.drive_file_url !== '#' ? (
+
+                    {driveUploads?.[video.id]?.status === 'uploading' ? (
+                      <div className="space-y-1.5 py-1">
+                        <div className="flex items-center gap-1.5 text-xs text-cyan-300 font-medium">
+                          <Loader2 size={12} className="animate-spin text-cyan-400" />
+                          <span>Subiendo archivo a Google Drive en segundo plano...</span>
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300 rounded-full"
+                            style={{ width: `${driveUploads[video.id].progress}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-[var(--text-muted)]">
+                          Puedes continuar usando la app con normalidad, la subida continuará automáticamente.
+                        </p>
+                      </div>
+                    ) : video.drive_file_url && video.drive_file_url !== '#' ? (
                       <a
                         href={video.drive_file_url}
                         target="_blank"

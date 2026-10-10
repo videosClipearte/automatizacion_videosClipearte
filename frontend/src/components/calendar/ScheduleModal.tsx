@@ -31,7 +31,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { useAppStore } from '@/store/useAppStore';
+import { useAppStore, type Video } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -108,6 +108,10 @@ export function ScheduleModal() {
     campaigns,
     videos,
     addVideo,
+    updateVideo,
+    setDriveUploadProgress,
+    setDriveUploadComplete,
+    setDriveUploadError,
   } = useAppStore();
 
   const [videoFile, setVideoFile] = useState<File | null>(scheduleModalFile);
@@ -576,21 +580,28 @@ export function ScheduleModal() {
       cleanTitle = cleanTitle.slice(0, 92).trim() + ' #Shorts';
     }
 
-    let driveFileUrl = manualDriveUrl.trim() || '#';
-    let finalThumbnailUrl = thumbnailBase64 || undefined;
+    const newVideoId = `v-${Date.now()}`;
+    const initialDriveUrl = manualDriveUrl.trim() || '#';
+    const capturedThumbnailBase64 = thumbnailBase64 || undefined;
 
-    // Subir video a Google Drive si hay archivo y no se proveyó enlace manual
-    if (videoFile && !manualDriveUrl.trim()) {
+    // Guardar referencias de los archivos para la subida en segundo plano
+    const fileToUpload = videoFile;
+    const thumbToUpload = thumbnailFile;
+    const needsDriveUpload = !!(fileToUpload && !manualDriveUrl.trim());
+
+    let token = driveToken || getGoogleDriveToken();
+    let folderId = '';
+
+    if (needsDriveUpload) {
       let cfg = getCachedConfig();
       if (!cfg.drive_folder_id && !cfg.drive_client_id) {
         cfg = await loadAppConfig();
       }
 
-      const folderId = cfg.drive_folder_id;
-      const clientId = cfg.drive_client_id;
-      let token = driveToken || getGoogleDriveToken();
+      folderId = cfg.drive_folder_id || '';
+      const clientId = cfg.drive_client_id || '';
 
-      // Si no hay token pero hay clientId, solicitar autorización
+      // Si no hay token pero hay clientId, solicitar autorización con el gesto de clic del usuario
       if (!token && clientId) {
         setConnectingDrive(true);
         const authRes = await requestGoogleDriveOAuthToken(clientId);
@@ -598,90 +609,126 @@ export function ScheduleModal() {
         if (authRes.success && authRes.token) {
           token = authRes.token;
           setDriveToken(token);
-        }
-      }
-
-      if (token && folderId) {
-        setUploadingDrive(true);
-        setUploadProgress(0);
-        setDriveError(null);
-
-        const uploadRes = await uploadVideoToGoogleDrive(
-          videoFile,
-          folderId,
-          token,
-          (pct) => setUploadProgress(pct)
-        );
-
-        // Si se subió una miniatura personalizada, subirla también a Drive
-        if (thumbnailFile) {
-          try {
-            const thumbUploadRes = await uploadVideoToGoogleDrive(
-              thumbnailFile,
-              folderId,
-              token
-            );
-            if (thumbUploadRes.success && thumbUploadRes.fileUrl) {
-              finalThumbnailUrl = thumbUploadRes.fileUrl;
-            }
-          } catch (tUpErr) {
-            console.warn('[ScheduleModal] No se pudo subir miniatura a Drive, usando base64:', tUpErr);
-          }
-        }
-
-        setUploadingDrive(false);
-
-        if (uploadRes.success && uploadRes.fileUrl) {
-          driveFileUrl = uploadRes.fileUrl;
-          setDriveSuccessUrl(driveFileUrl);
         } else {
-          setUploadingDrive(false);
-          setDriveError(
-            `❌ Error al subir a Google Drive: ${uploadRes.error || 'Fallo desconocido'}. El video NO fue subido a tu carpeta de Drive.`
-          );
-          createNotification({
-            tipo: 'error',
-            titulo: 'Fallo al subir video a Google Drive',
-            mensaje: `El video "${cleanTitle}" no se pudo subir a Drive: ${uploadRes.error || 'Error desconocido'}.`,
-            cuenta_id: data.cuenta_id,
-            origen: 'drive',
-          });
-          // DETENER: No cerrar el modal ni engañar diciendo que se subió
+          setDriveError(authRes.error || 'Error al conectar con Google Drive');
           return;
         }
       }
     }
 
-    addVideo({
-      id: `v-${Date.now()}`,
+    // ── 1. Crear el video y añadirlo INMEDIATAMENTE al calendario ──
+    const newVideo: Video = {
+      id: newVideoId,
       cuenta_id: data.cuenta_id,
       campana_id: data.campana_id,
       titulo: cleanTitle,
       descripcion_aprobada_ia: data.descripcion,
       thumbnail_color: isYouTube ? '#ef4444' : '#10b981',
-      thumbnail_url: finalThumbnailUrl,
-      drive_file_url: driveFileUrl,
+      thumbnail_url: capturedThumbnailBase64,
+      drive_file_url: initialDriveUrl,
       programado_para: programadoPara,
       estado: 'PROGRAMADO',
       vistas_obtenidas: 0,
       ganancias_estimadas: 0,
       auto_reprogramacion: data.auto_reprogramacion,
       reintentos_alerta: 0,
-    });
+    };
 
+    await addVideo(newVideo);
+
+    // ── 2. Si requiere subida a Drive, registrar estado inicial 0% ──
+    if (needsDriveUpload) {
+      setDriveUploadProgress(newVideoId, 0);
+    }
+
+    // ── 3. Notificación visible para el usuario ──
     createNotification({
-      tipo: driveFileUrl && driveFileUrl !== '#' ? 'success' : 'info',
+      tipo: 'info',
       titulo: isYouTube ? 'Nuevo YouTube Short programado' : 'Nuevo video programado',
-      mensaje: `"${cleanTitle}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
+      mensaje: needsDriveUpload
+        ? `"${cleanTitle}" programado. Subiendo a Google Drive en segundo plano...`
+        : `"${cleanTitle}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
       cuenta_id: data.cuenta_id,
       origen: isYouTube ? 'youtube' : 'sistema',
     });
 
+    // ── 4. CERRAR INMEDIATAMENTE EL MODAL para permitir programar el siguiente video rápido ──
     closeScheduleModal();
     setVideoFile(null);
     setThumbnailFile(null);
     setThumbnailPreview(null);
     setThumbnailBase64(null);
+    setVideoTitle('');
+    setShortTitle('');
+    setManualDriveUrl('');
+    setDriveSuccessUrl(null);
+    setDriveError(null);
+
+    // ── 5. Si requiere subida a Drive, ejecutar en segundo plano ──
+    if (needsDriveUpload && token && folderId) {
+      (async () => {
+        try {
+          const uploadRes = await uploadVideoToGoogleDrive(
+            fileToUpload,
+            folderId,
+            token,
+            (pct) => setDriveUploadProgress(newVideoId, pct)
+          );
+
+          let finalThumbnailUrl = capturedThumbnailBase64;
+          if (thumbToUpload) {
+            try {
+              const thumbUploadRes = await uploadVideoToGoogleDrive(
+                thumbToUpload,
+                folderId,
+                token
+              );
+              if (thumbUploadRes.success && thumbUploadRes.fileUrl) {
+                finalThumbnailUrl = thumbUploadRes.fileUrl;
+              }
+            } catch (tUpErr) {
+              console.warn('[ScheduleModal] No se pudo subir miniatura a Drive, usando base64:', tUpErr);
+            }
+          }
+
+          if (uploadRes.success && uploadRes.fileUrl) {
+            await updateVideo(newVideoId, {
+              drive_file_url: uploadRes.fileUrl,
+              thumbnail_url: finalThumbnailUrl,
+            });
+            setDriveUploadComplete(newVideoId);
+            createNotification({
+              tipo: 'success',
+              titulo: 'Video subido a Google Drive',
+              mensaje: `"${cleanTitle}" se subió a Google Drive exitosamente.`,
+              cuenta_id: data.cuenta_id,
+              origen: 'drive',
+            });
+          } else {
+            setDriveUploadError(newVideoId, uploadRes.error || 'Error desconocido al subir a Drive');
+            createNotification({
+              tipo: 'error',
+              titulo: 'Fallo al subir video a Google Drive',
+              mensaje: `El video "${cleanTitle}" no se pudo subir a Drive: ${uploadRes.error || 'Error desconocido'}.`,
+              cuenta_id: data.cuenta_id,
+              origen: 'drive',
+            });
+          }
+        } catch (bgErr: any) {
+          console.error('[ScheduleModal] Error en subida en segundo plano:', bgErr);
+          setDriveUploadError(newVideoId, bgErr?.message || 'Error de red al subir a Drive');
+          createNotification({
+            tipo: 'error',
+            titulo: 'Error subiendo a Google Drive',
+            mensaje: `Error al subir "${cleanTitle}" a Drive: ${bgErr?.message || 'Fallo inesperado'}`,
+            cuenta_id: data.cuenta_id,
+            origen: 'drive',
+          });
+        }
+      })();
+    } else if (needsDriveUpload && (!token || !folderId)) {
+      setDriveUploadError(newVideoId, 'Google Drive no configurado o falta autorización.');
+    }
   };
 
   const currentFecha = watch('fecha');

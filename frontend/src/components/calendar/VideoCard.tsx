@@ -1,7 +1,7 @@
 'use client';
 // src/components/calendar/VideoCard.tsx
 import { cn, getPlatformColor } from '@/lib/utils';
-import type { Video, Account } from '@/store/useAppStore';
+import { useAppStore, type Video, type Account } from '@/store/useAppStore';
 
 interface VideoCardProps {
   video: Video;
@@ -14,7 +14,11 @@ const isDone = (status: string) =>
   status === 'PUBLICADO' || status === 'ENVIADO' || status === 'CANCELADO';
 
 export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps) {
-  const done = isDone(video.estado);
+  const { driveUploads } = useAppStore();
+  const uploadInfo = driveUploads?.[video.id];
+  const isDriveUploading = uploadInfo?.status === 'uploading';
+
+  const done = isDone(video.estado) && !isDriveUploading;
   const platformColor = account ? getPlatformColor(account.plataforma) : '#10b981';
 
   return (
@@ -28,11 +32,15 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
         className={cn(
           'w-9 h-9 rounded-full border-2 flex items-center justify-center overflow-hidden transition-all duration-300',
           'hover:scale-110 hover:z-10 relative',
-          done ? 'grayscale brightness-50' : 'hover:ring-2 hover:ring-offset-1 hover:ring-offset-transparent'
+          isDriveUploading
+            ? 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-transparent animate-pulse'
+            : done
+            ? 'grayscale brightness-50'
+            : 'hover:ring-2 hover:ring-offset-1 hover:ring-offset-transparent'
         )}
         style={{
           backgroundColor: `${video.thumbnail_color}33`,
-          borderColor: done ? '#374151' : platformColor,
+          borderColor: isDriveUploading ? '#06b6d4' : done ? '#374151' : platformColor,
           boxShadow: done ? 'none' : `0 0 8px ${video.thumbnail_color}44`,
         }}
       >
@@ -61,11 +69,13 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
       <span
         className={cn(
           "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-[var(--bg-base)]",
-          video.estado === 'ENVIADO' && account?.plataforma === 'youtube' && "animate-pulse ring-2 ring-red-400/50"
+          (isDriveUploading || (video.estado === 'ENVIADO' && account?.plataforma === 'youtube')) &&
+            "animate-pulse ring-2 ring-cyan-400/50"
         )}
         style={{
           backgroundColor:
-            video.estado === 'PUBLICADO' ? '#10b981'
+            isDriveUploading ? '#06b6d4'
+            : video.estado === 'PUBLICADO' ? '#10b981'
             : video.estado === 'ENVIADO' && account?.plataforma === 'youtube' ? '#ef4444'
             : video.estado === 'ENVIADO' ? '#60a5fa'
             : video.estado === 'PROGRAMADO' ? '#a78bfa'
@@ -73,7 +83,9 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
             : '#fbbf24',
         }}
         title={
-          video.estado === 'ENVIADO' && account?.plataforma === 'youtube'
+          isDriveUploading
+            ? `Subiendo a Google Drive (${uploadInfo.progress}%)...`
+            : video.estado === 'ENVIADO' && account?.plataforma === 'youtube'
             ? 'Subiendo a YouTube...'
             : video.estado
         }

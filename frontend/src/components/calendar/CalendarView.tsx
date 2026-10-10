@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Plus, Grid3x3, CalendarDays, Clock,
   Eye, Send, Play, Globe,
-  Upload, Filter
+  Upload, Filter, Loader2, HardDrive
 } from 'lucide-react';
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -52,7 +52,8 @@ export function CalendarView() {
   const {
     videos, accounts, openScheduleModal,
     setSelectedVideoId, calendarView, setCalendarView,
-    selectedAccountId, setSelectedAccountId, statusFilter, setStatusFilter
+    selectedAccountId, setSelectedAccountId, statusFilter, setStatusFilter,
+    driveUploads
   } = useAppStore();
 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -515,42 +516,73 @@ export function CalendarView() {
                         {dayVideos.slice(0, 2).map(video => {
                           const acct = accounts.find(a => a.id === video.cuenta_id);
                           const isYtUploading = acct?.plataforma === 'youtube' && video.estado === 'ENVIADO';
+                          const uploadInfo = driveUploads[video.id];
+                          const isDriveUploading = uploadInfo?.status === 'uploading';
+                          const isDriveError = uploadInfo?.status === 'error';
+
                           return (
                             <button
                               key={video.id}
                               onClick={(e) => { e.stopPropagation(); setSelectedVideoId(video.id); }}
                               className={cn(
-                                "px-1 py-0.5 rounded text-left transition-all flex items-center gap-1 border shrink-0 group/chip",
-                                isYtUploading
+                                "relative px-1 py-0.5 rounded text-left transition-all flex items-center gap-1 border shrink-0 group/chip overflow-hidden",
+                                isDriveUploading
+                                  ? "bg-cyan-950/40 border-cyan-500/50 text-cyan-200 shadow-sm shadow-cyan-500/20"
+                                  : isDriveError
+                                  ? "bg-red-950/30 border-red-500/40 text-red-200"
+                                  : isYtUploading
                                   ? "bg-red-500/10 border-red-500/40 text-red-200"
                                   : "bg-white/[0.04] hover:bg-white/[0.08] border-[var(--border)] hover:border-emerald-500/40 text-white"
                               )}
-                              title={`${video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${isYtUploading ? 'Subiendo a YouTube' : video.estado}`}
+                              title={`${video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${
+                                isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado
+                              }`}
                             >
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full shrink-0",
-                                isYtUploading && "animate-pulse"
+                                (isYtUploading || isDriveUploading) && "animate-pulse"
                               )}
                                 style={{ backgroundColor:
+                                  isDriveUploading ? '#06b6d4' :
                                   video.estado === 'PUBLICADO' ? '#10b981' :
                                   isYtUploading ? '#ef4444' :
                                   video.estado === 'ENVIADO'   ? '#60a5fa' :
-                                  video.estado === 'ERROR_DE_RED' ? '#f87171' : '#a78bfa' }}
+                                  video.estado === 'ERROR_DE_RED' || isDriveError ? '#f87171' : '#a78bfa' }}
                               />
                               <span className="shrink-0">{getPlatformIcon(acct?.plataforma)}</span>
                               <span className={cn(
                                 "text-[9px] font-mono font-semibold shrink-0",
-                                isYtUploading ? "text-red-400" : "text-cyan-400"
+                                isDriveUploading ? "text-cyan-300" : isYtUploading ? "text-red-400" : "text-cyan-400"
                               )}>
                                 {format(new Date(video.programado_para), 'HH:mm')}
                               </span>
                               <span className="text-[9px] font-medium truncate flex-1 group-hover/chip:text-emerald-300">
                                 {video.titulo}
                               </span>
-                              {isYtUploading && (
+                              {isDriveUploading && (
+                                <span className="text-[8px] px-1 py-0 rounded bg-cyan-500/25 text-cyan-200 border border-cyan-400/40 font-bold shrink-0 flex items-center gap-0.5">
+                                  <Loader2 size={8} className="animate-spin text-cyan-300" />
+                                  {uploadInfo.progress}%
+                                </span>
+                              )}
+                              {isDriveError && (
+                                <span className="text-[8px] px-1 py-0 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-bold shrink-0">
+                                  Drive Err
+                                </span>
+                              )}
+                              {isYtUploading && !isDriveUploading && (
                                 <span className="text-[8px] px-1 py-0 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-bold shrink-0">
                                   Subiendo
                                 </span>
+                              )}
+                              {/* Mini barra de progreso en el borde inferior del chip */}
+                              {isDriveUploading && (
+                                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-cyan-950/80">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300"
+                                    style={{ width: `${uploadInfo.progress}%` }}
+                                  />
+                                </div>
                               )}
                             </button>
                           );
@@ -657,10 +689,20 @@ export function CalendarView() {
                       ) : (
                         dayVideos.map(video => {
                           const acct = accounts.find(a => a.id === video.cuenta_id);
+                          const isYtUploading = acct?.plataforma === 'youtube' && video.estado === 'ENVIADO';
+                          const uploadInfo = driveUploads[video.id];
+                          const isDriveUploading = uploadInfo?.status === 'uploading';
+                          const isDriveError = uploadInfo?.status === 'error';
+
                           return (
                             <div key={video.id}
                               onClick={(e) => { e.stopPropagation(); setSelectedVideoId(video.id); }}
-                              className="p-2.5 rounded-xl glass border border-[var(--border)] hover:border-emerald-500/40 hover:bg-white/[0.04] transition-all cursor-pointer group"
+                              className={cn(
+                                "p-2.5 rounded-xl border transition-all cursor-pointer group",
+                                isDriveUploading
+                                  ? "bg-cyan-950/30 border-cyan-500/40 hover:border-cyan-400"
+                                  : "glass border-[var(--border)] hover:border-emerald-500/40 hover:bg-white/[0.04]"
+                              )}
                             >
                               <div className="flex items-center justify-between gap-1 mb-1.5">
                                 <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
@@ -676,8 +718,39 @@ export function CalendarView() {
                               <p className="text-xs font-semibold text-white truncate group-hover:text-emerald-300 mb-1.5">
                                 {video.titulo}
                               </p>
+
+                              {/* Si está subiendo a Google Drive: barra y porcentaje */}
+                              {isDriveUploading && (
+                                <div className="mb-2 p-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-cyan-300 font-semibold flex items-center gap-1">
+                                      <Loader2 size={10} className="animate-spin text-cyan-400" />
+                                      Subiendo a Drive
+                                    </span>
+                                    <span className="text-cyan-200 font-mono font-bold">{uploadInfo.progress}%</span>
+                                  </div>
+                                  <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300 rounded-full"
+                                      style={{ width: `${uploadInfo.progress}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {isDriveError && (
+                                <div className="mb-2 p-1 rounded-lg bg-red-950/40 border border-red-500/30 text-[10px] text-red-300 flex items-center gap-1">
+                                  <span>⚠️ Error al subir a Drive</span>
+                                </div>
+                              )}
+
                               <div className="flex items-center justify-between">
-                                {acct?.plataforma === 'youtube' && video.estado === 'ENVIADO' ? (
+                                {isDriveUploading ? (
+                                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                    Drive {uploadInfo.progress}%
+                                  </span>
+                                ) : isYtUploading ? (
                                   <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-red-500/15 border border-red-500/30 text-red-300 flex items-center gap-1 animate-pulse">
                                     <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                                     Subiendo a YouTube...
@@ -787,25 +860,38 @@ export function CalendarView() {
                         <div className="space-y-2 py-1">
                           {hourVideos.map(video => {
                             const acct = accounts.find(a => a.id === video.cuenta_id);
+                            const isYtUploading = acct?.plataforma === 'youtube' && video.estado === 'ENVIADO';
+                            const uploadInfo = driveUploads[video.id];
+                            const isDriveUploading = uploadInfo?.status === 'uploading';
+                            const isDriveError = uploadInfo?.status === 'error';
+
                             return (
                               <motion.div key={video.id}
                                 initial={{ opacity: 0, x: -5 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 onClick={() => setSelectedVideoId(video.id)}
-                                className="p-3 rounded-xl glass-strong border border-[var(--border)] hover:border-emerald-500/40 transition-all cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                                className={cn(
+                                  "p-3 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3",
+                                  isDriveUploading
+                                    ? "bg-cyan-950/25 border-cyan-500/40 hover:border-cyan-400"
+                                    : "glass-strong border-[var(--border)] hover:border-emerald-500/40"
+                                )}
                               >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0"
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 relative"
                                     style={{ backgroundColor: `${video.thumbnail_color}33`, border: `1px solid ${video.thumbnail_color}66` }}
                                   >
                                     {getPlatformIcon(acct?.plataforma)}
+                                    {isDriveUploading && (
+                                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyan-400 rounded-full animate-ping" />
+                                    )}
                                   </div>
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-0.5">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                                       <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
                                         {format(new Date(video.programado_para), 'HH:mm')}
                                       </span>
-                                      <span className="text-xs font-bold text-white">{video.titulo}</span>
+                                      <span className="text-xs font-bold text-white truncate">{video.titulo}</span>
                                       <span className="text-[10px] text-[var(--text-muted)]">@{acct?.username}</span>
                                     </div>
                                     <p className="text-[11px] text-[var(--text-secondary)] line-clamp-1 max-w-lg">
@@ -813,8 +899,25 @@ export function CalendarView() {
                                     </p>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-3 shrink-0">
-                                  {acct?.plataforma === 'youtube' && video.estado === 'ENVIADO' ? (
+                                <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+                                  {isDriveUploading ? (
+                                    <div className="flex flex-col items-end gap-1 min-w-[140px]">
+                                      <span className="text-xs px-2.5 py-0.5 rounded-lg font-bold bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5">
+                                        <Loader2 size={11} className="animate-spin text-cyan-400" />
+                                        Drive: {uploadInfo.progress}%
+                                      </span>
+                                      <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                        <div
+                                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300 rounded-full"
+                                          style={{ width: `${uploadInfo.progress}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : isDriveError ? (
+                                    <span className="text-xs px-2.5 py-1 rounded-lg font-semibold bg-red-500/15 border border-red-500/30 text-red-300 flex items-center gap-1">
+                                      ⚠️ Error en Drive
+                                    </span>
+                                  ) : isYtUploading ? (
                                     <span className="text-xs px-3 py-1 rounded-lg font-bold bg-red-500/15 border border-red-500/30 text-red-300 flex items-center gap-1.5 animate-pulse">
                                       <span className="w-2 h-2 rounded-full bg-red-400" />
                                       Subiendo a YouTube...

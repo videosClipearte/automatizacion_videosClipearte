@@ -55,6 +55,12 @@ export interface Video {
   post_url_publica?: string;
 }
 
+export interface DriveUploadState {
+  progress: number;
+  status: 'uploading' | 'completed' | 'error';
+  error?: string;
+}
+
 export interface GlobalMetrics {
   total_programados: number;
   total_enviados: number;
@@ -181,6 +187,12 @@ interface AppState {
   addCampaign: (campaign: Campaign) => Promise<void>;
   updateCampaign: (id: string, updates: Partial<Campaign>) => Promise<void>;
   deleteCampaign: (id: string) => Promise<void>;
+
+  // Background Drive uploads tracking
+  driveUploads: Record<string, DriveUploadState>;
+  setDriveUploadProgress: (videoId: string, progress: number) => void;
+  setDriveUploadComplete: (videoId: string) => void;
+  setDriveUploadError: (videoId: string, error: string) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -200,6 +212,39 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedVideoId: null,
   isSidebarCollapsed: false,
   isMobileSidebarOpen: false,
+
+  driveUploads: {},
+  setDriveUploadProgress: (videoId, progress) => {
+    set((s) => ({
+      driveUploads: {
+        ...s.driveUploads,
+        [videoId]: { progress, status: 'uploading' },
+      },
+    }));
+  },
+  setDriveUploadComplete: (videoId) => {
+    set((s) => ({
+      driveUploads: {
+        ...s.driveUploads,
+        [videoId]: { progress: 100, status: 'completed' },
+      },
+    }));
+    setTimeout(() => {
+      set((s) => {
+        const copy = { ...s.driveUploads };
+        delete copy[videoId];
+        return { driveUploads: copy };
+      });
+    }, 3000);
+  },
+  setDriveUploadError: (videoId, error) => {
+    set((s) => ({
+      driveUploads: {
+        ...s.driveUploads,
+        [videoId]: { progress: 0, status: 'error', error },
+      },
+    }));
+  },
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   initializeStore: async () => {
