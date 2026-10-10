@@ -97,6 +97,38 @@ export async function POST(req: NextRequest) {
 
     const safeId = getSafeChannelId(canal_id);
 
+    // Guardar también en disco local para máxima confiabilidad
+    const possibleTokenDirs = [
+      path.join(process.cwd(), '..', 'backend', 'youtube', 'tokens'),
+      path.join(process.cwd(), 'backend', 'youtube', 'tokens'),
+    ];
+    let savedOnDisk = false;
+    for (const dir of possibleTokenDirs) {
+      try {
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const filePath = path.join(dir, `token_${safeId}.json`);
+        fs.writeFileSync(
+          filePath,
+          JSON.stringify(
+            {
+              token: access_token ?? '',
+              access_token: access_token ?? '',
+              refresh_token: refresh_token ?? '',
+              client_id: (client_id || '').trim(),
+              client_secret: (client_secret || '').trim(),
+              updated_at: new Date().toISOString(),
+            },
+            null,
+            2
+          ),
+          'utf-8'
+        );
+        savedOnDisk = true;
+      } catch (diskErr) {
+        console.warn('[YouTube Status] Error guardando token en disco:', diskErr);
+      }
+    }
+
     const { getSupabase } = await import('@/lib/supabase');
     const supabase = getSupabase();
 
@@ -112,7 +144,7 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'canal_id' });
 
-    if (error) {
+    if (error && !savedOnDisk) {
       console.error('[YouTube Status POST] Supabase error:', JSON.stringify(error));
       return NextResponse.json({
         success: false,

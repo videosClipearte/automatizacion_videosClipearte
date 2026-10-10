@@ -4,23 +4,44 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 // Variables de entorno de Vercel y fallback del proyecto
 const DEFAULT_SUPABASE_URL = 'https://arrpvitdxdbrqkgndrjn.supabase.co';
 
-const ENV_URL =
-  (process.env.NEXT_PUBLIC_SUPABASE_URL ||
-   process.env.SUPABASE_URL ||
-   process.env.NEXT_PUBLIC_SUPABASE_PROJECT_URL ||
-   DEFAULT_SUPABASE_URL).trim();
+function isPlaceholder(val?: string): boolean {
+  if (!val) return true;
+  const s = val.toLowerCase().trim();
+  return (
+    s.includes('tu_proyecto') ||
+    s.includes('tuproyecto') ||
+    s.includes('xyzcompany') ||
+    s.endsWith('...') ||
+    s.length < 10
+  );
+}
 
-const ENV_KEY =
-  (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-   process.env.SUPABASE_ANON_KEY ||
-   process.env.SUPABASE_KEY ||
-   '').trim();
+const rawEnvUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_PROJECT_URL;
+const ENV_URL = (!isPlaceholder(rawEnvUrl) ? rawEnvUrl! : DEFAULT_SUPABASE_URL).trim();
+
+const rawEnvKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+const ENV_KEY = (!isPlaceholder(rawEnvKey) ? rawEnvKey! : '').trim();
 
 // Devuelve la configuracion de Supabase.
 // PRIORIDAD: env vars de Vercel > localStorage > URL por defecto
 export function getStoredSupabaseConfig(): { url: string; anonKey: string } {
   if (typeof window === 'undefined') {
-    // SSR / Serverless: env vars o URL de proyecto
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const possiblePaths = [
+        path.join(process.cwd(), '.supabase_local.json'),
+        path.join(process.cwd(), '..', '.supabase_local.json'),
+      ];
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+          const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
+          if (raw.url && raw.anonKey) {
+            return { url: raw.url, anonKey: raw.anonKey };
+          }
+        }
+      }
+    } catch {}
     return { url: ENV_URL, anonKey: ENV_KEY };
   }
 
@@ -28,8 +49,8 @@ export function getStoredSupabaseConfig(): { url: string; anonKey: string } {
   const localUrl = (localStorage.getItem('autopublish_supabase_url') ?? '').trim();
   const localKey = (localStorage.getItem('autopublish_supabase_key') ?? '').trim();
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || localUrl || ENV_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || localKey || ENV_KEY;
+  const url = (!isPlaceholder(process.env.NEXT_PUBLIC_SUPABASE_URL) ? process.env.NEXT_PUBLIC_SUPABASE_URL : '') || localUrl || ENV_URL;
+  const anonKey = (!isPlaceholder(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY : '') || localKey || ENV_KEY;
 
   return { url, anonKey };
 }

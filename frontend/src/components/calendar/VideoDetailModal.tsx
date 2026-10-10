@@ -173,6 +173,11 @@ export function VideoDetailModal() {
     });
 
     try {
+      let cfg = getCachedConfig();
+      if (!cfg.youtube_client_id && !cfg.drive_client_id) {
+        cfg = await loadAppConfig();
+      }
+
       const res = await fetch('/api/youtube/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -186,6 +191,8 @@ export function VideoDetailModal() {
           privacidad: 'public',
           made_for_kids: false,
           drive_token: getGoogleDriveToken() || undefined,
+          client_id: cfg.youtube_client_id || cfg.drive_client_id || undefined,
+          client_secret: cfg.youtube_client_secret || cfg.drive_client_secret || undefined,
         }),
       });
 

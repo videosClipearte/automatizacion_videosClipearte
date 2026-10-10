@@ -2,6 +2,8 @@
 // Sube un video a YouTube como Short directamente desde Vercel usando la YouTube Data API v3.
 // Registra cada paso en la tabla publicacion_logs de Supabase para visibilidad en tiempo real.
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -95,15 +97,76 @@ function getDriveDownloadUrl(url: string): string | null {
   return null;
 }
 
+// ── Helpers de token en disco local ───────────────────────────────────────────
+function getLocalToken(safeId: string): { token?: string; refreshToken?: string; clientId?: string; clientSecret?: string } | null {
+  try {
+    const possiblePaths = [
+      path.join(process.cwd(), '..', 'backend', 'youtube', 'tokens', `token_${safeId}.json`),
+      path.join(process.cwd(), 'backend', 'youtube', 'tokens', `token_${safeId}.json`),
+    ];
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, 'utf-8');
+        const data = JSON.parse(raw);
+        if (data.token || data.access_token || data.refresh_token) {
+          return {
+            token: data.token || data.access_token || '',
+            refreshToken: data.refresh_token || '',
+            clientId: data.client_id || '',
+            clientSecret: data.client_secret || '',
+          };
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function saveLocalToken(safeId: string, access_token: string, refresh_token: string, client_id?: string, client_secret?: string) {
+  try {
+    const possibleTokenDirs = [
+      path.join(process.cwd(), '..', 'backend', 'youtube', 'tokens'),
+      path.join(process.cwd(), 'backend', 'youtube', 'tokens'),
+    ];
+    for (const dir of possibleTokenDirs) {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, `token_${safeId}.json`);
+      fs.writeFileSync(filePath, JSON.stringify({
+        token: access_token,
+        access_token,
+        refresh_token,
+        client_id: client_id || '',
+        client_secret: client_secret || '',
+        updated_at: new Date().toISOString(),
+      }, null, 2), 'utf-8');
+    }
+  } catch {}
+}
+
 // ── Renovar access_token con refresh_token ────────────────────────────────────
 async function refreshAccessToken(
   refreshToken: string,
-  publicacion_id: string
+  publicacion_id: string,
+  explicitClientId?: string,
+  explicitClientSecret?: string,
+  canalSafeId?: string
 ): Promise<string | null> {
   try {
-    let clientId = (process.env.YOUTUBE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '').trim();
-    let clientSecret = (process.env.YOUTUBE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '').trim();
+    let clientId = (explicitClientId || '').trim();
+    let clientSecret = (explicitClientSecret || '').trim();
 
+    // 1. Si no vienen explícitos, buscar en disco local
+    if ((!clientId || !clientSecret) && canalSafeId) {
+      const local = getLocalToken(canalSafeId);
+      if (local?.clientId && !clientId) clientId = local.clientId.trim();
+      if (local?.clientSecret && !clientSecret) clientSecret = local.clientSecret.trim();
+    }
+
+    // 2. Si no están en disco, buscar en variables de entorno
+    if (!clientId) clientId = (process.env.YOUTUBE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '').trim();
+    if (!clientSecret) clientSecret = (process.env.YOUTUBE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '').trim();
+
+    // 3. Si no están en env, buscar en Supabase configuracion_app
     if (!clientId || !clientSecret) {
       try {
         const { getSupabase } = await import('@/lib/supabase');
@@ -124,8 +187,8 @@ async function refreshAccessToken(
         }
 
         if (data) {
-          clientId = (data.youtube_client_id || data.drive_client_id || clientId).trim();
-          clientSecret = (data.youtube_client_secret || data.drive_client_secret || clientSecret).trim();
+          clientId = (clientId || data.youtube_client_id || data.drive_client_id || '').trim();
+          clientSecret = (clientSecret || data.youtube_client_secret || data.drive_client_secret || '').trim();
         }
       } catch (err: any) {
         console.warn('[YouTube Publish] Error consultando configuracion_app:', err);
@@ -135,12 +198,12 @@ async function refreshAccessToken(
     if (!clientId || !clientSecret) {
       await writeLog(publicacion_id, 'ERROR', 'TOKEN_REFRESH',
         '❌ No se puede renovar el token: Faltan credenciales de Google.',
-        'Debes ingresar tu OAuth Client ID y Client Secret en Configuración → Integraciones (o en el modal de Conectar YouTube).');
+        'Debes ingresar tu OAuth Client ID y Client Secret en Configuración → Integraciones o en el modal de Conectar YouTube.');
       return null;
     }
 
     await writeLog(publicacion_id, 'INFO', 'TOKEN_REFRESH',
-      'Solicitando nuevo access_token a Google OAuth...');
+      `Solicitando nuevo access_token a Google OAuth con Client ID (${clientId.slice(0, 16)}...)...`);
 
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -171,87 +234,117 @@ async function refreshAccessToken(
     }
 
     await writeLog(publicacion_id, 'SUCCESS', 'TOKEN_REFRESH', '✅ Token renovado exitosamente con Google.');
-    return data.access_token ?? null;
+    const newAccessToken = data.access_token ?? null;
+
+    if (newAccessToken && canalSafeId) {
+      saveLocalToken(canalSafeId, newAccessToken, refreshToken, clientId, clientSecret);
+    }
+
+    return newAccessToken;
   } catch (e: any) {
     await writeLog(publicacion_id, 'ERROR', 'TOKEN_REFRESH', 'Excepción al renovar token con Google', e.message);
     return null;
   }
 }
 
-// ── Obtener token válido desde Supabase ───────────────────────────────────────
+// ── Obtener token válido desde Supabase o Disco Local ────────────────────────
 async function getValidAccessToken(
   canal_id: string,
-  publicacion_id: string
-): Promise<{ token: string; refreshToken: string } | null> {
+  publicacion_id: string,
+  explicitClientId?: string,
+  explicitClientSecret?: string
+): Promise<{ token: string; refreshToken: string; clientId: string; clientSecret: string } | null> {
   try {
-    const { getSupabase } = await import('@/lib/supabase');
-    const supabase = getSupabase();
     const safeId = getSafeChannelId(canal_id);
 
-    // 1. Buscar coincidencia exacta por safeId o canal_id
-    let { data, error } = await supabase
-      .from('youtube_tokens')
-      .select('canal_id, access_token, refresh_token, updated_at')
-      .or(`canal_id.eq.${safeId},canal_id.eq.${canal_id}`)
-      .limit(1)
-      .maybeSingle();
+    // 1. Revisar si hay token en disco local
+    const local = getLocalToken(safeId);
 
-    // 2. Si no se encontró y solo hay 1 fila en youtube_tokens, usarla como fallback inteligente
-    if (!data) {
-      const { data: allTokens } = await supabase
+    // 2. Buscar en Supabase youtube_tokens
+    let dbToken: any = null;
+    try {
+      const { getSupabase } = await import('@/lib/supabase');
+      const supabase = getSupabase();
+      let { data } = await supabase
         .from('youtube_tokens')
         .select('canal_id, access_token, refresh_token, updated_at')
-        .limit(2);
-      if (allTokens && allTokens.length === 1) {
-        data = allTokens[0];
+        .or(`canal_id.eq.${safeId},canal_id.eq.${canal_id}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (!data) {
+        const { data: allTokens } = await supabase
+          .from('youtube_tokens')
+          .select('canal_id, access_token, refresh_token, updated_at')
+          .limit(2);
+        if (allTokens && allTokens.length === 1) {
+          data = allTokens[0];
+        }
       }
+      dbToken = data;
+    } catch (dbErr) {
+      console.warn('[getValidAccessToken] Error consultando Supabase:', dbErr);
     }
 
-    if (error || !data) {
+    let access_token = local?.token || dbToken?.access_token || '';
+    let refresh_token = local?.refreshToken || dbToken?.refresh_token || '';
+    let effectiveClientId = (explicitClientId || local?.clientId || '').trim();
+    let effectiveClientSecret = (explicitClientSecret || local?.clientSecret || '').trim();
+
+    if (!access_token && !refresh_token) {
       await writeLog(publicacion_id, 'ERROR', 'TOKEN_LOOKUP',
         `No se encontró token para el canal @${canal_id}`,
         `Conecta la cuenta de YouTube en Configuración → Cuentas usando el botón "Conectar YouTube".`);
       return null;
     }
 
-    let { access_token, refresh_token } = data;
-
-    // Si no hay access_token o lleva más de 50 min, renovar
-    const ageMinutes = data.updated_at
-      ? (Date.now() - new Date(data.updated_at).getTime()) / 60000
-      : 999;
+    // Antigüedad del token
+    const updatedAt = dbToken?.updated_at;
+    const ageMinutes = updatedAt
+      ? (Date.now() - new Date(updatedAt).getTime()) / 60000
+      : (access_token ? 0 : 999);
 
     if (!access_token || ageMinutes > 50) {
       await writeLog(publicacion_id, 'INFO', 'TOKEN_REFRESH',
-        `Token de @${canal_id} tiene ${Math.round(ageMinutes)}min de antigüedad. Renovando...`);
+        `Token de @${canal_id} tiene ${Math.round(ageMinutes)}min de antigüedad. Renovando con Google...`);
 
       if (refresh_token) {
-        const newToken = await refreshAccessToken(refresh_token, publicacion_id);
+        const newToken = await refreshAccessToken(
+          refresh_token,
+          publicacion_id,
+          effectiveClientId,
+          effectiveClientSecret,
+          safeId
+        );
         if (newToken) {
           access_token = newToken;
-          await supabase
-            .from('youtube_tokens')
-            .update({ access_token: newToken, updated_at: new Date().toISOString() })
-            .eq('canal_id', safeId);
+          try {
+            const { getSupabase } = await import('@/lib/supabase');
+            const supabase = getSupabase();
+            await supabase
+              .from('youtube_tokens')
+              .update({ access_token: newToken, updated_at: new Date().toISOString() })
+              .or(`canal_id.eq.${safeId},canal_id.eq.${canal_id}`);
+          } catch {}
+          saveLocalToken(safeId, newToken, refresh_token, effectiveClientId, effectiveClientSecret);
           await writeLog(publicacion_id, 'SUCCESS', 'TOKEN_REFRESH', 'Token renovado exitosamente.');
         } else {
           await writeLog(publicacion_id, 'WARN', 'TOKEN_REFRESH',
-            'No se pudo renovar el token automáticamente. Se usará el token existente.',
-            'Si la subida falla con error 401, ve a Configuración → Cuentas y reconecta tu cuenta de YouTube con el scope youtube.upload');
+            'No se pudo renovar preventivamente. Se intentará publicar o renovar en caliente.');
         }
       }
     }
 
     if (!access_token) {
       await writeLog(publicacion_id, 'ERROR', 'TOKEN_LOOKUP',
-        'El canal no tiene access_token válido.',
+        'El canal no tiene access_token válido ni pudo ser renovado.',
         'Reconecta tu cuenta de YouTube en Configuración → Cuentas.');
       return null;
     }
 
-    return { token: access_token, refreshToken: refresh_token };
+    return { token: access_token, refreshToken: refresh_token, clientId: effectiveClientId, clientSecret: effectiveClientSecret };
   } catch (e: any) {
-    await writeLog(publicacion_id, 'ERROR', 'TOKEN_LOOKUP', 'Error al consultar token en Supabase', e.message);
+    await writeLog(publicacion_id, 'ERROR', 'TOKEN_LOOKUP', 'Error al consultar token', e.message);
     return null;
   }
 }
@@ -271,6 +364,8 @@ export async function POST(req: NextRequest) {
     made_for_kids = false,
     categoria_id = '22',
     drive_token,
+    client_id: bodyClientId,
+    client_secret: bodyClientSecret,
   } = body;
 
   const pid = body.publicacion_id ?? `yt-${Date.now()}`;
@@ -290,7 +385,7 @@ export async function POST(req: NextRequest) {
 
     // ── Paso 1: Verificar token ───────────────────────────────────────────
     await writeLog(pid, 'INFO', 'TOKEN', `Verificando credenciales de YouTube para @${canal_id}...`);
-    const tokenData = await getValidAccessToken(canal_id, pid);
+    const tokenData = await getValidAccessToken(canal_id, pid, bodyClientId, bodyClientSecret);
 
     if (!tokenData) {
       await writeLog(pid, 'ERROR', 'TOKEN',
@@ -514,19 +609,26 @@ export async function POST(req: NextRequest) {
     // Si YouTube responde 401 (token expirado), renovar en caliente y reintentar inmediatamente
     if (initRes.status === 401 && tokenData.refreshToken) {
       await writeLog(pid, 'INFO', 'TOKEN_REFRESH', 'YouTube respondió 401 (token expirado). Renovando token en caliente con Google...');
-      const hotToken = await refreshAccessToken(tokenData.refreshToken, pid);
+      const safeChannel = getSafeChannelId(canal_id);
+      const hotToken = await refreshAccessToken(
+        tokenData.refreshToken,
+        pid,
+        tokenData.clientId || bodyClientId,
+        tokenData.clientSecret || bodyClientSecret,
+        safeChannel
+      );
       if (hotToken) {
         activeUploadToken = hotToken;
         tokenData.token = hotToken;
         try {
           const { getSupabase } = await import('@/lib/supabase');
           const supabase = getSupabase();
-          const safeChannel = getSafeChannelId(canal_id);
           await supabase
             .from('youtube_tokens')
             .update({ access_token: hotToken, updated_at: new Date().toISOString() })
             .or(`canal_id.eq.${safeChannel},canal_id.eq.${canal_id}`);
         } catch {}
+        saveLocalToken(safeChannel, hotToken, tokenData.refreshToken, tokenData.clientId || bodyClientId, tokenData.clientSecret || bodyClientSecret);
 
         await writeLog(pid, 'INFO', 'YOUTUBE_INIT', 'Reintentando inicio de subida con el nuevo token...');
         initRes = await fetch(
