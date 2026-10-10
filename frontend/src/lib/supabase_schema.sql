@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS public.configuracion_app (
     scraper_intervalo_minutos INT DEFAULT 5,
     scraper_modo_headless BOOLEAN DEFAULT TRUE,
     scraper_timeout_segundos INT DEFAULT 15,
+    -- YouTube Data API v3
+    youtube_client_id TEXT DEFAULT '',
+    youtube_client_secret TEXT DEFAULT '',
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

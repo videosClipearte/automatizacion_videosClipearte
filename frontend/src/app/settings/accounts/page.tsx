@@ -20,7 +20,7 @@ function YoutubeIcon({ size = 14, className = '' }: { size?: number; className?:
 }
 import { getPlatformColor } from '@/lib/utils';
 import { sendDailyQuotaAlert } from '@/lib/services/telegramService';
-import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
+import { getCachedConfig, loadAppConfig, saveAppConfig } from '@/lib/services/appConfigService';
 import type { Account, Platform } from '@/store/useAppStore';
 
 const PLATFORM_ICONS: Record<string, React.ElementType> = {
@@ -121,8 +121,10 @@ export default function AccountsPage() {
     setManualRefreshToken('');
     try {
       const cfg = await loadAppConfig();
-      setManualClientId(cfg.youtube_client_id || cfg.drive_client_id || '');
-      setManualClientSecret(cfg.youtube_client_secret || cfg.drive_client_secret || '');
+      const localYtId = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_id') || localStorage.getItem('autopublish_drive_client_id') : '';
+      const localYtSec = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_secret') || localStorage.getItem('autopublish_drive_client_secret') : '';
+      setManualClientId(cfg.youtube_client_id || cfg.drive_client_id || localYtId || '');
+      setManualClientSecret(cfg.youtube_client_secret || cfg.drive_client_secret || localYtSec || '');
     } catch {}
     setTokenModalAccount(account);
   };
@@ -136,6 +138,24 @@ export default function AccountsPage() {
     }
     setSavingTokens(true);
     try {
+      const cleanClientId = manualClientId.trim();
+      const cleanClientSecret = manualClientSecret.trim();
+
+      // 1. Guardar de inmediato en la configuración de la app y localStorage
+      if (cleanClientId || cleanClientSecret) {
+        await saveAppConfig({
+          youtube_client_id: cleanClientId,
+          youtube_client_secret: cleanClientSecret,
+          drive_client_id: cleanClientId,
+          drive_client_secret: cleanClientSecret,
+        });
+        if (typeof window !== 'undefined') {
+          if (cleanClientId) localStorage.setItem('autopublish_yt_client_id', cleanClientId);
+          if (cleanClientSecret) localStorage.setItem('autopublish_yt_client_secret', cleanClientSecret);
+        }
+      }
+
+      // 2. Guardar en el endpoint del servidor
       const res = await fetch('/api/youtube/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -143,8 +163,8 @@ export default function AccountsPage() {
           canal_id: tokenModalAccount.username,
           access_token: manualAccessToken.trim(),
           refresh_token: manualRefreshToken.trim(),
-          client_id: manualClientId.trim(),
-          client_secret: manualClientSecret.trim(),
+          client_id: cleanClientId,
+          client_secret: cleanClientSecret,
         }),
       });
       const data = await res.json();

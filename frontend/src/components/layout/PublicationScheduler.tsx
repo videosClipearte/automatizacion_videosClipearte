@@ -213,7 +213,15 @@ export function PublicationScheduler() {
           // ── Si la cuenta es YouTube: Disparar subida automática directamente ──
           if (account?.plataforma === 'youtube' && video.drive_file_url) {
             console.log(`[PublicationScheduler] Cuenta es YouTube. Iniciando subida a YouTube para "${video.titulo}"...`);
-            const cfg = getCachedConfig();
+            let cfg = getCachedConfig();
+            if (!cfg.youtube_client_id && !cfg.drive_client_id) {
+              cfg = await loadAppConfig();
+            }
+            const localYtId = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_id') || localStorage.getItem('autopublish_drive_client_id') : '';
+            const localYtSec = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_secret') || localStorage.getItem('autopublish_drive_client_secret') : '';
+            const effectiveClientId = cfg.youtube_client_id || cfg.drive_client_id || localYtId || undefined;
+            const effectiveClientSecret = cfg.youtube_client_secret || cfg.drive_client_secret || localYtSec || undefined;
+
             fetch('/api/youtube/publish', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -227,8 +235,8 @@ export function PublicationScheduler() {
                 privacidad: 'public',
                 made_for_kids: false,
                 drive_token: getGoogleDriveToken() || undefined,
-                client_id: cfg.youtube_client_id || cfg.drive_client_id || undefined,
-                client_secret: cfg.youtube_client_secret || cfg.drive_client_secret || undefined,
+                client_id: effectiveClientId,
+                client_secret: effectiveClientSecret,
               }),
             })
               .then(async (r) => {

@@ -177,6 +177,10 @@ export function VideoDetailModal() {
       if (!cfg.youtube_client_id && !cfg.drive_client_id) {
         cfg = await loadAppConfig();
       }
+      const localYtId = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_id') || localStorage.getItem('autopublish_drive_client_id') : '';
+      const localYtSec = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_secret') || localStorage.getItem('autopublish_drive_client_secret') : '';
+      const effectiveClientId = cfg.youtube_client_id || cfg.drive_client_id || localYtId || undefined;
+      const effectiveClientSecret = cfg.youtube_client_secret || cfg.drive_client_secret || localYtSec || undefined;
 
       const res = await fetch('/api/youtube/publish', {
         method: 'POST',
@@ -191,8 +195,8 @@ export function VideoDetailModal() {
           privacidad: 'public',
           made_for_kids: false,
           drive_token: getGoogleDriveToken() || undefined,
-          client_id: cfg.youtube_client_id || cfg.drive_client_id || undefined,
-          client_secret: cfg.youtube_client_secret || cfg.drive_client_secret || undefined,
+          client_id: effectiveClientId,
+          client_secret: effectiveClientSecret,
         }),
       });
 

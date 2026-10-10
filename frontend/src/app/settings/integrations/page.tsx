@@ -131,8 +131,10 @@ export default function IntegrationsPage() {
       setDriveAutoDelete(cfg.drive_auto_delete_after_verify);
       setDriveRetentionHours(cfg.drive_retention_hours);
       setDriveOAuthToken(getGoogleDriveToken());
-      setYoutubeClientId(cfg.youtube_client_id || '');
-      setYoutubeClientSecret(cfg.youtube_client_secret || '');
+      const localYtId = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_id') || localStorage.getItem('autopublish_drive_client_id') : '';
+      const localYtSec = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_secret') || localStorage.getItem('autopublish_drive_client_secret') : '';
+      setYoutubeClientId(cfg.youtube_client_id || cfg.drive_client_id || localYtId || '');
+      setYoutubeClientSecret(cfg.youtube_client_secret || cfg.drive_client_secret || localYtSec || '');
       setCurrentOrigin(typeof window !== 'undefined' ? window.location.origin : '');
     });
   }, []);
@@ -478,6 +480,10 @@ export default function IntegrationsPage() {
       if (cfg.drive_auto_delete_after_verify !== undefined) setDriveAutoDelete(cfg.drive_auto_delete_after_verify);
       if (cfg.drive_retention_hours !== undefined) setDriveRetentionHours(Number(cfg.drive_retention_hours));
 
+      // Rellenar YouTube
+      if (cfg.youtube_client_id) setYoutubeClientId(cfg.youtube_client_id);
+      if (cfg.youtube_client_secret) setYoutubeClientSecret(cfg.youtube_client_secret);
+
       setSyncingFromSupabase(false);
       setSupabaseConnected(true);
 
@@ -485,6 +491,7 @@ export default function IntegrationsPage() {
         cfg.telegram_bot_token ? 'Telegram' : null,
         cfg.gemini_api_key ? 'Gemini IA' : null,
         cfg.drive_folder_id || cfg.drive_client_id ? 'Google Drive' : null,
+        cfg.youtube_client_id ? 'YouTube Data API' : null,
       ].filter(Boolean);
 
       const summary = itemsPopulated.length > 0
@@ -597,7 +604,9 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
   cuenta_id TEXT,
   origen TEXT DEFAULT 'sistema',
   created_at TIMESTAMPTZ DEFAULT NOW()
-);`;
+);
+ALTER TABLE public.configuracion_app ADD COLUMN IF NOT EXISTS youtube_client_id TEXT DEFAULT '';
+ALTER TABLE public.configuracion_app ADD COLUMN IF NOT EXISTS youtube_client_secret TEXT DEFAULT '';`;
 
     navigator.clipboard.writeText(sqlScript);
     setCopiedSql(true);
@@ -606,9 +615,25 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
 
   const handleSaveYoutube = async () => {
     setSavingYoutube(true);
+    const cleanId = youtubeClientId.trim();
+    const cleanSecret = youtubeClientSecret.trim();
+
+    if (typeof window !== 'undefined') {
+      if (cleanId) {
+        localStorage.setItem('autopublish_yt_client_id', cleanId);
+        localStorage.setItem('autopublish_drive_client_id', cleanId);
+      }
+      if (cleanSecret) {
+        localStorage.setItem('autopublish_yt_client_secret', cleanSecret);
+        localStorage.setItem('autopublish_drive_client_secret', cleanSecret);
+      }
+    }
+
     const result = await saveAppConfig({
-      youtube_client_id: youtubeClientId.trim(),
-      youtube_client_secret: youtubeClientSecret.trim(),
+      youtube_client_id: cleanId,
+      youtube_client_secret: cleanSecret,
+      drive_client_id: cleanId,
+      drive_client_secret: cleanSecret,
     });
     setSavingYoutube(false);
     setYoutubeFeedback({

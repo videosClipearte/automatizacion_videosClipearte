@@ -157,12 +157,28 @@ export async function POST(req: NextRequest) {
     // Si se enviaron client_id o client_secret, guardarlos en configuracion_app para renovación automática
     if (client_id || client_secret) {
       try {
-        const updates: Record<string, any> = {};
-        if (client_id) updates.youtube_client_id = client_id.trim();
-        if (client_secret) updates.youtube_client_secret = client_secret.trim();
-        await supabase
+        const updates: Record<string, any> = { id: 'singleton' };
+        if (client_id) {
+          updates.youtube_client_id = client_id.trim();
+          updates.drive_client_id = client_id.trim();
+        }
+        if (client_secret) {
+          updates.youtube_client_secret = client_secret.trim();
+          updates.drive_client_secret = client_secret.trim();
+        }
+        const cfgRes = await supabase
           .from('configuracion_app')
-          .upsert({ id: 'singleton', ...updates }, { onConflict: 'id' });
+          .upsert(updates, { onConflict: 'id' });
+
+        if (cfgRes.error) {
+          // Si la columna youtube_client_id no existe aún en Supabase, guardar como drive_client_id/secret
+          const safeFallback: Record<string, any> = { id: 'singleton' };
+          if (client_id) safeFallback.drive_client_id = client_id.trim();
+          if (client_secret) safeFallback.drive_client_secret = client_secret.trim();
+          await supabase
+            .from('configuracion_app')
+            .upsert(safeFallback, { onConflict: 'id' });
+        }
       } catch (cfgErr) {
         console.warn('[YouTube Status] No se pudo guardar client_id/secret en configuracion_app:', cfgErr);
       }
