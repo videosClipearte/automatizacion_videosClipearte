@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import type { Campaign } from '@/store/useAppStore';
 
 export default function CampaignsPage() {
@@ -216,12 +217,13 @@ export default function CampaignsPage() {
                   <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1.5">
                     Prompt de Reglas de IA (Gemini)
                   </label>
-                  <textarea
-                    rows={2}
+                  <AutoResizeTextarea
+                    minHeight={72}
+                    maxHeight={280}
                     value={newPrompt}
                     onChange={(e) => setNewPrompt(e.target.value)}
                     placeholder="Instrucciones para generar las descripciones: tono, público objetivo, emojis..."
-                    className="w-full glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent resize-none placeholder:text-[var(--text-muted)] leading-relaxed"
+                    className="glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent placeholder:text-[var(--text-muted)] leading-relaxed"
                   />
                 </div>
 
@@ -347,11 +349,12 @@ export default function CampaignsPage() {
                       <label className="text-[11px] font-semibold text-[var(--text-secondary)] block mb-1">
                         Prompt de Reglas de IA
                       </label>
-                      <textarea
-                        rows={2}
+                      <AutoResizeTextarea
+                        minHeight={72}
+                        maxHeight={280}
                         value={editPrompt}
                         onChange={(e) => setEditPrompt(e.target.value)}
-                        className="w-full glass rounded-xl p-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent resize-none leading-relaxed"
+                        className="glass rounded-xl p-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent leading-relaxed"
                       />
                     </div>
 

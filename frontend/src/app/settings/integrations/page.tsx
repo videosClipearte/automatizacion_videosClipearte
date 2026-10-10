@@ -8,6 +8,7 @@ import {
   Copy, Check, RefreshCw, Trash2, Clock, KeyRound, DownloadCloud
 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import { sendTelegramMessage } from '@/lib/services/telegramService';
 import { generateWithGemini } from '@/lib/services/geminiService';
 import {
@@ -1158,11 +1159,12 @@ ALTER TABLE public.configuracion_app ADD COLUMN IF NOT EXISTS youtube_client_sec
           <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
             Prompt de Instrucción del Sistema
           </label>
-          <textarea
-            rows={2}
+          <AutoResizeTextarea
+            minHeight={72}
+            maxHeight={280}
             value={geminiPrompt}
             onChange={(e) => setGeminiPrompt(e.target.value)}
-            className="w-full glass rounded-xl p-2.5 text-xs text-white border border-[var(--border)] focus:border-purple-500/50 outline-none bg-transparent resize-none leading-relaxed"
+            className="glass rounded-xl p-2.5 text-xs text-white border border-[var(--border)] focus:border-purple-500/50 outline-none bg-transparent leading-relaxed"
           />
         </div>
 

@@ -28,6 +28,7 @@ import {
 import { useDropzone } from 'react-dropzone';
 import { useAppStore } from '@/store/useAppStore';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import { formatDateTime, formatViews, calcGanancias, getPlatformColor, cn } from '@/lib/utils';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import { sendPublicationAlert } from '@/lib/services/telegramService';
@@ -1105,7 +1106,7 @@ export function VideoDetailModal() {
                     <p className="text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
                       Descripción (Reglas de Campaña)
                     </p>
-                    <p className="text-xs text-[var(--text-primary)] leading-relaxed glass rounded-xl p-3 border border-[var(--border)] max-h-36 overflow-y-auto whitespace-pre-wrap">
+                    <p className="text-xs text-[var(--text-primary)] leading-relaxed glass rounded-xl p-3 border border-[var(--border)] max-h-72 overflow-y-auto whitespace-pre-wrap [scrollbar-gutter:stable]">
                       {video.descripcion_aprobada_ia}
                     </p>
                   </div>
@@ -1511,11 +1512,12 @@ export function VideoDetailModal() {
                         </span>
                       </button>
                     </div>
-                    <textarea
-                      rows={4}
+                    <AutoResizeTextarea
                       value={editDescripcion}
                       onChange={(e) => setEditDescripcion(e.target.value)}
-                      className="w-full glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent resize-none leading-relaxed"
+                      minHeight={80}
+                      maxHeight={320}
+                      className="glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent leading-relaxed"
                     />
 
                     {/* Subtítulos y Diálogo extraídos en JSON */}

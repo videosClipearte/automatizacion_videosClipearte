@@ -10,6 +10,7 @@ import {
 import { isToday } from 'date-fns';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 
 function YoutubeIcon({ size = 14, className = '' }: { size?: number; className?: string }) {
   return (
@@ -827,24 +828,26 @@ export default function AccountsPage() {
                   <label className="text-[11px] font-bold text-amber-300 block mb-1.5">
                     Refresh Token <span className="text-[var(--text-muted)] font-normal">(recomendado — no expira)</span>
                   </label>
-                  <textarea
-                    rows={2}
+                  <AutoResizeTextarea
+                    minHeight={58}
+                    maxHeight={160}
                     value={manualRefreshToken}
                     onChange={e => setManualRefreshToken(e.target.value)}
                     placeholder="1//0g..."
-                    className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-amber-500/30 focus:border-amber-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] resize-none font-mono"
+                    className="glass rounded-xl px-3 py-2 text-xs text-white border border-amber-500/30 focus:border-amber-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] font-mono"
                   />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-cyan-300 block mb-1.5">
                     Access Token <span className="text-[var(--text-muted)] font-normal">(opcional — expira en 1 hora)</span>
                   </label>
-                  <textarea
-                    rows={2}
+                  <AutoResizeTextarea
+                    minHeight={58}
+                    maxHeight={160}
                     value={manualAccessToken}
                     onChange={e => setManualAccessToken(e.target.value)}
                     placeholder="ya29..."
-                    className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-cyan-500/30 focus:border-cyan-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] resize-none font-mono"
+                    className="glass rounded-xl px-3 py-2 text-xs text-white border border-cyan-500/30 focus:border-cyan-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] font-mono"
                   />
                 </div>
 

@@ -10,6 +10,7 @@ import {
 import { isToday } from 'date-fns';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import {
   getStoredTelegramConfig, sendTelegramMessage
 } from '@/lib/services/telegramService';
@@ -558,11 +559,12 @@ export default function AlertsSettingsPage() {
         <p className="text-xs text-[var(--text-muted)] mb-3">
           Puedes usar etiquetas dinámicas: <code className="text-cyan-400">{`{video_titulo}`}</code>, <code className="text-cyan-400">{`{cuenta}`}</code>, <code className="text-cyan-400">{`{hora_programada}`}</code>, <code className="text-cyan-400">{`{minutos_retraso}`}</code>.
         </p>
-        <textarea
-          rows={3}
+        <AutoResizeTextarea
+          minHeight={80}
+          maxHeight={260}
           value={telegramTemplate}
           onChange={(e) => setTelegramTemplate(e.target.value)}
-          className="w-full glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent resize-none leading-relaxed"
+          className="glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent leading-relaxed"
         />
         <div className="mt-4 flex justify-end">
           <button

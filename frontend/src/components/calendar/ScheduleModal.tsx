@@ -39,6 +39,7 @@ import { es } from 'date-fns/locale';
 import { generateWithGemini, generateDescriptionFromAudio, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
 import { extractAudioFromVideo, VideoAudioPayload } from '@/lib/services/videoAudioExtractorService';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
+import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import {
   getGoogleDriveToken,
   requestGoogleDriveOAuthToken,
@@ -1512,16 +1513,13 @@ export function ScheduleModal() {
                     </span>
                   </button>
                 </div>
-                <textarea
+                <AutoResizeTextarea
                   {...register('descripcion')}
+                  value={watch('descripcion')}
+                  minHeight={76}
+                  maxHeight={320}
                   placeholder="El copy se generará respetando las reglas de la campaña y la red social seleccionada..."
-                  className="w-full glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent leading-relaxed placeholder:text-[var(--text-muted)] resize-none overflow-y-auto"
-                  style={{ minHeight: '72px', maxHeight: '150px', height: 'auto' }}
-                  onInput={(e) => {
-                    const el = e.currentTarget;
-                    el.style.height = 'auto';
-                    el.style.height = Math.min(el.scrollHeight, 150) + 'px';
-                  }}
+                  className="glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent leading-relaxed placeholder:text-[var(--text-muted)]"
                 />
                 {aiFeedback && (
                   <p className="text-[10px] text-cyan-300 mt-1 leading-snug">{aiFeedback}</p>
