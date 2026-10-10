@@ -156,6 +156,8 @@ class TokenManager:
                 token_data = {
                     "token": row.get("access_token", ""),
                     "refresh_token": row.get("refresh_token", ""),
+                    "client_id": row.get("client_id", ""),
+                    "client_secret": row.get("client_secret", ""),
                     "token_uri": row.get("token_uri", "https://oauth2.googleapis.com/token"),
                     "scopes": row.get("scopes", "https://www.googleapis.com/auth/youtube.upload").split(),
                     "canal_id": safe_id,

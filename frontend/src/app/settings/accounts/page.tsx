@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Trash2, Edit3, CheckCircle, XCircle, Globe, Play, Send,
   X, Check, AlertCircle, Sparkles, Target, BellRing, Loader2,
-  LogOut, ShieldCheck
+  LogOut, ShieldCheck, RefreshCw
 } from 'lucide-react';
 import { isToday } from 'date-fns';
 import { useAppStore } from '@/store/useAppStore';
@@ -90,33 +90,32 @@ export default function AccountsPage() {
   const [manualClientId, setManualClientId] = useState('');
   const [manualClientSecret, setManualClientSecret] = useState('');
   const [savingTokens, setSavingTokens] = useState(false);
+  const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
+  const [testingModalToken, setTestingModalToken] = useState(false);
 
-  // Check YouTube token status for all YouTube accounts on mount + detectar retorno de Google OAuth
-  useEffect(() => {
-    accounts.forEach(a => { if (a.plataforma === 'youtube') checkYtStatus(a); });
-
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const ytConnected = params.get('yt_connected');
-      const ytError = params.get('yt_error');
-
-      if (ytConnected) {
-        const cleanUser = ytConnected.replace(/^@/, '');
-        showNotification(`✅ Canal @${cleanUser} conectado a YouTube exitosamente. La app ya puede publicar automáticamente.`);
-        const acc = accounts.find(a => a.username.toLowerCase() === cleanUser.toLowerCase());
-        if (acc) {
-          if (!acc.activo) updateAccount(acc.id, { activo: true });
-          checkYtStatus(acc);
-        }
-        window.history.replaceState({}, '', window.location.pathname);
-      } else if (ytError) {
-        showNotification(`⚠️ No se pudo conectar YouTube: ${ytError}`);
-        window.history.replaceState({}, '', window.location.pathname);
+  // Probar y renovar token en caliente con Google
+  const handleTestRenewToken = async (account: Account) => {
+    setTestingAccountId(account.id);
+    try {
+      const res = await fetch(`/api/youtube/status?canal_id=${encodeURIComponent(account.username)}&action=refresh`);
+      const data = await res.json();
+      if (data.success && data.refreshed) {
+        showNotification(data.message || `✅ ¡Token renovado con Google! Conexión activa para @${account.username}.`);
+        setYtStatus(prev => ({
+          ...prev,
+          [account.id]: { authorized: true, loading: false, revoking: false },
+        }));
+      } else {
+        showNotification(`❌ Error renovando token: ${data.error || 'Fallo desconocido'}`);
       }
+    } catch (e: any) {
+      showNotification(`❌ Error de conexión: ${e.message}`);
+    } finally {
+      setTestingAccountId(null);
     }
-  }, [accounts, checkYtStatus, updateAccount]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
 
-  // Abrir modal de ingreso manual de tokens
+  // Abrir modal de ingreso manual de tokens y pre-cargar lo que ya existe
   const handleYtAuthorize = async (account: Account) => {
     setManualAccessToken('');
     setManualRefreshToken('');
@@ -124,10 +123,61 @@ export default function AccountsPage() {
       const cfg = await loadAppConfig();
       const localYtId = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_id') || localStorage.getItem('autopublish_drive_client_id') : '';
       const localYtSec = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_secret') || localStorage.getItem('autopublish_drive_client_secret') : '';
-      setManualClientId(cfg.youtube_client_id || cfg.drive_client_id || localYtId || '');
-      setManualClientSecret(cfg.youtube_client_secret || cfg.drive_client_secret || localYtSec || '');
+      let initialClientId = cfg.youtube_client_id || cfg.drive_client_id || localYtId || '';
+      let initialClientSecret = cfg.youtube_client_secret || cfg.drive_client_secret || localYtSec || '';
+
+      // Consultar tokens actuales del canal
+      const res = await fetch(`/api/youtube/status?canal_id=${encodeURIComponent(account.username)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.credentials?.client_id) initialClientId = data.credentials.client_id;
+      }
+      setManualClientId(initialClientId);
+      setManualClientSecret(initialClientSecret);
     } catch {}
     setTokenModalAccount(account);
+  };
+
+  // Probar token directamente desde el modal antes de guardar
+  const handleTestModalToken = async () => {
+    if (!manualRefreshToken.trim()) {
+      showNotification('⚠️ Ingresa primero el Refresh Token para probar.');
+      return;
+    }
+    if (!manualClientId.trim() || !manualClientSecret.trim()) {
+      showNotification('⚠️ Ingresa el OAuth Client ID y Client Secret para probar.');
+      return;
+    }
+    setTestingModalToken(true);
+    try {
+      const res = await fetch('/api/youtube/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          canal_id: tokenModalAccount?.username,
+          access_token: manualAccessToken.trim(),
+          refresh_token: manualRefreshToken.trim(),
+          client_id: manualClientId.trim(),
+          client_secret: manualClientSecret.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotification(`🎉 ¡Prueba exitosa! Google autorizó la renovación automática para @${tokenModalAccount?.username}.`);
+        if (tokenModalAccount) {
+          setYtStatus(prev => ({
+            ...prev,
+            [tokenModalAccount.id]: { authorized: true, loading: false, revoking: false },
+          }));
+        }
+      } else {
+        showNotification(`❌ Google rechazó las credenciales: ${data.error}`);
+      }
+    } catch (e: any) {
+      showNotification(`❌ Error al conectar: ${e.message}`);
+    } finally {
+      setTestingModalToken(false);
+    }
   };
 
   // Guardar tokens manuales en Supabase
@@ -673,11 +723,31 @@ export default function AccountsPage() {
                         if (authorized) {
                           return (
                             <div className="flex items-center gap-1.5">
-                              {/* Badge: conectado */}
-                              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-[10px] font-bold">
+                              {/* Badge: conectado (click para ver o modificar credenciales) */}
+                              <button
+                                type="button"
+                                onClick={() => handleYtAuthorize(account)}
+                                title="Ver o editar credenciales de YouTube para este canal"
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-[10px] font-bold hover:bg-red-500/25 transition-all"
+                              >
                                 <ShieldCheck size={11} className="text-red-400" />
                                 YouTube conectado
-                              </span>
+                              </button>
+                              {/* Botón Probar / Renovar en caliente con Google */}
+                              <button
+                                type="button"
+                                onClick={() => handleTestRenewToken(account)}
+                                disabled={testingAccountId === account.id}
+                                title="Probar renovación de token con Google ahora mismo"
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold hover:bg-emerald-500/25 transition-all disabled:opacity-50"
+                              >
+                                {testingAccountId === account.id ? (
+                                  <Loader2 size={11} className="animate-spin text-emerald-400" />
+                                ) : (
+                                  <RefreshCw size={11} className="text-emerald-400" />
+                                )}
+                                <span>{testingAccountId === account.id ? 'Renovando…' : 'Probar Renovación'}</span>
+                              </button>
                               {/* Botón desconectar */}
                               <button
                                 type="button"
@@ -887,27 +957,44 @@ export default function AccountsPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/10">
                 <button
                   type="button"
-                  onClick={() => setTokenModalAccount(null)}
-                  className="px-4 py-1.5 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white"
+                  onClick={handleTestModalToken}
+                  disabled={testingModalToken || !manualRefreshToken.trim()}
+                  title="Prueba si el Refresh Token y Credenciales de Google son válidos antes de guardar"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/35 hover:bg-emerald-500/25 text-emerald-300 text-xs font-bold transition-all disabled:opacity-50"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveManualTokens}
-                  disabled={savingTokens || (!manualAccessToken.trim() && !manualRefreshToken.trim())}
-                  className="flex items-center gap-1.5 px-5 py-1.5 rounded-xl bg-red-500/20 border border-red-500/40 hover:bg-red-500/30 text-red-200 text-xs font-bold transition-all disabled:opacity-50"
-                >
-                  {savingTokens ? (
-                    <Loader2 size={12} className="animate-spin" />
+                  {testingModalToken ? (
+                    <Loader2 size={12} className="animate-spin text-emerald-400" />
                   ) : (
-                    <YoutubeIcon size={12} className="text-red-400" />
+                    <RefreshCw size={12} className="text-emerald-400" />
                   )}
-                  {savingTokens ? 'Guardando…' : 'Guardar y Conectar'}
+                  <span>{testingModalToken ? 'Probando con Google…' : '🧪 Probar con Google'}</span>
                 </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTokenModalAccount(null)}
+                    className="px-4 py-1.5 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveManualTokens}
+                    disabled={savingTokens || (!manualAccessToken.trim() && !manualRefreshToken.trim())}
+                    className="flex items-center gap-1.5 px-5 py-1.5 rounded-xl bg-red-500/20 border border-red-500/40 hover:bg-red-500/30 text-red-200 text-xs font-bold transition-all disabled:opacity-50"
+                  >
+                    {savingTokens ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <YoutubeIcon size={12} className="text-red-400" />
+                    )}
+                    {savingTokens ? 'Guardando…' : 'Guardar y Conectar'}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

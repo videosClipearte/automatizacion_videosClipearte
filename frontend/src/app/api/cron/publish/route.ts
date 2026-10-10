@@ -152,6 +152,8 @@ export async function GET(request: Request) {
               tags: video.hashtags ? String(video.hashtags).split(' ').filter(Boolean).map((t: string) => t.replace('#', '')) : [],
               privacidad: 'public',
               made_for_kids: false,
+              client_id: cfg.youtube_client_id || cfg.drive_client_id || undefined,
+              client_secret: cfg.youtube_client_secret || cfg.drive_client_secret || undefined,
             }),
           });
 

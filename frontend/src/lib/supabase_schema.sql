@@ -233,4 +233,30 @@ CREATE TRIGGER trg_config_updated_at
 -- Migraciones idempotentes seguras
 ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
 
+-- ==============================================================================
+-- 8. youtube_tokens
+-- Guarda tokens OAuth2 (access_token, refresh_token, credenciales por canal)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.youtube_tokens (
+    canal_id TEXT PRIMARY KEY,
+    access_token TEXT NOT NULL DEFAULT '',
+    refresh_token TEXT NOT NULL DEFAULT '',
+    client_id TEXT DEFAULT '',
+    client_secret TEXT DEFAULT '',
+    token_uri TEXT DEFAULT 'https://oauth2.googleapis.com/token',
+    scopes TEXT DEFAULT 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.readonly',
+    method TEXT DEFAULT 'manual_token',
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.youtube_tokens ADD COLUMN IF NOT EXISTS client_id TEXT DEFAULT '';
+ALTER TABLE public.youtube_tokens ADD COLUMN IF NOT EXISTS client_secret TEXT DEFAULT '';
+ALTER TABLE public.youtube_tokens ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'youtube_tokens' AND policyname = 'anon_full_access') THEN
+    CREATE POLICY "anon_full_access" ON public.youtube_tokens FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
 -- FIN: Tablas limpias y listas. Sin datos mock ni sensibles.
