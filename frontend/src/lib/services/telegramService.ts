@@ -41,6 +41,43 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * Determina si la hora actual (o dada) cae dentro del horario de silencio configurado.
+ * Maneja correctamente intervalos diurnos (ej. 13:00 - 15:00) o que cruzan la medianoche (ej. 23:00 - 08:00).
+ */
+export function isWithinSilenceHours(
+  config: {
+    alerta_horario_silencio_activo?: boolean;
+    alerta_silencio_desde?: string;
+    alerta_silencio_hasta?: string;
+  },
+  date: Date = new Date()
+): boolean {
+  if (!config || !config.alerta_horario_silencio_activo) return false;
+  const start = (config.alerta_silencio_desde || '23:00').trim();
+  const end = (config.alerta_silencio_hasta || '08:00').trim();
+
+  const [startH, startM] = start.split(':').map((n) => parseInt(n, 10) || 0);
+  const [endH, endM] = end.split(':').map((n) => parseInt(n, 10) || 0);
+
+  const currentH = date.getHours();
+  const currentM = date.getMinutes();
+
+  const currentMinutes = currentH * 60 + currentM;
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  if (startMinutes === endMinutes) return false;
+
+  if (startMinutes < endMinutes) {
+    // Rango diurno dentro del mismo día (ej. 13:00 a 15:00)
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  } else {
+    // Cruza la medianoche (ej. 23:00 a 08:00)
+    return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+  }
+}
+
+/**
  * Envia un mensaje real a Telegram mediante HTTP POST a la API oficial de Telegram
  */
 export async function sendTelegramMessage(

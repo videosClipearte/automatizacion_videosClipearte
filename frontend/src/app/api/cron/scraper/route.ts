@@ -14,7 +14,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { loadAppConfig } from '@/lib/services/appConfigService';
-import { sendTelegramMessage } from '@/lib/services/telegramService';
+import { sendTelegramMessage, isWithinSilenceHours } from '@/lib/services/telegramService';
 import { differenceInMinutes, parseISO, format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
@@ -62,6 +62,16 @@ export async function GET(request: Request) {
       });
     }
 
+    // ── Respetar Horario de Silencio (Nocturno) ──
+    if (isWithinSilenceHours(cfg, now)) {
+      return NextResponse.json({
+        success: true,
+        monitored: sentVideos.length,
+        silenced: true,
+        message: `Horario de silencio activo (${cfg.alerta_silencio_desde} - ${cfg.alerta_silencio_hasta}). Avisos a Telegram silenciados temporalmente.`,
+      });
+    }
+
     // 2. Cargar cuentas
     const { data: cuentas } = await db.from('cuentas').select('*');
 
@@ -69,8 +79,19 @@ export async function GET(request: Request) {
 
     for (const video of sentVideos) {
       const account = cuentas?.find((c: any) => c.id === video.cuenta_id);
+      const isYoutube = account?.plataforma === 'youtube';
       const platform = (account?.plataforma || 'red social').toUpperCase();
       const username = (account?.username || 'cuenta').replace(/^@/, '');
+
+      // ── Auto-sanación: Si es YouTube y ya cuenta con URL de post confirmada, restaurar a PUBLICADO ──
+      if (isYoutube && video.post_url_publica && video.post_url_publica.startsWith('http')) {
+        await db.from('publicaciones')
+          .update({ estado: 'PUBLICADO', publicado_en: video.publicado_en || nowIso })
+          .eq('id', video.id);
+        await db.from('confirmaciones_telegram').delete().eq('publicacion_id', video.id);
+        results.push({ id: video.id, titulo: video.titulo, action: 'healed_to_publicado' });
+        continue;
+      }
 
       const programadoPara = video.programado_para ? parseISO(video.programado_para) : null;
       if (!programadoPara) continue;
@@ -121,7 +142,19 @@ export async function GET(request: Request) {
           .eq('id', video.id);
 
         if (botToken && adminChatId) {
-          const criticalMsg = `
+          const criticalMsg = isYoutube
+            ? `
+🚨 <b>ALERTA CRÍTICA — FALLO EN YOUTUBE</b>
+━━━━━━━━━━━━━━━━━━━━
+🎬 <b>Video:</b> ${video.titulo}
+👤 <b>Canal:</b> @${username} (<b>YOUTUBE</b>)
+⏱️ <b>Tiempo transcurrido:</b> ${delayMinutes} minutos
+🔔 <b>Avisos enviados:</b> ${nuevoReintentos}
+
+⛔ <i>Se agotó el límite de reintentos (${maxReintentos}) para la publicación automática de este video en YouTube.</i>
+⚠️ <b>Acción requerida:</b> Verifica la conexión de YouTube en Configuración → Cuentas o sube el video manualmente.
+`.trim()
+            : `
 🚨 <b>ALERTA CRÍTICA — VIDEO SIN CONFIRMAR</b>
 ━━━━━━━━━━━━━━━━━━━━
 🎬 <b>Video:</b> ${video.titulo}
@@ -137,7 +170,7 @@ export async function GET(request: Request) {
 
         results.push({ id: video.id, titulo: video.titulo, action: 'critical_alert_sent', reintentos: nuevoReintentos });
       } else {
-        // ⚠️ Recordatorio: el equipo aún no ha confirmado la publicación
+        // ⚠️ Recordatorio: el video aún no ha sido confirmado o publicado
         await db
           .from('publicaciones')
           .update({
@@ -148,13 +181,25 @@ export async function GET(request: Request) {
           .eq('id', video.id);
 
         if (botToken && groupChatId) {
-          const reminderMsg = `
+          const reminderMsg = isYoutube
+            ? `
+⏰ <b>RECORDATORIO: PUBLICACIÓN AUTOMÁTICA EN YOUTUBE</b>
+━━━━━━━━━━━━━━━━━━━━
+🎬 <b>Video:</b> ${video.titulo}
+👤 <b>Canal:</b> @${username} (<b>YOUTUBE</b>)
+🕒 <b>Programado para:</b> ${format(programadoPara, 'HH:mm')} — hace ${delayMinutes} min
+📢 <b>Aviso #${nuevoReintentos} de ${maxReintentos}</b>
+
+⚠️ <i>La publicación automática en YouTube no ha finalizado tras superar el margen de tolerancia (${toleranciaMinutos} min).</i>
+⚙️ Verifica el estado en la app o revisa las credenciales de YouTube en Configuración → Cuentas.
+`.trim()
+            : `
 ⏰ <b>RECORDATORIO DE PUBLICACIÓN PENDIENTE</b>
 ━━━━━━━━━━━━━━━━━━━━
 🎬 <b>Video:</b> ${video.titulo}
 👤 <b>Cuenta:</b> @${username} (<b>${platform}</b>)
 🕒 <b>Programado para:</b> ${format(programadoPara, 'HH:mm')} — hace ${delayMinutes} min
-📢 <b>Recordatorio #${nuevoReintentos} de ${maxReintentos}</b>
+📢 <b>Aviso #${nuevoReintentos} de ${maxReintentos}</b>
 
 👉 <i>¿Ya lo publicaste en ${platform}?</i>
 ✅ Confírmalo en la app para cerrar el seguimiento.

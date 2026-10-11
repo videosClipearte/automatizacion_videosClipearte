@@ -14,7 +14,7 @@ import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import {
   getStoredTelegramConfig, sendTelegramMessage
 } from '@/lib/services/telegramService';
-import { loadAppConfig, getCachedConfig } from '@/lib/services/appConfigService';
+import { loadAppConfig, getCachedConfig, saveAppConfig } from '@/lib/services/appConfigService';
 import { getSupabase } from '@/lib/supabase';
 
 const ALERTS_SETTINGS_STORAGE_KEY = 'autopublish_alerts_settings';
@@ -47,32 +47,54 @@ export default function AlertsSettingsPage() {
   const [scraperTestResult, setScraperTestResult] = useState<string | null>(null);
 
   // Save status
+  const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // Cargar configuraciones guardadas al iniciar
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem(ALERTS_SETTINGS_STORAGE_KEY);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed.toleranceMinutes !== undefined) setToleranceMinutes(parsed.toleranceMinutes);
-          if (parsed.retryIntervalMinutes !== undefined) setRetryIntervalMinutes(parsed.retryIntervalMinutes);
-          if (parsed.maxRetries !== undefined) setMaxRetries(parsed.maxRetries);
-          if (parsed.quietHoursEnabled !== undefined) setQuietHoursEnabled(parsed.quietHoursEnabled);
-          if (parsed.quietStart) setQuietStart(parsed.quietStart);
-          if (parsed.quietEnd) setQuietEnd(parsed.quietEnd);
-          if (parsed.telegramTemplate) setTelegramTemplate(parsed.telegramTemplate);
-          if (parsed.dailyQuotaAlertEnabled !== undefined) setDailyQuotaAlertEnabled(parsed.dailyQuotaAlertEnabled);
-          if (parsed.dailyQuotaAlertHour) setDailyQuotaAlertHour(parsed.dailyQuotaAlertHour);
-          if (parsed.scraperIntervalMinutes !== undefined) setScraperIntervalMinutes(parsed.scraperIntervalMinutes);
-          if (parsed.headlessMode !== undefined) setHeadlessMode(parsed.headlessMode);
-          if (parsed.timeoutSeconds !== undefined) setTimeoutSeconds(parsed.timeoutSeconds);
-        } catch (e) {
-          console.error('Error al parsear ajustes de alertas', e);
+    async function initSettings() {
+      try {
+        const cfg = await loadAppConfig();
+        if (cfg.alerta_tolerancia_minutos !== undefined) setToleranceMinutes(cfg.alerta_tolerancia_minutos);
+        if (cfg.alerta_intervalo_reintento_minutos !== undefined) setRetryIntervalMinutes(cfg.alerta_intervalo_reintento_minutos);
+        if (cfg.alerta_max_reintentos !== undefined) setMaxRetries(cfg.alerta_max_reintentos);
+        if (cfg.alerta_horario_silencio_activo !== undefined) setQuietHoursEnabled(cfg.alerta_horario_silencio_activo);
+        if (cfg.alerta_silencio_desde) setQuietStart(cfg.alerta_silencio_desde);
+        if (cfg.alerta_silencio_hasta) setQuietEnd(cfg.alerta_silencio_hasta);
+        if (cfg.alerta_plantilla_mensaje) setTelegramTemplate(cfg.alerta_plantilla_mensaje);
+        if (cfg.alerta_cuota_diaria_activa !== undefined) setDailyQuotaAlertEnabled(cfg.alerta_cuota_diaria_activa);
+        if (cfg.alerta_cuota_hora_envio) setDailyQuotaAlertHour(cfg.alerta_cuota_hora_envio);
+        if (cfg.scraper_intervalo_minutos !== undefined) setScraperIntervalMinutes(cfg.scraper_intervalo_minutos);
+        if (cfg.scraper_modo_headless !== undefined) setHeadlessMode(cfg.scraper_modo_headless);
+        if (cfg.scraper_timeout_segundos !== undefined) setTimeoutSeconds(cfg.scraper_timeout_segundos);
+      } catch (err) {
+        console.warn('Error cargando configuración en alerts page:', err);
+      }
+
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem(ALERTS_SETTINGS_STORAGE_KEY);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed.toleranceMinutes !== undefined) setToleranceMinutes(parsed.toleranceMinutes);
+            if (parsed.retryIntervalMinutes !== undefined) setRetryIntervalMinutes(parsed.retryIntervalMinutes);
+            if (parsed.maxRetries !== undefined) setMaxRetries(parsed.maxRetries);
+            if (parsed.quietHoursEnabled !== undefined) setQuietHoursEnabled(parsed.quietHoursEnabled);
+            if (parsed.quietStart) setQuietStart(parsed.quietStart);
+            if (parsed.quietEnd) setQuietEnd(parsed.quietEnd);
+            if (parsed.telegramTemplate) setTelegramTemplate(parsed.telegramTemplate);
+            if (parsed.dailyQuotaAlertEnabled !== undefined) setDailyQuotaAlertEnabled(parsed.dailyQuotaAlertEnabled);
+            if (parsed.dailyQuotaAlertHour) setDailyQuotaAlertHour(parsed.dailyQuotaAlertHour);
+            if (parsed.scraperIntervalMinutes !== undefined) setScraperIntervalMinutes(parsed.scraperIntervalMinutes);
+            if (parsed.headlessMode !== undefined) setHeadlessMode(parsed.headlessMode);
+            if (parsed.timeoutSeconds !== undefined) setTimeoutSeconds(parsed.timeoutSeconds);
+          } catch (e) {
+            console.error('Error al parsear ajustes de alertas', e);
+          }
         }
       }
     }
+    initSettings();
   }, []);
 
   const handleTestScraper = async () => {
@@ -83,26 +105,49 @@ export default function AlertsSettingsPage() {
     setScraperTestResult('✅ Extracción silenciosa completada en segundo plano (0.42s). Post encontrado: 142,500 vistas, 8,920 likes. Sin abrir ventanas de navegador.');
   };
 
-  const handleSave = () => {
-    if (typeof window !== 'undefined') {
-      const dataToSave = {
-        toleranceMinutes,
-        retryIntervalMinutes,
-        maxRetries,
-        quietHoursEnabled,
-        quietStart,
-        quietEnd,
-        telegramTemplate,
-        dailyQuotaAlertEnabled,
-        dailyQuotaAlertHour,
-        scraperIntervalMinutes,
-        headlessMode,
-        timeoutSeconds,
-      };
-      localStorage.setItem(ALERTS_SETTINGS_STORAGE_KEY, JSON.stringify(dataToSave));
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      if (typeof window !== 'undefined') {
+        const dataToSave = {
+          toleranceMinutes,
+          retryIntervalMinutes,
+          maxRetries,
+          quietHoursEnabled,
+          quietStart,
+          quietEnd,
+          telegramTemplate,
+          dailyQuotaAlertEnabled,
+          dailyQuotaAlertHour,
+          scraperIntervalMinutes,
+          headlessMode,
+          timeoutSeconds,
+        };
+        localStorage.setItem(ALERTS_SETTINGS_STORAGE_KEY, JSON.stringify(dataToSave));
+      }
+
+      await saveAppConfig({
+        alerta_tolerancia_minutos: toleranceMinutes,
+        alerta_intervalo_reintento_minutos: retryIntervalMinutes,
+        alerta_max_reintentos: maxRetries,
+        alerta_horario_silencio_activo: quietHoursEnabled,
+        alerta_silencio_desde: quietStart,
+        alerta_silencio_hasta: quietEnd,
+        alerta_plantilla_mensaje: telegramTemplate,
+        alerta_cuota_diaria_activa: dailyQuotaAlertEnabled,
+        alerta_cuota_hora_envio: dailyQuotaAlertHour,
+        scraper_intervalo_minutos: scraperIntervalMinutes,
+        scraper_modo_headless: headlessMode,
+        scraper_timeout_segundos: timeoutSeconds,
+      });
+
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (saveErr) {
+      console.error('Error guardando configuración de alertas:', saveErr);
+    } finally {
+      setIsSaving(false);
     }
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   // Enviar reporte consolidado de metas diarias a Telegram
@@ -569,9 +614,11 @@ export default function AlertsSettingsPage() {
         <div className="mt-4 flex justify-end">
           <button
             onClick={handleSave}
-            className="px-6 py-2.5 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+            disabled={isSaving}
+            className="px-6 py-2.5 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
           >
-            Guardar Configuración de Intervalos
+            {isSaving ? <Loader2 size={14} className="animate-spin" /> : null}
+            <span>{isSaving ? 'Guardando...' : 'Guardar Configuración de Intervalos'}</span>
           </button>
         </div>
       </GlassCard>

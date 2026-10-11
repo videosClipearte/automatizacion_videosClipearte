@@ -884,6 +884,13 @@ export async function POST(req: NextRequest) {
           post_url_publica: videoUrl,
         })
         .eq('id', pid);
+
+      // Limpiar confirmaciones pendientes en Telegram para este video
+      await supabase
+        .from('confirmaciones_telegram')
+        .delete()
+        .eq('publicacion_id', pid);
+
       await writeLog(pid, 'SUCCESS', 'BD_UPDATE', 'Publicación marcada como PUBLICADO en la base de datos.');
     } catch (dbErr: any) {
       await writeLog(pid, 'WARN', 'BD_UPDATE', 'No se pudo actualizar el estado en la BD', dbErr.message);

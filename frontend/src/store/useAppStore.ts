@@ -282,6 +282,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         const erroneouslyPublished = (vidRes.data ?? []).filter((v: any) => {
           if (v.estado !== 'PUBLICADO') return false;
+          // Los videos de YouTube se publican directamente por API y NUNCA deben degradarse a ENVIADO
+          const acc = (accRes.data ?? []).find((a: any) => a.id === v.cuenta_id);
+          const isYt = acc?.plataforma === 'youtube' || (v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be')));
+          if (isYt) return false;
+
           // Si tiene confirmación de Telegram pendiente o esperando link
           if (unconfirmedPubIds.includes(v.id)) return true;
           // O si fue despachado/enviado pero aún no cuenta con la URL pública del reel confirmada
@@ -303,6 +308,51 @@ export const useAppStore = create<AppState>((set, get) => ({
               v.publicado_en = null;
             }
           });
+        }
+
+        // ── Auto-restaurar videos de YouTube erróneamente degradados a ENVIADO ──
+        const wronglySentYoutube = (vidRes.data ?? []).filter((v: any) => {
+          if (v.estado !== 'ENVIADO') return false;
+          const acc = (accRes.data ?? []).find((a: any) => a.id === v.cuenta_id);
+          const isYt = acc?.plataforma === 'youtube' || (v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be')));
+          // Si es YouTube y tiene URL pública confirmada de YouTube
+          if (isYt && v.post_url_publica && v.post_url_publica.startsWith('http')) return true;
+          return false;
+        });
+
+        if (wronglySentYoutube.length > 0) {
+          const ytFixIds = wronglySentYoutube.map((v: any) => v.id);
+          console.log(`[Supabase] Restaurando ${ytFixIds.length} video(s) de YouTube a PUBLICADO:`, ytFixIds);
+          await db
+            .from('publicaciones')
+            .update({
+              estado: 'PUBLICADO',
+              publicado_en: new Date().toISOString(),
+            })
+            .in('id', ytFixIds);
+
+          vidRes.data?.forEach((v: any) => {
+            if (ytFixIds.includes(v.id)) {
+              v.estado = 'PUBLICADO';
+              v.publicado_en = v.publicado_en || new Date().toISOString();
+            }
+          });
+        }
+
+        // Limpiar de confirmaciones_telegram cualquier registro de publicaciones de YouTube ya publicadas
+        const allPublishedYtIds = (vidRes.data ?? [])
+          .filter((v: any) => {
+            if (v.estado !== 'PUBLICADO') return false;
+            const acc = (accRes.data ?? []).find((a: any) => a.id === v.cuenta_id);
+            return acc?.plataforma === 'youtube' || (v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be')));
+          })
+          .map((v: any) => v.id);
+
+        if (allPublishedYtIds.length > 0) {
+          await db
+            .from('confirmaciones_telegram')
+            .delete()
+            .in('publicacion_id', allPublishedYtIds);
         }
       } catch (autoHealErr) {
         console.warn('[Supabase] Aviso en auto-corrección de publicaciones pendientes:', autoHealErr);

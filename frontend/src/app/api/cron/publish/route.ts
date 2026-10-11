@@ -4,7 +4,7 @@
 // Este cron actúa como respaldo para cuando la app no está abierta en el navegador.
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
-import { sendPublicationAlert, sendConfirmationPoll } from '@/lib/services/telegramService';
+import { sendPublicationAlert, sendConfirmationPoll, isWithinSilenceHours } from '@/lib/services/telegramService';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 
 export const dynamic = 'force-dynamic';
@@ -85,55 +85,62 @@ export async function GET(request: Request) {
 
       const account = cuentas?.find((c: any) => c.id === video.cuenta_id);
       const campaign = campanas?.find((c: any) => c.id === video.campana_id);
+      const isYoutube = account?.plataforma === 'youtube';
+      const inSilence = isWithinSilenceHours(cfg);
       const horaLocal = formatLocalDateTime(video.programado_para);
 
       let sentTelegram = false;
       let confirmationMessageId: number | undefined;
 
-      if (botToken && targetChat) {
-        // Paso 1: Enviar ficha del video + descripción (2 mensajes)
-        const sendRes = await sendPublicationAlert(botToken, targetChat, {
-          videoTitle: video.titulo,
-          accountUsername: account?.username || 'cuenta',
-          platform: account?.plataforma || 'red',
-          campaignName: campaign?.nombre,
-          driveFileUrl: video.drive_file_url,
-          descripcion: video.descripcion_aprobada_ia,
-          programadoPara: horaLocal,
-        });
-        sentTelegram = sendRes.success;
-
-        // Pausa para garantizar orden de llegada en Telegram
-        await new Promise((r) => setTimeout(r, 600));
-
-        // Paso 2: Enviar encuesta de confirmación Sí/No (inline keyboard)
-        if (sentTelegram) {
-          const pollRes = await sendConfirmationPoll(botToken, targetChat, {
-            publicacionId: video.id,
+      // ── Para plataformas manuales (Instagram, TikTok): Despachar a Telegram y enviar encuesta ──
+      if (!isYoutube && botToken && targetChat) {
+        if (!inSilence) {
+          // Paso 1: Enviar ficha del video + descripción (2 mensajes)
+          const sendRes = await sendPublicationAlert(botToken, targetChat, {
             videoTitle: video.titulo,
             accountUsername: account?.username || 'cuenta',
             platform: account?.plataforma || 'red',
+            campaignName: campaign?.nombre,
+            driveFileUrl: video.drive_file_url,
+            descripcion: video.descripcion_aprobada_ia,
             programadoPara: horaLocal,
           });
+          sentTelegram = sendRes.success;
 
-          if (pollRes.success && pollRes.messageId) {
-            confirmationMessageId = pollRes.messageId;
+          // Pausa para garantizar orden de llegada en Telegram
+          await new Promise((r) => setTimeout(r, 600));
 
-            // Guardar registro de confirmación pendiente en la BD
-            await db.from('confirmaciones_telegram').insert({
-              publicacion_id: video.id,
-              chat_id: String(targetChat),
-              message_id: confirmationMessageId,
-              estado: 'PENDIENTE',
+          // Paso 2: Enviar encuesta de confirmación Sí/No (inline keyboard)
+          if (sentTelegram) {
+            const pollRes = await sendConfirmationPoll(botToken, targetChat, {
+              publicacionId: video.id,
+              videoTitle: video.titulo,
+              accountUsername: account?.username || 'cuenta',
+              platform: account?.plataforma || 'red',
+              programadoPara: horaLocal,
             });
+
+            if (pollRes.success && pollRes.messageId) {
+              confirmationMessageId = pollRes.messageId;
+
+              // Guardar registro de confirmación pendiente en la BD
+              await db.from('confirmaciones_telegram').insert({
+                publicacion_id: video.id,
+                chat_id: String(targetChat),
+                message_id: confirmationMessageId,
+                estado: 'PENDIENTE',
+              });
+            }
           }
+        } else {
+          console.log(`[Cron/Publish] Horario de silencio activo. Despacho a Telegram pospuesto para "${video.titulo}".`);
         }
       }
 
       let youtubeResult: any = null;
 
       // ── Si la cuenta es YouTube: subir el video directamente a YouTube ──
-      if (account?.plataforma === 'youtube' && video.drive_file_url) {
+      if (isYoutube && video.drive_file_url) {
         try {
           const host = request instanceof Request
             ? new URL(request.url).origin
@@ -144,7 +151,7 @@ export async function GET(request: Request) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               publicacion_id: video.id,
-              canal_id: account.username,
+              canal_id: account?.username,
               video_url: video.drive_file_url,
               titulo: video.titulo,
               descripcion: video.descripcion_aprobada_ia || video.titulo,
@@ -169,8 +176,13 @@ export async function GET(request: Request) {
               })
               .eq('id', video.id);
 
-            // Notificar éxito en Telegram
-            if (botToken && targetChat) {
+            // Limpiar confirmaciones pendientes en Telegram
+            await db.from('confirmaciones_telegram')
+              .delete()
+              .eq('publicacion_id', video.id);
+
+            // Notificar éxito en Telegram respetando horario de silencio
+            if (!inSilence && botToken && targetChat) {
               await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -179,15 +191,25 @@ export async function GET(request: Request) {
                   text: `✅ *Video publicado en YouTube*\n\n📺 *${video.titulo}*\n🔗 ${youtubeResult.video_url}`,
                   parse_mode: 'Markdown',
                 }),
-              });
+              }).catch(() => {});
             }
           } else {
             console.warn(`[Cron/Publish] YouTube upload falló para ${video.id}:`, youtubeResult.error);
-            // ── Notificar fallo en Telegram ──────────────────────────────────
-            if (botToken && targetChat) {
+
+            // Actualizar estado del video a ERROR_DE_RED en Supabase
+            await db.from('publicaciones')
+              .update({ estado: 'ERROR_DE_RED' })
+              .eq('id', video.id);
+
+            // Respetar tiempos y tolerancia de alertas antes de avisar a Telegram
+            const progDate = new Date(video.programado_para);
+            const delayMinutes = Math.floor((Date.now() - progDate.getTime()) / 60000);
+            const toleranciaMinutos = cfg.alerta_tolerancia_minutos ?? 60;
+
+            if (delayMinutes >= toleranciaMinutos && !inSilence && botToken && targetChat) {
               const errorMsg = youtubeResult.error || 'Error desconocido';
               const needsReauth = youtubeResult.needs_reauth || youtubeResult.needs_auth;
-              let alertText = `❌ *Falló la publicación en YouTube*\n\n📺 *${video.titulo}*\n👤 Canal: @${account?.username || 'canal'}\n\n🚨 *Error:* ${errorMsg}`;
+              let alertText = `❌ *Falló la publicación en YouTube*\n\n📺 *${video.titulo}*\n👤 Canal: @${account?.username || 'canal'}\n\n🚨 *Error:* ${errorMsg}\n⏱️ *Retraso:* ${delayMinutes} min (superó tolerancia de ${toleranciaMinutos} min)`;
               if (needsReauth) {
                 alertText += `\n\n⚠️ *Acción requerida:* Ve a Configuración → Cuentas → Conectar YouTube y vuelve a generar los tokens con el scope \`youtube.upload\`.`;
               }
@@ -199,23 +221,32 @@ export async function GET(request: Request) {
                   text: alertText,
                   parse_mode: 'Markdown',
                 }),
-              }).catch(() => {/* ignorar error de Telegram */});
+              }).catch(() => {});
+            } else if (delayMinutes < toleranciaMinutos) {
+              console.log(`[Cron/Publish] Subida a YouTube falló pero dentro del margen de tolerancia (${delayMinutes}/${toleranciaMinutos} min). Alerta pospuesta.`);
+            } else if (inSilence) {
+              console.log(`[Cron/Publish] Subida a YouTube falló pero horario de silencio activo. Alerta silenciada.`);
             }
           }
         } catch (ytErr: any) {
           console.error(`[Cron/Publish] Error al publicar en YouTube:`, ytErr.message);
           youtubeResult = { success: false, error: ytErr.message };
-          // ── Notificar excepción en Telegram ──────────────────────────────────
-          if (botToken && targetChat) {
+
+          // Respetar tiempos y tolerancia de alertas
+          const progDate = new Date(video.programado_para);
+          const delayMinutes = Math.floor((Date.now() - progDate.getTime()) / 60000);
+          const toleranciaMinutos = cfg.alerta_tolerancia_minutos ?? 60;
+
+          if (delayMinutes >= toleranciaMinutos && !inSilence && botToken && targetChat) {
             await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 chat_id: targetChat,
-                text: `❌ *Error inesperado al publicar en YouTube*\n\n📺 *${video.titulo}*\n👤 Canal: @${account?.username || 'canal'}\n\n🚨 *Error:* ${ytErr.message}\n\n⚙️ Revisa los logs en Supabase para más detalles.`,
+                text: `❌ *Error inesperado al publicar en YouTube*\n\n📺 *${video.titulo}*\n👤 Canal: @${account?.username || 'canal'}\n\n🚨 *Error:* ${ytErr.message}\n⏱️ *Retraso:* ${delayMinutes} min`,
                 parse_mode: 'Markdown',
               }),
-            }).catch(() => {/* ignorar */});
+            }).catch(() => {});
           }
         }
       }
