@@ -206,10 +206,19 @@ function uploadSingleAttempt(
     xhr.setRequestHeader('Authorization', `Bearer ${accessToken.trim()}`);
 
     if (xhr.upload && onProgress) {
+      let lastPct = -1;
+      let lastTime = 0;
+
       xhr.upload.onprogress = (evt) => {
         if (evt.lengthComputable) {
           const pct = Math.round((evt.loaded / evt.total) * 100);
-          onProgress(pct);
+          const now = Date.now();
+          // Throttling: emitir al 100% o si pasaron al menos 300ms y el porcentaje varió
+          if (pct === 100 || (pct !== lastPct && now - lastTime >= 300)) {
+            lastPct = pct;
+            lastTime = now;
+            onProgress(pct);
+          }
         }
       };
     }

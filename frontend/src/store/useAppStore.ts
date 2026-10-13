@@ -215,12 +215,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   driveUploads: {},
   setDriveUploadProgress: (videoId, progress) => {
-    set((s) => ({
-      driveUploads: {
-        ...s.driveUploads,
-        [videoId]: { progress, status: 'uploading' },
-      },
-    }));
+    set((s) => {
+      const current = s.driveUploads[videoId];
+      if (current && current.status === 'uploading' && current.progress === progress) {
+        return s;
+      }
+      return {
+        driveUploads: {
+          ...s.driveUploads,
+          [videoId]: { progress, status: 'uploading' },
+        },
+      };
+    });
   },
   setDriveUploadComplete: (videoId) => {
     set((s) => ({

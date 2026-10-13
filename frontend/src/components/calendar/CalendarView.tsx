@@ -14,7 +14,7 @@ import {
   addDays, subDays, getHours, setHours
 } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useAppStore } from '@/store/useAppStore';
+import { useAppStore, type Video } from '@/store/useAppStore';
 import { MetricPill } from '@/components/ui/MetricPill';
 import { cn, getStatusClass } from '@/lib/utils';
 
@@ -82,7 +82,6 @@ export function CalendarView() {
     return clientToday ? dayKey === clientToday : isToday(day);
   }, [clientToday]);
 
-  const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
 
   // Drag state
@@ -204,28 +203,54 @@ export function CalendarView() {
     return format(currentDate, "EEEE, d 'de' MMMM yyyy", { locale: es });
   };
 
-  const getVideosForDay = (day: Date) =>
-    videos
-      .filter((v) => {
-        if (!isSameDay(new Date(v.programado_para), day)) return false;
-        if (selectedAccountId && selectedAccountId !== 'ALL' && v.cuenta_id !== selectedAccountId) {
-          return false;
-        }
-        if (statusFilter && statusFilter !== 'ALL' && v.estado !== statusFilter) {
-          return false;
-        }
-        return true;
-      })
-      .sort((a, b) => new Date(a.programado_para).getTime() - new Date(b.programado_para).getTime());
+  // ── Optimización CPU O(1): Filtrar y pre-agrupar videos por fecha 'yyyy-MM-dd' una sola vez ──
+  const { videosByDayMap, metricsByDayMap } = useMemo(() => {
+    const vMap = new Map<string, Video[]>();
+    const mMap = new Map<string, { scheduled: number; sent: number; published: number }>();
 
-  const getDayMetrics = (day: Date) => {
-    const dv = getVideosForDay(day);
-    return {
-      scheduled: dv.filter(v => v.estado === 'PROGRAMADO').length,
-      sent:       dv.filter(v => v.estado === 'ENVIADO').length,
-      published:  dv.filter(v => v.estado === 'PUBLICADO').length,
-    };
-  };
+    for (const v of videos) {
+      if (selectedAccountId && selectedAccountId !== 'ALL' && v.cuenta_id !== selectedAccountId) {
+        continue;
+      }
+      if (statusFilter && statusFilter !== 'ALL' && v.estado !== statusFilter) {
+        continue;
+      }
+
+      const dayKey = format(new Date(v.programado_para), 'yyyy-MM-dd');
+      let list = vMap.get(dayKey);
+      if (!list) {
+        list = [];
+        vMap.set(dayKey, list);
+      }
+      list.push(v);
+
+      let m = mMap.get(dayKey);
+      if (!m) {
+        m = { scheduled: 0, sent: 0, published: 0 };
+        mMap.set(dayKey, m);
+      }
+      if (v.estado === 'PROGRAMADO') m.scheduled++;
+      else if (v.estado === 'ENVIADO') m.sent++;
+      else if (v.estado === 'PUBLICADO') m.published++;
+    }
+
+    // Ordenar cronológicamente solo los días que tienen videos
+    for (const list of vMap.values()) {
+      list.sort((a, b) => new Date(a.programado_para).getTime() - new Date(b.programado_para).getTime());
+    }
+
+    return { videosByDayMap: vMap, metricsByDayMap: mMap };
+  }, [videos, selectedAccountId, statusFilter]);
+
+  const getVideosForDay = useCallback((day: Date) => {
+    const dayKey = format(day, 'yyyy-MM-dd');
+    return videosByDayMap.get(dayKey) || [];
+  }, [videosByDayMap]);
+
+  const getDayMetrics = useCallback((day: Date) => {
+    const dayKey = format(day, 'yyyy-MM-dd');
+    return metricsByDayMap.get(dayKey) || { scheduled: 0, sent: 0, published: 0 };
+  }, [metricsByDayMap]);
 
   const getPlatformIcon = (platform?: string) => {
     switch (platform) {
@@ -441,19 +466,16 @@ export function CalendarView() {
               style={{ gridTemplateRows: `repeat(${Math.ceil(monthDays.length / 7)}, minmax(0, 1fr))` }}
             >
               {monthDays.map((day) => {
-                const dayVideos = getVideosForDay(day);
-                const metrics  = getDayMetrics(day);
                 const dayKey   = format(day, 'yyyy-MM-dd');
+                const dayVideos = videosByDayMap.get(dayKey) || [];
+                const metrics  = metricsByDayMap.get(dayKey) || { scheduled: 0, sent: 0, published: 0 };
                 const isCurrentMonth = isSameMonth(day, currentDate);
-                const isHovered      = hoveredDay === dayKey;
                 const hasSomething   = dayVideos.length > 0;
                 const isDayTargeted  = dragOverDay === dayKey;
 
                 return (
                   <div
                     key={dayKey}
-                    onMouseEnter={() => setHoveredDay(dayKey)}
-                    onMouseLeave={() => setHoveredDay(null)}
                     onDragOver={(e) => handleDayDragOver(e, dayKey)}
                     onDragLeave={(e) => handleDayDragLeave(e, dayKey)}
                     onDrop={(e) => handleDayDrop(e, day)}
@@ -498,11 +520,11 @@ export function CalendarView() {
                       )}>
                         {format(day, 'd')}
                       </span>
-                      {isHovered && isCurrentMonth && (
+                      {isCurrentMonth && (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
-                          className="w-4 h-4 sm:w-5 sm:h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-all duration-150 active:scale-95 animate-in fade-in zoom-in-90"
+                          className="w-4 h-4 sm:w-5 sm:h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-all duration-150 active:scale-95 opacity-0 group-hover:opacity-100"
                           title="Programar para este día"
                         >
                           <Plus size={10} />
@@ -598,14 +620,16 @@ export function CalendarView() {
                       </div>
                     )}
 
-                    {/* Hover metric pill */}
-                    {isHovered && hasSomething && (
-                      <MetricPill
-                        scheduled={metrics.scheduled}
-                        sent={metrics.sent}
-                        published={metrics.published}
-                        position="top"
-                      />
+                    {/* Hover metric pill — visible con CSS puro al pasar el mouse por la celda */}
+                    {hasSomething && (
+                      <div className="hidden group-hover:block pointer-events-none z-30">
+                        <MetricPill
+                          scheduled={metrics.scheduled}
+                          sent={metrics.sent}
+                          published={metrics.published}
+                          position="top"
+                        />
+                      </div>
                     )}
                   </div>
                 );
