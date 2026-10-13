@@ -17,7 +17,7 @@ export interface VideoAudioPayload {
  */
 export async function extractAudioFromVideo(
   file: File,
-  maxDurationSeconds: number = 18
+  maxDurationSeconds: number = 8
 ): Promise<VideoAudioPayload | null> {
   if (typeof window === 'undefined') return null;
   if (!window.AudioContext && !(window as any).webkitAudioContext) return null;
@@ -26,20 +26,22 @@ export async function extractAudioFromVideo(
   return new Promise((resolve) => {
     const videoEl = document.createElement('video');
     videoEl.preload = 'metadata';
+    videoEl.style.display = 'none';
     const objectUrl = URL.createObjectURL(file);
     videoEl.src = objectUrl;
 
     const cleanup = (audioCtx?: AudioContext) => {
       URL.revokeObjectURL(objectUrl);
       videoEl.pause();
-      videoEl.src = '';
+      videoEl.removeAttribute('src');
+      videoEl.load();
       audioCtx?.close().catch(() => {});
     };
 
     const timeoutId = setTimeout(() => {
       cleanup();
       resolve(null);
-    }, 45_000);
+    }, 20_000);
 
     videoEl.onloadedmetadata = async () => {
       const rawDuration = isFinite(videoEl.duration) ? videoEl.duration : 20;

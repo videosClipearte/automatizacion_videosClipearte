@@ -309,34 +309,12 @@ export function ScheduleModal() {
     setValue,
   ]);
 
-  // Extraer audio del video para analisis con Gemini (mas rapido que fotogramas)
+  // Limpiar subtitulos y audio previo cuando cambia el video (extraccion bajo demanda al pulsar Generar IA)
   useEffect(() => {
     setExtractedSubtitles(null);
     setShowSubtitlesJson(false);
-    if (!videoFile) {
-      setExtractedAudio(null);
-      setExtractingAudio(false);
-      return;
-    }
-
-    let active = true;
-    setExtractingAudio(true);
-
-    extractAudioFromVideo(videoFile, 18)
-      .then((payload) => {
-        if (active) {
-          setExtractedAudio(payload);
-          setExtractingAudio(false);
-        }
-      })
-      .catch((err) => {
-        if (active) {
-          console.warn('Extraccion de audio omitida:', err);
-          setExtractingAudio(false);
-        }
-      });
-
-    return () => { active = false; };
+    setExtractedAudio(null);
+    setExtractingAudio(false);
   }, [videoFile]);
 
   const onDrop = useCallback(
@@ -491,6 +469,21 @@ export function ScheduleModal() {
     }
 
     try {
+      // ── Optimización CPU (Punto 3): Extraer audio estrictamente bajo demanda al solicitar IA ──
+      let audioPayload = extractedAudio;
+      if (videoFile && !audioPayload) {
+        setExtractingAudio(true);
+        setAiFeedback('🎙️ Escuchando audio del video para redactar copy...');
+        try {
+          audioPayload = await extractAudioFromVideo(videoFile, 8);
+          setExtractedAudio(audioPayload);
+        } catch (e) {
+          console.warn('[ScheduleModal] Extracción de audio bajo demanda omitida:', e);
+        } finally {
+          setExtractingAudio(false);
+        }
+      }
+
       let res: any = null;
       let attempt = 0;
       const maxAttempts = 3;
@@ -503,15 +496,15 @@ export function ScheduleModal() {
         }
 
         try {
-          if (extractedAudio) {
+          if (audioPayload) {
             setAiFeedback(attempt > 1
               ? `🔄 Reintentando audio y descripción con ${model} (${attempt}/${maxAttempts})...`
               : `🎙️ Extrayendo subtítulos y generando descripción con ${model}...`);
             res = await generateDescriptionFromAudio(
               apiKey,
               model,
-              extractedAudio.audioBase64,
-              extractedAudio.mimeType,
+              audioPayload.audioBase64,
+              audioPayload.mimeType,
               effectiveTitle,
               campaignRules,
               platform,
@@ -551,7 +544,7 @@ export function ScheduleModal() {
           setExtractedSubtitles(res.subtitlesJson);
         }
         const usedName = res.usedModel || model;
-        if (extractedAudio) {
+        if (audioPayload) {
           setAiFeedback(`✨ Subtítulos extraídos y descripción generada con ${usedName}.`);
         } else {
           setAiFeedback(`✨ Descripción generada con éxito usando ${usedName}.`);
@@ -564,6 +557,7 @@ export function ScheduleModal() {
       setAiFeedback(`⚠️ Error al conectar con Gemini: ${err?.message || 'Error de conexión'}.`);
     } finally {
       setGeneratingAI(false);
+      setExtractingAudio(false);
     }
   };
 
@@ -1509,19 +1503,21 @@ export function ScheduleModal() {
                   <button
                     type="button"
                     onClick={handleGenerateAI}
-                    disabled={generatingAI}
+                    disabled={generatingAI || extractingAudio}
                     className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-400 hover:from-emerald-500/30 hover:to-cyan-500/30 transition-all disabled:opacity-50"
                   >
-                    {generatingAI ? (
+                    {generatingAI || extractingAudio ? (
                       <RefreshCw size={10} className="animate-spin" />
                     ) : (
                       <Sparkles size={10} />
                     )}
                     <span>
-                      {generatingAI
+                      {extractingAudio
+                        ? 'Escuchando video...'
+                        : generatingAI
                         ? 'Analizando...'
                         : extractedAudio
-                        ? 'Generar con Subtítulos IA 🎙️✨'
+                        ? 'Regenerar con IA 🎙️✨'
                         : 'Generar con IA ✨'}
                     </span>
                   </button>

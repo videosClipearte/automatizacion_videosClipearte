@@ -246,32 +246,12 @@ export function VideoDetailModal() {
     }
   };
 
-  // Extraer audio del video de reemplazo para Gemini IA (mas rapido que fotogramas)
+  // Limpiar audio previo cuando cambia el archivo de reemplazo (extracción bajo demanda con IA)
   useEffect(() => {
-    if (!replacementFile) {
-      setExtractedReplacementAudio(null);
-      setExtractingReplacementAudio(false);
-      return;
-    }
-
-    let active = true;
-    setExtractingReplacementAudio(true);
-
-    extractAudioFromVideo(replacementFile, 18)
-      .then((payload) => {
-        if (active) {
-          setExtractedReplacementAudio(payload);
-          setExtractingReplacementAudio(false);
-        }
-      })
-      .catch((err) => {
-        if (active) {
-          console.warn('Extraccion de audio de reemplazo omitida:', err);
-          setExtractingReplacementAudio(false);
-        }
-      });
-
-    return () => { active = false; };
+    setExtractedReplacementAudio(null);
+    setExtractingReplacementAudio(false);
+    setExtractedSubtitles(null);
+    setShowSubtitlesJson(false);
   }, [replacementFile]);
 
   // Dropzone para reemplazar video
@@ -358,6 +338,24 @@ export function VideoDetailModal() {
         `INSTRUCCIONES: Devuelve UNICAMENTE el texto final listo para publicar. Sin encabezados, sin JSON, sin comillas al inicio.`,
       ].join('\n');
 
+      // ── Optimización CPU (Punto 3): Extraer audio bajo demanda solo al pulsar el botón de IA ──
+      let audioPayload = extractedReplacementAudio;
+      if (replacementFile && !audioPayload) {
+        setExtractingReplacementAudio(true);
+        setEditFeedback({
+          success: true,
+          msg: '🎙️ Escuchando audio del video de reemplazo...',
+        });
+        try {
+          audioPayload = await extractAudioFromVideo(replacementFile, 8);
+          setExtractedReplacementAudio(audioPayload);
+        } catch (e) {
+          console.warn('[VideoDetailModal] Extracción de audio bajo demanda omitida:', e);
+        } finally {
+          setExtractingReplacementAudio(false);
+        }
+      }
+
       let res: any = null;
       let attempt = 0;
       const maxAttempts = 3;
@@ -373,12 +371,12 @@ export function VideoDetailModal() {
         }
 
         try {
-          if (extractedReplacementAudio) {
+          if (audioPayload) {
             res = await generateDescriptionFromAudio(
               cfg.gemini_api_key,
               targetModel,
-              extractedReplacementAudio.audioBase64,
-              extractedReplacementAudio.mimeType,
+              audioPayload.audioBase64,
+              audioPayload.mimeType,
               editTitle,
               campaignRules,
               platform,
@@ -417,7 +415,7 @@ export function VideoDetailModal() {
         }
         setEditFeedback({
           success: true,
-          msg: extractedReplacementAudio
+          msg: audioPayload
             ? `Subtitulos extraidos y descripcion generada usando ${res.usedModel || targetModel}.`
             : `Copy generado con exito usando ${res.usedModel || targetModel}.`,
         });
@@ -428,6 +426,7 @@ export function VideoDetailModal() {
       setEditFeedback({ success: false, msg: 'Error de conexión con Gemini tras varios reintentos automáticos.' });
     } finally {
       setGeneratingAI(false);
+      setExtractingReplacementAudio(false);
     }
   };
 
@@ -1432,10 +1431,10 @@ export function VideoDetailModal() {
                             ) : extractedReplacementAudio ? (
                               <span className="text-emerald-300 flex items-center gap-1 font-semibold">
                                 <Sparkles size={10} className="text-cyan-400" />
-                                Audio listo: {extractedReplacementAudio.durationSeconds}s — IA usara subtitulos
+                                Audio listo: {extractedReplacementAudio.durationSeconds}s — IA usará subtítulos
                               </span>
                             ) : (
-                              <span className="text-[var(--text-muted)]">Listo para reemplazo</span>
+                              <span className="text-[var(--text-muted)]">Listo • Audio se procesará bajo demanda</span>
                             )}
                             <span className="text-[9px] text-[var(--text-secondary)] font-mono">Drive HD</span>
                           </div>
@@ -1631,15 +1630,17 @@ export function VideoDetailModal() {
                       <button
                         type="button"
                         onClick={handleRegenerateAICopy}
-                        disabled={generatingAI}
+                        disabled={generatingAI || extractingReplacementAudio}
                         className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition-all disabled:opacity-50"
                       >
-                        {generatingAI ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+                        {generatingAI || extractingReplacementAudio ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
                         <span>
-                          {generatingAI
+                          {extractingReplacementAudio
+                            ? 'Escuchando video...'
+                            : generatingAI
                             ? 'Analizando...'
                             : extractedReplacementAudio
-                            ? 'Generar con Subtitulos IA '
+                            ? 'Regenerar con IA 🎙️✨'
                             : 'Regenerar con IA'}
                         </span>
                       </button>

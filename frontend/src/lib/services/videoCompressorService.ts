@@ -19,8 +19,8 @@ export interface VideoAnalysisPayload {
  */
 export async function extractVideoStoryboard(
   file: File,
-  maxFrames: number = 5,
-  maxDimension: number = 384
+  maxFrames: number = 4,
+  maxDimension: number = 256
 ): Promise<VideoAnalysisPayload> {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined') {
@@ -37,8 +37,10 @@ export async function extractVideoStoryboard(
 
     const timeoutId = setTimeout(() => {
       URL.revokeObjectURL(fileUrl);
+      video.pause();
+      video.removeAttribute('src');
       reject(new Error('Tiempo de espera agotado al cargar el video para compresión.'));
-    }, 20000);
+    }, 15000);
 
     video.onloadedmetadata = async () => {
       try {
@@ -67,6 +69,8 @@ export async function extractVideoStoryboard(
 
         if (!ctx) {
           URL.revokeObjectURL(fileUrl);
+          video.pause();
+          video.removeAttribute('src');
           clearTimeout(timeoutId);
           return reject(new Error('No se pudo inicializar el contexto Canvas 2D.'));
         }
@@ -94,6 +98,11 @@ export async function extractVideoStoryboard(
 
         clearTimeout(timeoutId);
         URL.revokeObjectURL(fileUrl);
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        canvas.width = 0;
+        canvas.height = 0;
 
         const aspectRatio = origWidth > origHeight ? '16:9' : origWidth < origHeight ? '9:16' : '1:1';
 
@@ -109,6 +118,9 @@ export async function extractVideoStoryboard(
       } catch (err) {
         clearTimeout(timeoutId);
         URL.revokeObjectURL(fileUrl);
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
         reject(err);
       }
     };
