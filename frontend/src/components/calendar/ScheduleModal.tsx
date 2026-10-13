@@ -475,7 +475,7 @@ export function ScheduleModal() {
         setExtractingAudio(true);
         setAiFeedback('🎙️ Escuchando audio del video para redactar copy...');
         try {
-          audioPayload = await extractAudioFromVideo(videoFile, 8);
+          audioPayload = await extractAudioFromVideo(videoFile, 5);
           setExtractedAudio(audioPayload);
         } catch (e) {
           console.warn('[ScheduleModal] Extracción de audio bajo demanda omitida:', e);
@@ -886,47 +886,24 @@ export function ScheduleModal() {
       {isScheduleModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
-          {...(!videoFile ? getRootProps() : {})}
         >
-          {/* Overlay con dropzone en toda la pantalla */}
+          {/* Overlay oscuro sin blur excesivo */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={!isDragActive ? closeScheduleModal : undefined}
-            className={cn(
-              'fixed inset-0 backdrop-blur-sm transition-colors duration-200',
-              isDragActive ? 'bg-emerald-900/60 border-2 border-dashed border-emerald-400/60' : 'bg-black/75'
-            )}
+            onClick={closeScheduleModal}
+            className="fixed inset-0 bg-black/80"
           />
-
-          {/* Indicador de drag global */}
-          {isDragActive && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="fixed inset-0 z-[60] flex flex-col items-center justify-center pointer-events-none"
-            >
-              <div className="bg-emerald-900/90 border-2 border-emerald-400 rounded-3xl px-12 py-8 flex flex-col items-center gap-3 shadow-2xl">
-                <Upload size={48} className="text-emerald-400 animate-bounce" />
-                <p className="text-xl font-bold text-white">¡Suelta el video aquí!</p>
-                <p className="text-sm text-emerald-300">Se cargará automáticamente</p>
-              </div>
-            </motion.div>
-          )}
-
-          {!videoFile && <input {...getInputProps()} />}
 
           <motion.div
             initial={{ opacity: 0, scale: 0.94, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 16 }}
             transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-            className="relative z-10 w-full max-w-xl bg-[#0b0f19]/98 backdrop-blur-xl rounded-3xl border border-emerald-500/30 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(16,185,129,0.18)] overflow-hidden max-h-[92vh] flex flex-col"
+            className="relative z-10 w-full max-w-xl bg-[#0b0f19] rounded-3xl border border-emerald-500/30 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Resplandor radial decorativo */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-24 bg-emerald-500/12 blur-3xl pointer-events-none" />
 
             {/* Header */}
             <div className="px-5 py-3.5 border-b border-white/[0.07] bg-white/[0.015] space-y-2.5">
@@ -992,15 +969,18 @@ export function ScheduleModal() {
                       </p>
                     </div>
                     {/* Botón cambiar */}
-                    <div
-                      {...getRootProps()}
-                      className="cursor-pointer"
-                    >
-                      <input {...getInputProps()} />
-                      <span className="text-[10px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer">
-                        Cambiar
-                      </span>
-                    </div>
+                    <label className="text-[10px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer">
+                      Cambiar
+                      <input
+                        type="file"
+                        accept="video/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) onDrop([f]);
+                        }}
+                      />
+                    </label>
                     {/* Botón X para eliminar video */}
                     <button
                       type="button"
@@ -1012,7 +992,7 @@ export function ScheduleModal() {
                     </button>
                   </div>
 
-                  {/* Estado extracción de audio */}
+                  {/* Estado del video */}
                   <div className="p-2 rounded-lg bg-black/30 border border-emerald-500/15 flex items-center justify-between gap-2 text-[10px]">
                     {extractingAudio ? (
                       <div className="flex items-center gap-1.5 text-amber-300 font-medium">
@@ -1027,7 +1007,7 @@ export function ScheduleModal() {
                     ) : (
                       <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
                         <FileVideo size={11} />
-                        <span>Video listo para Drive</span>
+                        <span>Video listo para programar y subir a Drive</span>
                       </div>
                     )}
                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-[var(--text-secondary)] font-mono shrink-0">
@@ -1036,22 +1016,22 @@ export function ScheduleModal() {
                   </div>
                 </div>
               ) : (
-                /* Sin video: zona de drop compacta */
+                /* Sin video: zona de drop limpia */
                 <div
                   {...getRootProps()}
                   className={cn(
-                    'rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-all duration-200',
+                    'rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-colors',
                     isDragActive
-                      ? 'border-emerald-400 bg-emerald-500/15 scale-[1.01]'
+                      ? 'border-emerald-400 bg-emerald-500/15'
                       : 'border-[var(--border-strong)] hover:border-emerald-500/40 hover:bg-white/[0.02]'
                   )}
                 >
                   <input {...getInputProps()} />
-                  <Upload size={20} className={cn('mx-auto mb-2', isDragActive ? 'text-emerald-400 animate-bounce' : 'text-[var(--text-muted)]')} />
+                  <Upload size={20} className={cn('mx-auto mb-2', isDragActive ? 'text-emerald-400' : 'text-[var(--text-muted)]')} />
                   <p className="text-xs font-semibold text-white">
                     {isDragActive ? '¡Suelta el video aquí!' : 'Arrastra o selecciona el archivo de video'}
                   </p>
-                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">MP4, MOV, WEBM, AVI — También puedes soltar en cualquier parte de la pantalla</p>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">MP4, MOV, WEBM, AVI</p>
                 </div>
               )}
 

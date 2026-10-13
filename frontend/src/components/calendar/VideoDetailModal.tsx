@@ -347,7 +347,7 @@ export function VideoDetailModal() {
           msg: '🎙️ Escuchando audio del video de reemplazo...',
         });
         try {
-          audioPayload = await extractAudioFromVideo(replacementFile, 8);
+          audioPayload = await extractAudioFromVideo(replacementFile, 5);
           setExtractedReplacementAudio(audioPayload);
         } catch (e) {
           console.warn('[VideoDetailModal] Extracción de audio bajo demanda omitida:', e);

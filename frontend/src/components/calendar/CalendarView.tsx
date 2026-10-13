@@ -83,31 +83,18 @@ export function CalendarView() {
   }, [clientToday]);
 
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
-
-  // Drag state
-  const [isDragging, setIsDragging] = useState(false);
-  const dragCounter = useRef(0);
-  const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const currentDragKeyRef = useRef<string | null>(null);
 
   // Limpieza total y segura del estado de arrastre (evita bloqueos si no se suelta o se cancela)
   const clearDragState = useCallback(() => {
-    setIsDragging(false);
+    currentDragKeyRef.current = null;
     setDragOverDay(null);
-    dragCounter.current = 0;
-    if (dragTimeoutRef.current) {
-      clearTimeout(dragTimeoutRef.current);
-      dragTimeoutRef.current = null;
-    }
   }, []);
 
   // Prevenir que el navegador abra el archivo en ventana y detectar arrastre de archivos con auto-limpieza
   useEffect(() => {
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault();
-      if (e.dataTransfer?.types?.includes('Files')) {
-        dragCounter.current++;
-        setIsDragging(true);
-      }
     };
 
     const onDragOver = (e: DragEvent) => {
@@ -119,8 +106,7 @@ export function CalendarView() {
 
     const onDragLeave = (e: DragEvent) => {
       e.preventDefault();
-      dragCounter.current = Math.max(0, dragCounter.current - 1);
-      if (dragCounter.current === 0 || !e.relatedTarget || (e.clientX <= 0 && e.clientY <= 0)) {
+      if (!e.relatedTarget || (e.clientX <= 0 && e.clientY <= 0)) {
         clearDragState();
       }
     };
@@ -162,9 +148,6 @@ export function CalendarView() {
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('blur', clearDragState);
       window.removeEventListener('keydown', onKeyDown);
-      if (dragTimeoutRef.current) {
-        clearTimeout(dragTimeoutRef.current);
-      }
     };
   }, [clearDragState]);
 
@@ -261,32 +244,30 @@ export function CalendarView() {
     }
   };
 
-  // ── Drag handlers optimizados: solo activa el día o la hora donde el cursor está encima ──
+  // ── Drag handlers optimizados: ZERO CPU — solo actualiza React cuando el cursor cambia de celda ──
   const handleDayDragOver = useCallback((e: React.DragEvent, key: string) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
-
-    setIsDragging(true);
-    setDragOverDay(key);
-
-    // Watchdog timer: si el usuario cancela con Escape, suelta fuera o aleja el cursor
-    // y el navegador no emite dragleave, se autolimpia a los 350ms
-    if (dragTimeoutRef.current) {
-      clearTimeout(dragTimeoutRef.current);
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
     }
-    dragTimeoutRef.current = setTimeout(() => {
-      setDragOverDay(null);
-      setIsDragging(false);
-      dragCounter.current = 0;
-    }, 350);
+
+    if (currentDragKeyRef.current !== key) {
+      currentDragKeyRef.current = key;
+      setDragOverDay(key);
+    }
   }, []);
 
   const handleDayDragLeave = useCallback((e: React.DragEvent, key: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    setDragOverDay((prev) => (prev === key ? null : prev));
+    if (e.relatedTarget && (e.currentTarget as Node).contains(e.relatedTarget as Node)) {
+      return;
+    }
+    if (currentDragKeyRef.current === key) {
+      currentDragKeyRef.current = null;
+      setDragOverDay(null);
+    }
   }, []);
 
   const handleDayDrop = useCallback((e: React.DragEvent, day: Date, hour?: number) => {
@@ -327,20 +308,7 @@ export function CalendarView() {
       onDragOver={(e) => { e.preventDefault(); }}
       onDrop={handleCalendarDrop}
     >
-      {/* ── Barra de pista superior cuando se arrastra un archivo ── */}
-      <AnimatePresence>
-        {isDragging && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="mb-2.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500/25 via-cyan-500/20 to-emerald-500/25 border border-emerald-400/60 flex items-center justify-center gap-2 text-xs font-bold text-emerald-200 shadow-lg will-change-transform shrink-0"
-          >
-            <Upload size={14} className="text-emerald-300 animate-bounce" />
-            <span>Suelta el video directamente sobre el día o la hora deseada para programarlo de inmediato</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
 
       {/* Calendar Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 mb-2.5 shrink-0">
@@ -494,10 +462,10 @@ export function CalendarView() {
                     {/* Contenedor Drop Zone: SOLO visible en el día donde el video está ubicado encima */}
                     {isDayTargeted && (
                       <div
-                        className="absolute inset-1.5 z-30 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/90 text-white shadow-xl ring-2 ring-emerald-400/70 flex flex-col items-center justify-center p-1 text-center pointer-events-none will-change-transform backdrop-blur-sm animate-in fade-in zoom-in-95 duration-100"
+                        className="absolute inset-1 z-30 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/95 text-white shadow-lg flex flex-col items-center justify-center p-1 text-center pointer-events-none"
                       >
-                        <div className="w-7 h-7 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-1 text-emerald-300 animate-bounce">
-                          <Upload size={15} />
+                        <div className="w-6 h-6 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-0.5 text-emerald-300">
+                          <Upload size={13} />
                         </div>
                         <span className="text-[10px] font-extrabold text-white leading-tight px-1">
                           {format(day, 'd MMM')}
@@ -562,15 +530,12 @@ export function CalendarView() {
                             >
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full shrink-0",
-                                (isYtUploading || isDriveUploading) && "animate-pulse"
-                              )}
-                                style={{ backgroundColor:
-                                  isDriveUploading ? '#06b6d4' :
-                                  video.estado === 'PUBLICADO' ? '#10b981' :
-                                  isYtUploading ? '#ef4444' :
-                                  video.estado === 'ENVIADO'   ? '#60a5fa' :
-                                  video.estado === 'ERROR_DE_RED' || isDriveError ? '#f87171' : '#a78bfa' }}
-                              />
+                                isDriveUploading ? "bg-cyan-400" :
+                                video.estado === 'PUBLICADO' ? "bg-emerald-500" :
+                                isYtUploading ? "bg-red-500" :
+                                video.estado === 'ENVIADO'   ? "bg-blue-400" :
+                                video.estado === 'ERROR_DE_RED' || isDriveError ? "bg-red-400" : "bg-purple-400"
+                              )} />
                               <span className="shrink-0">{getPlatformIcon(acct?.plataforma)}</span>
                               <span className={cn(
                                 "text-[9px] font-mono font-semibold shrink-0",
@@ -669,10 +634,10 @@ export function CalendarView() {
                     {/* Contenedor Drop Zone: SOLO visible en el día de la semana donde el video está ubicado encima */}
                     {isDayTargeted && (
                       <div
-                        className="absolute inset-2 z-30 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-950/90 text-white shadow-2xl ring-2 ring-emerald-400/70 flex flex-col items-center justify-center p-3 text-center pointer-events-none will-change-transform backdrop-blur-sm animate-in fade-in zoom-in-95 duration-100"
+                        className="absolute inset-2 z-30 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-950/95 text-white shadow-xl ring-2 ring-emerald-400/70 flex flex-col items-center justify-center p-3 text-center pointer-events-none"
                       >
-                        <div className="w-12 h-12 rounded-2xl bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-2 shadow-sm text-emerald-300 animate-bounce">
-                          <Upload size={24} />
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-2 shadow-sm text-emerald-300">
+                          <Upload size={20} />
                         </div>
                         <p className="text-sm font-bold text-white">¡Soltar video aquí!</p>
                         <p className="text-xs text-emerald-300 font-semibold capitalize mt-1">
@@ -771,11 +736,11 @@ export function CalendarView() {
                               <div className="flex items-center justify-between">
                                 {isDriveUploading ? (
                                   <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                                     Drive {uploadInfo.progress}%
                                   </span>
                                 ) : isYtUploading ? (
-                                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-red-500/15 border border-red-500/30 text-red-300 flex items-center gap-1 animate-pulse">
+                                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-red-500/15 border border-red-500/30 text-red-300 flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                                     Subiendo a YouTube...
                                   </span>
@@ -859,11 +824,11 @@ export function CalendarView() {
                       {/* Contenedor Drop Zone: SOLO visible en la hora específica donde el archivo está ubicado encima */}
                       {isHourTargeted ? (
                         <div
-                          className="rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/90 text-white shadow-lg ring-2 ring-emerald-400/70 py-2.5 px-3.5 flex items-center justify-between pointer-events-none will-change-transform animate-in fade-in duration-100"
+                          className="rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/95 text-white shadow-lg py-2 px-3 flex items-center justify-between pointer-events-none"
                         >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center text-emerald-300 animate-bounce">
-                              <Upload size={14} />
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
+                              <Upload size={13} />
                             </div>
                             <span className="text-xs font-bold text-white">
                               Soltar para programar a las {hour.toString().padStart(2, '0')}:00 hs

@@ -17,7 +17,7 @@ export interface VideoAudioPayload {
  */
 export async function extractAudioFromVideo(
   file: File,
-  maxDurationSeconds: number = 8
+  maxDurationSeconds: number = 5
 ): Promise<VideoAudioPayload | null> {
   if (typeof window === 'undefined') return null;
   if (!window.AudioContext && !(window as any).webkitAudioContext) return null;
