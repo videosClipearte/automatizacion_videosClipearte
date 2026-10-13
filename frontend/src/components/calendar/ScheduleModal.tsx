@@ -44,6 +44,8 @@ import {
   getGoogleDriveToken,
   requestGoogleDriveOAuthToken,
   uploadVideoToGoogleDrive,
+  registerPendingDriveUpload,
+  unregisterPendingDriveUpload,
 } from '@/lib/services/driveService';
 import { createNotification } from '@/lib/services/notificationService';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -665,70 +667,81 @@ export function ScheduleModal() {
     setDriveSuccessUrl(null);
     setDriveError(null);
 
-    // ── 5. Si requiere subida a Drive, ejecutar en segundo plano ──
-    if (needsDriveUpload && token && folderId) {
-      (async () => {
-        try {
-          const uploadRes = await uploadVideoToGoogleDrive(
-            fileToUpload,
-            folderId,
-            token,
-            (pct) => setDriveUploadProgress(newVideoId, pct)
-          );
+    // ── 5. Si requiere subida a Drive, registrar para reintentos y ejecutar en segundo plano ──
+    if (needsDriveUpload && fileToUpload) {
+      registerPendingDriveUpload(newVideoId, {
+        videoId: newVideoId,
+        file: fileToUpload,
+        folderId: folderId || '',
+        thumbFile: thumbToUpload,
+        videoTitle: cleanTitle,
+      });
 
-          let finalThumbnailUrl = capturedThumbnailBase64;
-          if (thumbToUpload) {
-            try {
-              const thumbUploadRes = await uploadVideoToGoogleDrive(
-                thumbToUpload,
-                folderId,
-                token
-              );
-              if (thumbUploadRes.success && thumbUploadRes.fileUrl) {
-                finalThumbnailUrl = thumbUploadRes.fileUrl;
+      if (token && folderId) {
+        (async () => {
+          try {
+            const uploadRes = await uploadVideoToGoogleDrive(
+              fileToUpload,
+              folderId,
+              token,
+              (pct) => setDriveUploadProgress(newVideoId, pct)
+            );
+
+            let finalThumbnailUrl = capturedThumbnailBase64;
+            if (thumbToUpload) {
+              try {
+                const thumbUploadRes = await uploadVideoToGoogleDrive(
+                  thumbToUpload,
+                  folderId,
+                  token
+                );
+                if (thumbUploadRes.success && thumbUploadRes.fileUrl) {
+                  finalThumbnailUrl = thumbUploadRes.fileUrl;
+                }
+              } catch (tUpErr) {
+                console.warn('[ScheduleModal] No se pudo subir miniatura a Drive, usando base64:', tUpErr);
               }
-            } catch (tUpErr) {
-              console.warn('[ScheduleModal] No se pudo subir miniatura a Drive, usando base64:', tUpErr);
             }
-          }
 
-          if (uploadRes.success && uploadRes.fileUrl) {
-            await updateVideo(newVideoId, {
-              drive_file_url: uploadRes.fileUrl,
-              thumbnail_url: finalThumbnailUrl,
-            });
-            setDriveUploadComplete(newVideoId);
-            createNotification({
-              tipo: 'success',
-              titulo: 'Video subido a Google Drive',
-              mensaje: `"${cleanTitle}" se subió a Google Drive exitosamente.`,
-              cuenta_id: data.cuenta_id,
-              origen: 'drive',
-            });
-          } else {
-            setDriveUploadError(newVideoId, uploadRes.error || 'Error desconocido al subir a Drive');
+            if (uploadRes.success && uploadRes.fileUrl) {
+              unregisterPendingDriveUpload(newVideoId);
+              await updateVideo(newVideoId, {
+                drive_file_url: uploadRes.fileUrl,
+                thumbnail_url: finalThumbnailUrl,
+              });
+              setDriveUploadComplete(newVideoId);
+              createNotification({
+                tipo: 'success',
+                titulo: 'Video subido a Google Drive',
+                mensaje: `"${cleanTitle}" se subió a Google Drive exitosamente.`,
+                cuenta_id: data.cuenta_id,
+                origen: 'drive',
+              });
+            } else {
+              setDriveUploadError(newVideoId, uploadRes.error || 'Error desconocido al subir a Drive');
+              createNotification({
+                tipo: 'error',
+                titulo: 'Fallo al subir video a Google Drive',
+                mensaje: `El video "${cleanTitle}" no se pudo subir a Drive: ${uploadRes.error || 'Error desconocido'}. Puedes reintentar la subida desde el detalle del video.`,
+                cuenta_id: data.cuenta_id,
+                origen: 'drive',
+              });
+            }
+          } catch (bgErr: any) {
+            console.error('[ScheduleModal] Error en subida en segundo plano:', bgErr);
+            setDriveUploadError(newVideoId, bgErr?.message || 'Error de red al subir a Drive');
             createNotification({
               tipo: 'error',
-              titulo: 'Fallo al subir video a Google Drive',
-              mensaje: `El video "${cleanTitle}" no se pudo subir a Drive: ${uploadRes.error || 'Error desconocido'}.`,
+              titulo: 'Error subiendo a Google Drive',
+              mensaje: `Error al subir "${cleanTitle}" a Drive: ${bgErr?.message || 'Fallo inesperado'}. Puedes reintentar desde el calendario.`,
               cuenta_id: data.cuenta_id,
               origen: 'drive',
             });
           }
-        } catch (bgErr: any) {
-          console.error('[ScheduleModal] Error en subida en segundo plano:', bgErr);
-          setDriveUploadError(newVideoId, bgErr?.message || 'Error de red al subir a Drive');
-          createNotification({
-            tipo: 'error',
-            titulo: 'Error subiendo a Google Drive',
-            mensaje: `Error al subir "${cleanTitle}" a Drive: ${bgErr?.message || 'Fallo inesperado'}`,
-            cuenta_id: data.cuenta_id,
-            origen: 'drive',
-          });
-        }
-      })();
-    } else if (needsDriveUpload && (!token || !folderId)) {
-      setDriveUploadError(newVideoId, 'Google Drive no configurado o falta autorización.');
+        })();
+      } else {
+        setDriveUploadError(newVideoId, 'Google Drive no configurado o falta autorización.');
+      }
     }
   };
 

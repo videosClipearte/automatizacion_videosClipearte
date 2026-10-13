@@ -49,14 +49,26 @@ export async function POST(req: NextRequest) {
       result = await res.json();
     }
 
+    // Fallback 2: Si el grupo migró a supergrupo, reintentar automáticamente con el nuevo ID
+    if (!result.ok && result.parameters?.migrate_to_chat_id) {
+      const newChatId = String(result.parameters.migrate_to_chat_id);
+      const migratedPayload = { ...payload, chat_id: newChatId };
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(migratedPayload),
+      });
+      result = await res.json();
+    }
+
     if (result.ok) {
       return NextResponse.json({
         success: true,
-        message: `Mensaje enviado con éxito al chat ${cleanChatId}.`,
+        message: `Mensaje enviado con éxito al chat ${result.result?.chat?.id || cleanChatId}.`,
         data: result.result,
       });
     } else {
-      // Fallback 2: Si falló por entidades HTML, fallback en texto plano
+      // Fallback 3: Si falló por entidades HTML, fallback en texto plano
       if (parseMode && result.description?.toLowerCase().includes('parse entities')) {
         const fallbackRes = await fetch(url, {
           method: 'POST',

@@ -22,12 +22,23 @@ export async function POST(req: NextRequest) {
     finalPayload.chat_id = cleanChatId;
 
     const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
-    const res = await fetch(url, {
+    let res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(finalPayload),
     });
-    const result = await res.json();
+    let result = await res.json();
+
+    // Fallback: si migró a supergrupo
+    if (!result.ok && result.parameters?.migrate_to_chat_id) {
+      finalPayload.chat_id = String(result.parameters.migrate_to_chat_id);
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(finalPayload),
+      });
+      result = await res.json();
+    }
 
     if (result.ok) {
       return NextResponse.json({
@@ -35,6 +46,28 @@ export async function POST(req: NextRequest) {
         message: 'Mensaje con botones enviado correctamente.',
         messageId: result.result?.message_id,
       });
+    }
+
+    // Fallback si falló por entidades HTML
+    if (result.description?.toLowerCase().includes('parse entities')) {
+      const fallbackPayload = { ...finalPayload };
+      if (fallbackPayload.text) {
+        fallbackPayload.text = fallbackPayload.text.replace(/<[^>]*>/g, '');
+        delete fallbackPayload.parse_mode;
+      }
+      const fallbackRes = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fallbackPayload),
+      });
+      const fallbackResult = await fallbackRes.json();
+      if (fallbackResult.ok) {
+        return NextResponse.json({
+          success: true,
+          message: 'Mensaje con botones enviado correctamente.',
+          messageId: fallbackResult.result?.message_id,
+        });
+      }
     }
 
     return NextResponse.json({

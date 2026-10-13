@@ -1,6 +1,6 @@
 'use client';
 // src/components/calendar/VideoDetailModal.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -16,6 +16,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Upload,
   FileVideo,
   Clock,
@@ -35,13 +36,17 @@ import { sendPublicationAlert } from '@/lib/services/telegramService';
 import {
   getGoogleDriveToken,
   uploadVideoToGoogleDrive,
-  requestGoogleDriveOAuthToken
+  requestGoogleDriveOAuthToken,
+  getPendingDriveUpload,
+  unregisterPendingDriveUpload,
 } from '@/lib/services/driveService';
 import { generateWithGemini, generateDescriptionFromAudio, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
 import { extractAudioFromVideo, VideoAudioPayload } from '@/lib/services/videoAudioExtractorService';
 import { format } from 'date-fns';
 import { createNotification } from '@/lib/services/notificationService';
 import { verifyScraperPost } from '@/lib/services/scraperService';
+import { DatePicker } from '@/components/ui/DatePicker';
+import { TimePicker } from '@/components/ui/TimePicker';
 
 export function VideoDetailModal() {
   const {
@@ -90,6 +95,8 @@ export function VideoDetailModal() {
   const [generatingAI, setGeneratingAI] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [editFeedback, setEditFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+  const driveFileInputRef = useRef<HTMLInputElement>(null);
+  const [retryingDrive, setRetryingDrive] = useState(false);
 
   const video = selectedVideoId ? videos.find(v => v.id === selectedVideoId) : null;
   const account = accounts.find(a => a.id === (isEditing ? editCuentaId : video?.cuenta_id));
@@ -596,14 +603,26 @@ export function VideoDetailModal() {
         cfg = await loadAppConfig();
       }
 
-      const botToken = cfg.telegram_bot_token;
-      const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id).trim();
+      const botToken = (cfg.telegram_bot_token || '').trim();
+      const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id || '').trim();
 
       if (!botToken || !targetChat) {
         setSendingTelegram(false);
         setTelegramFeedback({
           success: false,
           msg: 'Configura el Bot Token y el Chat ID de Telegram en Settings → Integraciones primero.'
+        });
+        return;
+      }
+
+      // Validar que el video tenga archivo en Google Drive antes de enviar a Telegram
+      const isYoutube = account?.plataforma === 'youtube';
+      const hasValidDrive = Boolean(video.drive_file_url && video.drive_file_url !== '#' && video.drive_file_url.trim().length > 5);
+      if (!isYoutube && !hasValidDrive) {
+        setSendingTelegram(false);
+        setTelegramFeedback({
+          success: false,
+          msg: '⚠️ El video aún no se ha subido a Google Drive o el enlace no es válido. Sube el archivo a Drive antes de despacharlo a Telegram.'
         });
         return;
       }
@@ -657,6 +676,73 @@ export function VideoDetailModal() {
         success: false,
         msg: `Error: ${e?.message || 'Fallo de conexión'}`
       });
+    }
+  };
+
+  // Reintentar subir únicamente el video a Google Drive si falló o no se subió
+  const handleRetryDriveUpload = async (customFile?: File) => {
+    if (!video) return;
+    const pending = getPendingDriveUpload(video.id);
+    const fileToUpload = customFile || pending?.file;
+
+    if (!fileToUpload) {
+      driveFileInputRef.current?.click();
+      return;
+    }
+
+    setRetryingDrive(true);
+    try {
+      let cfg = getCachedConfig();
+      if (!cfg.drive_folder_id && !cfg.drive_client_id) {
+        cfg = await loadAppConfig();
+      }
+
+      let token = getGoogleDriveToken();
+      if (!token && cfg.drive_client_id) {
+        const authOk = await requestGoogleDriveOAuthToken(cfg.drive_client_id);
+        if (authOk.success && authOk.token) token = authOk.token;
+      }
+
+      if (!token) {
+        createNotification({
+          tipo: 'error',
+          titulo: 'Google Drive no autenticado',
+          mensaje: 'Inicia sesión en Google Drive desde Configuración para autorizar la subida.',
+          video_id: video.id,
+          cuenta_id: video.cuenta_id,
+          origen: 'drive',
+        });
+        setRetryingDrive(false);
+        return;
+      }
+
+      const folderId = pending?.folderId || cfg.drive_folder_id;
+
+      useAppStore.getState().setDriveUploadProgress(video.id, 1);
+      const res = await uploadVideoToGoogleDrive(fileToUpload, folderId, token, (pct) => {
+        useAppStore.getState().setDriveUploadProgress(video.id, pct);
+      });
+
+      if (res.success && res.fileUrl) {
+        unregisterPendingDriveUpload(video.id);
+        useAppStore.getState().setDriveUploadComplete(video.id);
+        await updateVideo(video.id, { drive_file_url: res.fileUrl });
+        createNotification({
+          tipo: 'success',
+          titulo: 'Video subido a Google Drive',
+          mensaje: `"${video.titulo}" se subió exitosamente a Drive.`,
+          video_id: video.id,
+          cuenta_id: video.cuenta_id,
+          origen: 'drive',
+        });
+      } else {
+        useAppStore.getState().setDriveUploadError(video.id, res.error || 'Error al subir a Google Drive');
+      }
+    } catch (e: any) {
+      console.error('[VideoDetailModal] Error reintentando subida a Drive:', e);
+      useAppStore.getState().setDriveUploadError(video.id, e?.message || 'Error inesperado');
+    } finally {
+      setRetryingDrive(false);
     }
   };
 
@@ -879,8 +965,20 @@ export function VideoDetailModal() {
                     )}
                   </div>
 
-                  {/* Google Drive Link (o progreso de subida en segundo plano) */}
-                  <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 space-y-1.5">
+                  {/* Google Drive Link (o progreso de subida en segundo plano / reintento) */}
+                  <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 space-y-2">
+                    <input
+                      ref={driveFileInputRef}
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleRetryDriveUpload(file);
+                        e.target.value = '';
+                      }}
+                    />
+
                     <div className="flex items-center justify-between text-xs font-semibold text-white">
                       <div className="flex items-center gap-2">
                         <HardDrive size={13} className="text-cyan-400" />
@@ -909,20 +1007,58 @@ export function VideoDetailModal() {
                           Puedes continuar usando la app con normalidad, la subida continuará automáticamente.
                         </p>
                       </div>
+                    ) : driveUploads?.[video.id]?.status === 'error' ? (
+                      <div className="space-y-2 py-1">
+                        <div className="flex items-center gap-1.5 text-xs text-red-400 font-medium">
+                          <AlertCircle size={13} className="shrink-0 text-red-400" />
+                          <span>Fallo al subir a Drive: {driveUploads[video.id]?.error || 'Error de red'}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRetryDriveUpload()}
+                          disabled={retryingDrive}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          {retryingDrive ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <RefreshCw size={12} />
+                          )}
+                          <span>Reintentar Subir Solo el Video a Drive</span>
+                        </button>
+                      </div>
                     ) : video.drive_file_url && video.drive_file_url !== '#' ? (
-                      <a
-                        href={video.drive_file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium break-all"
-                      >
-                        <span>Abrir archivo en Google Drive</span>
-                        <ExternalLink size={12} className="shrink-0" />
-                      </a>
+                      <div className="flex items-center justify-between gap-2">
+                        <a
+                          href={video.drive_file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium break-all"
+                        >
+                          <span>Abrir archivo en Google Drive</span>
+                          <ExternalLink size={12} className="shrink-0" />
+                        </a>
+                      </div>
                     ) : (
-                      <p className="text-[11px] text-[var(--text-muted)]">
-                        Archivo local (sin enlace de Drive). Puedes añadir el enlace en &quot;Modificar&quot;.
-                      </p>
+                      <div className="space-y-2 py-1">
+                        <div className="flex items-center gap-1.5 text-xs text-amber-300 font-medium">
+                          <AlertTriangle size={13} className="shrink-0 text-amber-400" />
+                          <span>Sin archivo en Google Drive. No se despachará a Telegram hasta tener el video.</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRetryDriveUpload()}
+                          disabled={retryingDrive}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          {retryingDrive ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Upload size={12} />
+                          )}
+                          <span>Subir Video a Google Drive Ahora</span>
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -1223,7 +1359,13 @@ export function VideoDetailModal() {
                     ) : (
                       <>
                         <Send size={13} className="text-blue-400" />
-                        <span>Re-enviar a Telegram Ahora (Marcar ENVIADO)</span>
+                        <span>
+                          {video.estado === 'ERROR_DE_RED'
+                            ? 'Reintentar Enviar a Telegram Ahora (Resolver Error)'
+                            : video.estado === 'ENVIADO'
+                            ? 'Re-enviar a Telegram Ahora'
+                            : 'Enviar a Telegram Ahora (Marcar ENVIADO)'}
+                        </span>
                       </>
                     )}
                   </button>
@@ -1447,30 +1589,20 @@ export function VideoDetailModal() {
                     </div>
                   </div>
 
-                  {/* Fecha y Hora */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1 flex items-center gap-1">
-                        <Calendar size={11} className="text-emerald-400" /> Fecha
-                      </label>
-                      <input
-                        type="date"
-                        value={editFecha}
-                        onChange={(e) => setEditFecha(e.target.value)}
-                        className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white border border-[var(--border)] outline-none bg-transparent [color-scheme:dark]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1 flex items-center gap-1">
-                        <Clock size={11} className="text-cyan-400" /> Hora
-                      </label>
-                      <input
-                        type="time"
-                        value={editHora}
-                        onChange={(e) => setEditHora(e.target.value)}
-                        className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white border border-[var(--border)] outline-none bg-transparent [color-scheme:dark]"
-                      />
-                    </div>
+                  {/* Fecha y Hora — Componentes DatePicker y TimePicker coherentes con ScheduleModal */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <DatePicker
+                      label="Fecha Programada"
+                      value={editFecha}
+                      onChange={setEditFecha}
+                    />
+
+                    <TimePicker
+                      label="Hora de Envío"
+                      value={editHora}
+                      onChange={setEditHora}
+                      onSetNow={() => setEditHora(format(new Date(), 'HH:mm'))}
+                    />
                     {(() => {
                       if (!editFecha || !editHora) return null;
                       const d = new Date(`${editFecha}T${editHora}`);

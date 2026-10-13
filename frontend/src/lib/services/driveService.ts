@@ -150,81 +150,139 @@ export async function requestGoogleDriveOAuthToken(
   }
 }
 
+export interface PendingDriveUploadItem {
+  videoId: string;
+  file: File;
+  folderId: string;
+  thumbFile?: File | null;
+  videoTitle: string;
+  attempts: number;
+}
+
+// Almacenamiento en memoria de archivos pendientes/fallidos para reintento automático
+const pendingDriveUploadsMap = new Map<string, PendingDriveUploadItem>();
+
+export function registerPendingDriveUpload(videoId: string, item: Omit<PendingDriveUploadItem, 'attempts'>): void {
+  pendingDriveUploadsMap.set(videoId, { ...item, attempts: 0 });
+}
+
+export function unregisterPendingDriveUpload(videoId: string): void {
+  pendingDriveUploadsMap.delete(videoId);
+}
+
+export function getPendingDriveUpload(videoId: string): PendingDriveUploadItem | undefined {
+  return pendingDriveUploadsMap.get(videoId);
+}
+
 /**
- * Sube un archivo de video a la carpeta seleccionada en Google Drive vía REST API v3
+ * Función interna de subida en un solo intento vía REST API v3
  */
-export async function uploadVideoToGoogleDrive(
+function uploadSingleAttempt(
   file: File,
   folderId: string,
   accessToken: string,
   onProgress?: (progressPercent: number) => void
 ): Promise<{ success: boolean; fileId?: string; fileUrl?: string; error?: string }> {
-  try {
-    const cleanFolderId = folderId.trim();
-    const metadata: Record<string, any> = {
-      name: file.name,
-      mimeType: file.type || 'video/mp4',
-    };
+  const cleanFolderId = folderId.trim();
+  const metadata: Record<string, any> = {
+    name: file.name,
+    mimeType: file.type || 'video/mp4',
+  };
 
-    if (cleanFolderId && cleanFolderId !== '#' && cleanFolderId.length > 5) {
-      metadata.parents = [cleanFolderId];
-    }
+  if (cleanFolderId && cleanFolderId !== '#' && cleanFolderId.length > 5) {
+    metadata.parents = [cleanFolderId];
+  }
 
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', file);
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', file);
 
-    return new Promise((resolve) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open(
-        'POST',
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink'
-      );
-      xhr.setRequestHeader('Authorization', `Bearer ${accessToken.trim()}`);
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(
+      'POST',
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink'
+    );
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken.trim()}`);
 
-      if (xhr.upload && onProgress) {
-        xhr.upload.onprogress = (evt) => {
-          if (evt.lengthComputable) {
-            const pct = Math.round((evt.loaded / evt.total) * 100);
-            onProgress(pct);
-          }
-        };
-      }
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const resp = JSON.parse(xhr.responseText);
-            const fileUrl = resp.webViewLink || `https://drive.google.com/file/d/${resp.id}/view`;
-            resolve({ success: true, fileId: resp.id, fileUrl });
-          } catch {
-            resolve({ success: true, fileId: 'uploaded', fileUrl: 'https://drive.google.com' });
-          }
-        } else {
-          try {
-            const errJson = JSON.parse(xhr.responseText);
-            resolve({
-              success: false,
-              error: errJson.error?.message || `Error HTTP ${xhr.status} de Google Drive`,
-            });
-          } catch {
-            resolve({
-              success: false,
-              error: `Error HTTP ${xhr.status} al subir a Google Drive: ${xhr.statusText}`,
-            });
-          }
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable) {
+          const pct = Math.round((evt.loaded / evt.total) * 100);
+          onProgress(pct);
         }
       };
+    }
 
-      xhr.onerror = () => {
-        resolve({ success: false, error: 'Error de red o conexión al subir el video a Google Drive.' });
-      };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const resp = JSON.parse(xhr.responseText);
+          const fileUrl = resp.webViewLink || `https://drive.google.com/file/d/${resp.id}/view`;
+          resolve({ success: true, fileId: resp.id, fileUrl });
+        } catch {
+          resolve({ success: true, fileId: 'uploaded', fileUrl: 'https://drive.google.com' });
+        }
+      } else {
+        try {
+          const errJson = JSON.parse(xhr.responseText);
+          resolve({
+            success: false,
+            error: errJson.error?.message || `Error HTTP ${xhr.status} de Google Drive`,
+          });
+        } catch {
+          resolve({
+            success: false,
+            error: `Error HTTP ${xhr.status} al subir a Google Drive: ${xhr.statusText}`,
+          });
+        }
+      }
+    };
 
-      xhr.send(form);
-    });
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'Error inesperado al subir archivo a Drive.' };
+    xhr.onerror = () => {
+      resolve({ success: false, error: 'Error de red o conexión al subir el video a Google Drive.' });
+    };
+
+    xhr.send(form);
+  });
+}
+
+/**
+ * Sube un archivo de video a Google Drive con REINTENTO AUTOMÁTICO (hasta 3 intentos)
+ */
+export async function uploadVideoToGoogleDrive(
+  file: File,
+  folderId: string,
+  accessToken: string,
+  onProgress?: (progressPercent: number) => void,
+  maxAttempts = 3
+): Promise<{ success: boolean; fileId?: string; fileUrl?: string; error?: string }> {
+  let lastError = 'Fallo desconocido al subir a Drive';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      if (attempt > 1) {
+        console.log(`[DriveService] Reintentando subida de "${file.name}" a Google Drive (intento ${attempt}/${maxAttempts})...`);
+        // Pausa exponencial entre reintentos (2s, 4s)
+        await new Promise((r) => setTimeout(r, attempt * 2000));
+      }
+
+      const res = await uploadSingleAttempt(file, folderId, accessToken, onProgress);
+      if (res.success) {
+        return res;
+      }
+      lastError = res.error || lastError;
+      console.warn(`[DriveService] Intento ${attempt}/${maxAttempts} falló para "${file.name}": ${lastError}`);
+    } catch (err: any) {
+      lastError = err?.message || lastError;
+      console.warn(`[DriveService] Excepción en intento ${attempt}/${maxAttempts}: ${lastError}`);
+    }
   }
+
+  return {
+    success: false,
+    error: `No se pudo subir a Google Drive tras ${maxAttempts} intentos: ${lastError}`,
+  };
 }
 
 /**

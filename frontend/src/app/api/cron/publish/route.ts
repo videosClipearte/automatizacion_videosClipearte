@@ -58,6 +58,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, processed: 0, message: 'No hay videos pendientes por publicar.' });
     }
 
+    // Ordenar cronológicamente para mantener el orden exacto de envío
+    dueVideos.sort((a: any, b: any) => new Date(a.programado_para).getTime() - new Date(b.programado_para).getTime());
+
     // Cargar cuentas y campañas
     const [{ data: cuentas }, { data: campanas }] = await Promise.all([
       db.from('cuentas').select('*'),
@@ -66,7 +69,20 @@ export async function GET(request: Request) {
 
     const results = [];
 
-    for (const video of dueVideos) {
+    for (let i = 0; i < dueVideos.length; i++) {
+      const video = dueVideos[i];
+
+      const account = cuentas?.find((c: any) => c.id === video.cuenta_id);
+      const isYoutube = account?.plataforma === 'youtube';
+      const hasValidDrive = Boolean(video.drive_file_url && video.drive_file_url !== '#' && video.drive_file_url.trim().length > 5);
+
+      // Si es plataforma manual (Instagram/TikTok) y no tiene enlace válido de Google Drive, no despachar a Telegram sin el video
+      if (!isYoutube && !hasValidDrive) {
+        console.warn(`[Cron/Publish] Video "${video.titulo}" pospuesto: sin enlace de Google Drive válido. No se enviará a Telegram.`);
+        results.push({ id: video.id, titulo: video.titulo, skipped: true, reason: 'Sin enlace de Google Drive válido' });
+        continue;
+      }
+
       // ── Actualización atómica: solo procesar si el video SIGUE en PROGRAMADO ──
       // Esto evita el doble envío si el PublicationScheduler del frontend ya lo tomó.
       const { data: updatedRows } = await db
@@ -80,12 +96,8 @@ export async function GET(request: Request) {
       if (!updatedRows || updatedRows.length === 0) {
         results.push({ id: video.id, titulo: video.titulo, skipped: true, reason: 'Ya procesado por otro mecanismo' });
         continue;
-
       }
-
-      const account = cuentas?.find((c: any) => c.id === video.cuenta_id);
       const campaign = campanas?.find((c: any) => c.id === video.campana_id);
-      const isYoutube = account?.plataforma === 'youtube';
       const inSilence = isWithinSilenceHours(cfg);
       const horaLocal = formatLocalDateTime(video.programado_para);
 
@@ -94,47 +106,56 @@ export async function GET(request: Request) {
 
       // ── Para plataformas manuales (Instagram, TikTok): Despachar a Telegram y enviar encuesta ──
       if (!isYoutube && botToken && targetChat) {
-        if (!inSilence) {
-          // Paso 1: Enviar ficha del video + descripción (2 mensajes)
-          const sendRes = await sendPublicationAlert(botToken, targetChat, {
-            videoTitle: video.titulo,
-            accountUsername: account?.username || 'cuenta',
-            platform: account?.plataforma || 'red',
-            campaignName: campaign?.nombre,
-            driveFileUrl: video.drive_file_url,
-            descripcion: video.descripcion_aprobada_ia,
-            programadoPara: horaLocal,
-          });
-          sentTelegram = sendRes.success;
+        // Paso 1: Enviar ficha del video + descripción (2 mensajes)
+        const sendRes = await sendPublicationAlert(botToken, targetChat, {
+          videoTitle: video.titulo,
+          accountUsername: account?.username || 'cuenta',
+          platform: account?.plataforma || 'red',
+          campaignName: campaign?.nombre,
+          driveFileUrl: video.drive_file_url,
+          descripcion: video.descripcion_aprobada_ia,
+          programadoPara: horaLocal,
+        });
+        sentTelegram = sendRes.success;
 
+        if (sentTelegram) {
           // Pausa para garantizar orden de llegada en Telegram
           await new Promise((r) => setTimeout(r, 600));
 
           // Paso 2: Enviar encuesta de confirmación Sí/No (inline keyboard)
-          if (sentTelegram) {
-            const pollRes = await sendConfirmationPoll(botToken, targetChat, {
-              publicacionId: video.id,
-              videoTitle: video.titulo,
-              accountUsername: account?.username || 'cuenta',
-              platform: account?.plataforma || 'red',
-              programadoPara: horaLocal,
+          const pollRes = await sendConfirmationPoll(botToken, targetChat, {
+            publicacionId: video.id,
+            videoTitle: video.titulo,
+            accountUsername: account?.username || 'cuenta',
+            platform: account?.plataforma || 'red',
+            programadoPara: horaLocal,
+          });
+
+          if (pollRes.success && pollRes.messageId) {
+            confirmationMessageId = pollRes.messageId;
+
+            // Guardar registro de confirmación pendiente en la BD
+            await db.from('confirmaciones_telegram').insert({
+              publicacion_id: video.id,
+              chat_id: String(targetChat),
+              message_id: confirmationMessageId,
+              estado: 'PENDIENTE',
             });
-
-            if (pollRes.success && pollRes.messageId) {
-              confirmationMessageId = pollRes.messageId;
-
-              // Guardar registro de confirmación pendiente en la BD
-              await db.from('confirmaciones_telegram').insert({
-                publicacion_id: video.id,
-                chat_id: String(targetChat),
-                message_id: confirmationMessageId,
-                estado: 'PENDIENTE',
-              });
-            }
           }
         } else {
-          console.log(`[Cron/Publish] Horario de silencio activo. Despacho a Telegram pospuesto para "${video.titulo}".`);
+          console.warn(`[Cron/Publish] Falló Telegram para "${video.titulo}": ${sendRes.message}. Revirtiendo a PROGRAMADO.`);
+          // ❗ Revertir a PROGRAMADO en la BD para no dejarlo como falso ENVIADO ni que pase a ERROR_DE_RED
+          await db
+            .from('publicaciones')
+            .update({ estado: 'PROGRAMADO', enviado_en: null })
+            .eq('id', video.id);
         }
+      } else if (!isYoutube) {
+        console.warn(`[Cron/Publish] Bot token o Chat ID no configurados. Revirtiendo "${video.titulo}" a PROGRAMADO.`);
+        await db
+          .from('publicaciones')
+          .update({ estado: 'PROGRAMADO', enviado_en: null })
+          .eq('id', video.id);
       }
 
       let youtubeResult: any = null;
@@ -259,6 +280,11 @@ export async function GET(request: Request) {
         youtube: youtubeResult,
         skipped: false,
       });
+
+      // Pausa entre videos para evitar colisiones y asegurar el orden en Telegram
+      if (i < dueVideos.length - 1) {
+        await new Promise((r) => setTimeout(r, 1500));
+      }
     }
 
     return NextResponse.json({

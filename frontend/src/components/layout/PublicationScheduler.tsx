@@ -16,8 +16,13 @@ import {
 import { getStoredSupabaseConfig, getSupabase } from '@/lib/supabase';
 import { createNotification } from '@/lib/services/notificationService';
 import { verifyScraperPost } from '@/lib/services/scraperService';
+import {
+  getGoogleDriveToken,
+  getPendingDriveUpload,
+  unregisterPendingDriveUpload,
+  uploadVideoToGoogleDrive,
+} from '@/lib/services/driveService';
 import { isToday } from 'date-fns';
-import { getGoogleDriveToken } from '@/lib/services/driveService';
 
 // UTC offset local (-4 para VE/BOL/CHI/CL)
 const TZ_OFFSET = -4;
@@ -35,7 +40,7 @@ function formatLocalDateTime(isoOrDate: string | Date): string {
 }
 
 export function PublicationScheduler() {
-  const { videos, accounts, campaigns, updateVideo } = useAppStore();
+  const { videos, accounts, campaigns, updateVideo, driveUploads } = useAppStore();
   const processingRef = useRef<Set<string>>(new Set());
   const lastDailyAlertDateRef = useRef<string | null>(null);
   const lastTelegramUpdateIdRef = useRef<number>(0);
@@ -52,6 +57,8 @@ export function PublicationScheduler() {
   campaignsRef.current = campaigns;
   const updateVideoRef = useRef(updateVideo);
   updateVideoRef.current = updateVideo;
+  const driveUploadsRef = useRef(driveUploads);
+  driveUploadsRef.current = driveUploads;
 
   useEffect(() => {
     const checkScheduledPublications = async () => {
@@ -77,9 +84,55 @@ export function PublicationScheduler() {
 
       if (dueVideos.length === 0) return;
 
+      // ── Ordenar estrictamente por hora programada ascendente para garantizar estricto orden cronológico ──
+      dueVideos.sort((a, b) => new Date(a.programado_para).getTime() - new Date(b.programado_para).getTime());
+
       const db = getSupabase();
 
-      for (const video of dueVideos) {
+      for (let i = 0; i < dueVideos.length; i++) {
+        const video = dueVideos[i];
+
+        // ── Validar que la subida a Drive haya terminado antes de despachar ──
+        const uploadState = driveUploadsRef.current?.[video.id];
+        if (uploadState?.status === 'uploading') {
+          console.log(`[PublicationScheduler] Video "${video.titulo}" aún subiendo a Google Drive (${uploadState.progress}%). Postergando despacho...`);
+          continue;
+        }
+
+        const account = accountsRef.current.find((a) => a.id === video.cuenta_id);
+        const isYoutube = account?.plataforma === 'youtube';
+        const hasValidDrive = Boolean(video.drive_file_url && video.drive_file_url !== '#' && video.drive_file_url.trim().length > 5);
+
+        // Si es plataforma manual (TikTok/Instagram) y no tiene enlace de Drive válido
+        if (!isYoutube && !hasValidDrive) {
+          // Si el archivo sigue en memoria, intentar auto-reintento en segundo plano
+          const pending = getPendingDriveUpload(video.id);
+          if (pending) {
+            console.log(`[PublicationScheduler] Reintentando subida a Drive en segundo plano para "${video.titulo}"...`);
+            let cfg = getCachedConfig();
+            const token = getGoogleDriveToken();
+            const folderId = pending.folderId || cfg.drive_folder_id;
+            if (token && folderId) {
+              useAppStore.getState().setDriveUploadProgress(video.id, 1);
+              uploadVideoToGoogleDrive(pending.file, folderId, token, (pct) => {
+                useAppStore.getState().setDriveUploadProgress(video.id, pct);
+              }).then(async (upRes) => {
+                if (upRes.success && upRes.fileUrl) {
+                  unregisterPendingDriveUpload(video.id);
+                  await updateVideoRef.current(video.id, { drive_file_url: upRes.fileUrl });
+                  useAppStore.getState().setDriveUploadComplete(video.id);
+                  console.log(`[PublicationScheduler] ✅ Subida a Drive completada tras reintento para "${video.titulo}".`);
+                } else {
+                  useAppStore.getState().setDriveUploadError(video.id, upRes.error || 'Fallo reintentando subida');
+                }
+              }).catch((e) => console.error('[PublicationScheduler] Error en reintento Drive:', e));
+            }
+          }
+
+          console.warn(`[PublicationScheduler] Video "${video.titulo}" pospuesto: no tiene enlace de Google Drive válido. No se enviará a Telegram sin el video.`);
+          continue;
+        }
+
         // Bloquear ID inmediatamente para no procesar en paralelo
         processingRef.current.add(video.id);
 
@@ -115,8 +168,9 @@ export function PublicationScheduler() {
             cfg = await loadAppConfig();
           }
 
-          const botToken = cfg.telegram_bot_token;
-          const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id).trim();
+          const botToken = (cfg.telegram_bot_token || '').trim();
+          const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id || '').trim();
+          const inSilence = isWithinSilenceHours(cfg);
 
           const account = accountsRef.current.find((a) => a.id === video.cuenta_id);
           const campaign = campaignsRef.current.find((c) => c.id === video.campana_id);
@@ -128,81 +182,101 @@ export function PublicationScheduler() {
           );
 
           const isYoutube = account?.plataforma === 'youtube';
-          const inSilence = isWithinSilenceHours(cfg);
           let sentTelegram = false;
 
           if (!isYoutube) {
             // ── Plataformas manuales (Instagram, TikTok): Despachar a Telegram y crear encuesta ──
             if (botToken && targetChat) {
-              if (inSilence) {
-                console.log(`[PublicationScheduler] Horario de silencio activo (${cfg.alerta_silencio_desde} - ${cfg.alerta_silencio_hasta}). Despacho a Telegram pospuesto.`);
-              } else {
-                // Paso 1: ficha del video + descripción (2 mensajes)
-                const sendRes = await sendPublicationAlert(botToken, targetChat, {
+              // Paso 1: ficha del video + descripción (2 mensajes)
+              const sendRes = await sendPublicationAlert(botToken, targetChat, {
+                videoTitle: video.titulo,
+                accountUsername: account?.username || 'cuenta',
+                platform: account?.plataforma || 'red',
+                campaignName: campaign?.nombre,
+                driveFileUrl: video.drive_file_url,
+                descripcion: video.descripcion_aprobada_ia,
+                programadoPara: horaLocal,
+              });
+
+              sentTelegram = sendRes.success;
+
+              if (sentTelegram) {
+                console.log(
+                  `[PublicationScheduler] ✅ Alerta de publicación enviada a Telegram para "${video.titulo}".`
+                );
+
+                // Pausa para garantizar orden
+                await new Promise((r) => setTimeout(r, 600));
+
+                // Paso 2: encuesta de confirmación Sí/No
+                const pollRes = await sendConfirmationPoll(botToken, targetChat, {
+                  publicacionId: video.id,
                   videoTitle: video.titulo,
                   accountUsername: account?.username || 'cuenta',
                   platform: account?.plataforma || 'red',
-                  campaignName: campaign?.nombre,
-                  driveFileUrl: video.drive_file_url,
-                  descripcion: video.descripcion_aprobada_ia,
                   programadoPara: horaLocal,
                 });
 
-                sentTelegram = sendRes.success;
-
-                if (sentTelegram) {
-                  console.log(
-                    `[PublicationScheduler] ✅ Alerta de publicación enviada a Telegram para "${video.titulo}".`
-                  );
-
-                  // Pausa para garantizar orden
-                  await new Promise((r) => setTimeout(r, 600));
-
-                  // Paso 2: encuesta de confirmación Sí/No
-                  const pollRes = await sendConfirmationPoll(botToken, targetChat, {
-                    publicacionId: video.id,
-                    videoTitle: video.titulo,
-                    accountUsername: account?.username || 'cuenta',
-                    platform: account?.plataforma || 'red',
-                    programadoPara: horaLocal,
-                  });
-
-                  if (pollRes.success && pollRes.messageId) {
-                    // Guardar registro de confirmación pendiente en la BD
-                    await db.from('confirmaciones_telegram').insert({
-                      publicacion_id: video.id,
-                      chat_id: String(targetChat),
-                      message_id: pollRes.messageId,
-                      estado: 'PENDIENTE',
-                    });
-                  }
-
-                  await createNotification({
-                    tipo: 'info',
-                    titulo: 'Publicación enviada a Telegram',
-                    mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'red').toUpperCase()}) despachado a Telegram. Encuesta de confirmación enviada.`,
-                    video_id: video.id,
-                    cuenta_id: video.cuenta_id,
-                    origen: 'programador',
-                  });
-                } else {
-                  console.warn(
-                    `[PublicationScheduler] ⚠️ Fallo al enviar a Telegram: ${sendRes.message}`
-                  );
-                  await createNotification({
-                    tipo: 'error',
-                    titulo: 'Fallo al despachar video a Telegram',
-                    mensaje: `No se pudo enviar el aviso de "${video.titulo}" al grupo de Telegram: ${sendRes.message}`,
-                    video_id: video.id,
-                    cuenta_id: video.cuenta_id,
-                    origen: 'telegram',
+                if (pollRes.success && pollRes.messageId) {
+                  // Guardar registro de confirmación pendiente en la BD
+                  await db.from('confirmaciones_telegram').insert({
+                    publicacion_id: video.id,
+                    chat_id: String(targetChat),
+                    message_id: pollRes.messageId,
+                    estado: 'PENDIENTE',
                   });
                 }
+
+                await createNotification({
+                  tipo: 'info',
+                  titulo: 'Publicación enviada a Telegram',
+                  mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'red').toUpperCase()}) despachado a Telegram. Encuesta de confirmación enviada.`,
+                  video_id: video.id,
+                  cuenta_id: video.cuenta_id,
+                  origen: 'programador',
+                });
+
+                // Sincronizar store local como ENVIADO
+                await updateVideoRef.current(video.id, {
+                  estado: 'ENVIADO',
+                  enviado_en: new Date(),
+                });
+              } else {
+                console.warn(
+                  `[PublicationScheduler] ⚠️ Fallo al enviar a Telegram: ${sendRes.message}`
+                );
+
+                // ❗ REVERTIR a PROGRAMADO en la BD para que no quede como falso ENVIADO ni pase a ERROR_DE_RED
+                await db
+                  .from('publicaciones')
+                  .update({ estado: 'PROGRAMADO', enviado_en: null })
+                  .eq('id', video.id);
+
+                await createNotification({
+                  tipo: 'error',
+                  titulo: 'Fallo al despachar video a Telegram',
+                  mensaje: `No se pudo enviar el aviso de "${video.titulo}" al grupo de Telegram: ${sendRes.message}. Se reintentará automáticamente.`,
+                  video_id: video.id,
+                  cuenta_id: video.cuenta_id,
+                  origen: 'telegram',
+                });
+
+                // Permitir reintento tras 45 segundos
+                setTimeout(() => {
+                  processingRef.current.delete(video.id);
+                }, 45000);
               }
             } else {
               console.warn(
                 '[PublicationScheduler] Telegram Bot Token o Chat ID no configurados en Settings → Integraciones.'
               );
+
+              // Revertir a PROGRAMADO para no dejar en falso ENVIADO
+              await db
+                .from('publicaciones')
+                .update({ estado: 'PROGRAMADO', enviado_en: null })
+                .eq('id', video.id);
+
               await createNotification({
                 tipo: 'warning',
                 titulo: 'Telegram no configurado',
@@ -211,13 +285,11 @@ export function PublicationScheduler() {
                 cuenta_id: video.cuenta_id,
                 origen: 'sistema',
               });
-            }
 
-            // Sincronizar store local
-            await updateVideoRef.current(video.id, {
-              estado: 'ENVIADO',
-              enviado_en: new Date(),
-            });
+              setTimeout(() => {
+                processingRef.current.delete(video.id);
+              }, 60000);
+            }
           }
 
           // ── Si la cuenta es YouTube: Disparar subida automática directamente ──
@@ -332,6 +404,11 @@ export function PublicationScheduler() {
           });
           // Si falló de manera crítica, retirar de bloqueados para reintentar más adelante
           processingRef.current.delete(video.id);
+        }
+
+        // ── Pausa entre videos para evitar colisiones y desorden en Telegram cuando coinciden a la misma hora ──
+        if (i < dueVideos.length - 1) {
+          await new Promise((r) => setTimeout(r, 1500));
         }
       }
     };
@@ -532,10 +609,10 @@ export function PublicationScheduler() {
     checkScraperVerifications();
     checkTelegramCommands();
 
-    // Intervalo de publicaciones cada 15s (pausado si la pestaña no es visible para ahorrar CPU)
+    // Intervalo de publicaciones cada 15s (revisa publicaciones SIEMPRE a tiempo, incluso si la pestaña está en segundo plano)
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
       checkScheduledPublications();
+      if (typeof document !== 'undefined' && document.hidden) return;
       checkDailyQuotaAlert();
       checkToleranceAlerts();
       checkScraperVerifications();

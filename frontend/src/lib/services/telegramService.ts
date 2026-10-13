@@ -44,6 +44,11 @@ function escapeHtml(text: string): string {
  * Determina si la hora actual (o dada) cae dentro del horario de silencio configurado.
  * Maneja correctamente intervalos diurnos (ej. 13:00 - 15:00) o que cruzan la medianoche (ej. 23:00 - 08:00).
  */
+/**
+ * Determina si la hora actual (o dada) cae dentro del horario de silencio configurado.
+ * Maneja correctamente intervalos diurnos (ej. 13:00 - 15:00) o que cruzan la medianoche (ej. 23:00 - 08:00).
+ * En el servidor (Vercel), ajusta a UTC-4 para coincidir con la zona horaria del usuario.
+ */
 export function isWithinSilenceHours(
   config: {
     alerta_horario_silencio_activo?: boolean;
@@ -59,8 +64,12 @@ export function isWithinSilenceHours(
   const [startH, startM] = start.split(':').map((n) => parseInt(n, 10) || 0);
   const [endH, endM] = end.split(':').map((n) => parseInt(n, 10) || 0);
 
-  const currentH = date.getHours();
-  const currentM = date.getMinutes();
+  // En servidor Node/Vercel (UTC), desplazar a UTC-4
+  const isServer = typeof window === 'undefined';
+  const shiftedDate = isServer ? new Date(date.getTime() - 4 * 3_600_000) : date;
+
+  const currentH = shiftedDate.getHours();
+  const currentM = shiftedDate.getMinutes();
 
   const currentMinutes = currentH * 60 + currentM;
   const startMinutes = startH * 60 + startM;
@@ -95,7 +104,11 @@ export async function sendTelegramMessage(
       return { success: false, message: 'El Token y el ID de Chat son obligatorios.' };
     }
 
-    // Si estamos en el navegador, usar el proxy interno para garantizar cero problemas de CORS
+    if (!text || !text.trim()) {
+      return { success: false, message: 'El texto del mensaje no puede estar vacío.' };
+    }
+
+    // Si estamos en el navegador, SIEMPRE usar el proxy interno para garantizar cero problemas de CORS
     if (typeof window !== 'undefined') {
       try {
         const proxyRes = await fetch('/api/telegram/send', {
@@ -105,8 +118,12 @@ export async function sendTelegramMessage(
         });
         const proxyData = await proxyRes.json();
         return proxyData;
-      } catch (proxyErr) {
-        console.warn('[TelegramService] Fallback a llamada directa por error en proxy:', proxyErr);
+      } catch (proxyErr: any) {
+        console.warn('[TelegramService] Error al conectar con proxy /api/telegram/send:', proxyErr);
+        return {
+          success: false,
+          message: `Fallo de conexión al enviar a Telegram: ${proxyErr?.message || 'Error de red'}`,
+        };
       }
     }
 
@@ -178,7 +195,6 @@ export async function sendTelegramMessage(
       };
     }
   } catch (error: any) {
-    // Si falla por CORS o red local, damos una respuesta clara
     return {
       success: false,
       message: `Fallo de conexión al enviar a Telegram: ${error?.message || 'Error de red'}`,
@@ -240,7 +256,7 @@ export async function sendToleranceAlert(
 /**
  * Envía la notificación de video programado a Telegram en 2 mensajes separados:
  * Mensaje 1: Ficha técnica con cuenta, campaña, hora, título y enlace de Drive.
- * Mensaje 2: Descripción / Copy limpio para copiar y pegar directamente en la publicación.
+ * Mensaje 2: Descripción / Copy limpio para copiar y pegar directamente en la publicación (si existe).
  */
 export async function sendPublicationAlert(
   token: string,
@@ -255,9 +271,10 @@ export async function sendPublicationAlert(
     programadoPara?: string;
   }
 ): Promise<{ success: boolean; message: string }> {
+  // Asegurar escape de URLs en HTML (especialmente query params con '&' de Google Drive)
   const driveUrlText =
     data.driveFileUrl && data.driveFileUrl !== '#'
-      ? data.driveFileUrl
+      ? escapeHtml(data.driveFileUrl)
       : '<i>(Enlace no registrado)</i>';
 
   const campaignSection = data.campaignName
@@ -271,7 +288,12 @@ export async function sendPublicationAlert(
   const safeUsername = escapeHtml(data.accountUsername);
   const safePlatform = escapeHtml(data.platform.toUpperCase());
   const safeTitle = escapeHtml(data.videoTitle);
-  const safeDesc = escapeHtml(data.descripcion);
+  const safeDesc = escapeHtml(data.descripcion || '');
+  const hasDescription = safeDesc.trim().length > 0;
+
+  const descNotice = hasDescription
+    ? '📝 <i>A continuación se envía el copy aprobado listo para copiar y pegar.</i>'
+    : '📝 <i>(Sin descripción o copy registrado previamente)</i>';
 
   // Mensaje 1: Ficha técnica y archivo en Drive
   const msg1 = `
@@ -283,11 +305,8 @@ ${campaignSection}${horaSection}🎬 <b>Título:</b> ${safeTitle}
 📁 <b>Video en Google Drive:</b>
 ${driveUrlText}
 
-📝 <i>A continuación se envía el copy aprobado listo para copiar y pegar.</i>
+${descNotice}
 `.trim();
-
-  // Mensaje 2: Descripción / Copy 100% limpio para copiar y pegar directamente sin cabeceras
-  const msg2 = safeDesc.trim();
 
   // Enviar mensaje 1
   const res1 = await sendTelegramMessage(token, chatId, msg1);
@@ -295,10 +314,19 @@ ${driveUrlText}
     return res1;
   }
 
+  // Si no hay descripción, completamos con éxito sin forzar un segundo mensaje vacío
+  if (!hasDescription) {
+    return {
+      success: true,
+      message: 'Ficha de video enviada con éxito a Telegram.',
+    };
+  }
+
   // Pequeña pausa para asegurar el orden secuencial de llegada en Telegram
   await new Promise((r) => setTimeout(r, 400));
 
-  // Enviar mensaje 2 con la descripción
+  // Mensaje 2: Descripción / Copy 100% limpio para copiar y pegar directamente sin cabeceras
+  const msg2 = safeDesc.trim();
   const res2 = await sendTelegramMessage(token, chatId, msg2);
 
   if (res2.success) {
@@ -307,6 +335,7 @@ ${driveUrlText}
       message: `2 mensajes enviados con éxito a Telegram (Detalle del video + Descripción independiente).`,
     };
   } else {
+    // Si la ficha principal se envió, se considera éxito con advertencia
     return {
       success: true,
       message: `Ficha de video enviada, pero hubo un error al enviar la descripción: ${res2.message}`,
@@ -370,7 +399,7 @@ export async function sendConfirmationPoll(
   };
 
   try {
-    // Usar proxy si estamos en el navegador
+    // Usar proxy si estamos en el navegador para evitar problemas de CORS
     if (typeof window !== 'undefined') {
       const res = await fetch('/api/telegram/send-inline', {
         method: 'POST',
@@ -412,13 +441,31 @@ export async function editTelegramMessage(
   messageId: number,
   newText: string
 ): Promise<{ success: boolean; message: string }> {
-  const url = `https://api.telegram.org/bot${token.trim()}/editMessageText`;
+  const cleanToken = token.trim();
+  const cleanChatId = String(chatId).trim();
+
+  // En el navegador, usar proxy para evitar CORS
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/telegram/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cleanToken, chatId: cleanChatId, messageId, newText }),
+      });
+      const d = await res.json();
+      return d;
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Error de red' };
+    }
+  }
+
+  const url = `https://api.telegram.org/bot${cleanToken}/editMessageText`;
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: String(chatId),
+        chat_id: cleanChatId,
         message_id: messageId,
         text: newText,
         parse_mode: 'HTML',
@@ -443,8 +490,22 @@ export async function answerCallbackQuery(
   text?: string,
   showAlert = false
 ): Promise<void> {
+  const cleanToken = token.trim();
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/telegram/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cleanToken, callbackQueryId, text, showAlert }),
+      });
+    } catch {
+      // silent
+    }
+    return;
+  }
+
   try {
-    await fetch(`https://api.telegram.org/bot${token.trim()}/answerCallbackQuery`, {
+    await fetch(`https://api.telegram.org/bot${cleanToken}/answerCallbackQuery`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -457,4 +518,5 @@ export async function answerCallbackQuery(
     // silent
   }
 }
+
 
