@@ -53,12 +53,20 @@ export function CalendarView() {
     videos, accounts, openScheduleModal,
     setSelectedVideoId, calendarView, setCalendarView,
     selectedAccountId, setSelectedAccountId, statusFilter, setStatusFilter,
-    driveUploads
   } = useAppStore();
+  const driveUploads = useAppStore((s) => s.driveUploads);
 
   const [currentDate, setCurrentDate] = useState(new Date());
-  // Fecha actual sincronizada en tiempo real con el reloj local del dispositivo del cliente
-  const [clientToday, setClientToday] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
+  // Fecha actual del dispositivo: se calcula SOLO en el cliente tras montar
+  // (la página se pre-renderiza en build y la fecha quedaba congelada en el HTML)
+  // Fecha actual del dispositivo: se calcula en el cliente y se sincroniza continuamente
+  const [clientToday, setClientToday] = useState<string>(() => {
+    try {
+      return format(new Date(), 'yyyy-MM-dd');
+    } catch {
+      return '';
+    }
+  });
 
   useEffect(() => {
     const syncToday = () => {
@@ -78,8 +86,9 @@ export function CalendarView() {
   }, []);
 
   const isDayToday = useCallback((day: Date) => {
-    const dayKey = format(day, 'yyyy-MM-dd');
-    return clientToday ? dayKey === clientToday : isToday(day);
+    const formattedDay = format(day, 'yyyy-MM-dd');
+    if (clientToday) return formattedDay === clientToday;
+    return isSameDay(day, new Date());
   }, [clientToday]);
 
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
@@ -454,7 +463,7 @@ export function CalendarView() {
                     className={cn(
                       'relative min-h-0 p-1 sm:p-1.5 flex flex-col justify-between transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30 overflow-hidden',
                       isCurrentMonth ? 'bg-[var(--bg-card)]' : 'bg-[var(--bg-elevated)]',
-                      isDayToday(day) && 'ring-inset ring-1 ring-emerald-500/40',
+                      isDayToday(day) && 'ring-inset ring-2 ring-emerald-500/80 bg-emerald-500/[0.08]',
                       isDayTargeted && 'ring-2 ring-emerald-400 z-20'
                     )}
                     title="Haz clic para ver el cronograma completo de este día"
@@ -478,16 +487,23 @@ export function CalendarView() {
 
                     {/* Day number header */}
                     <div className="flex items-center justify-between mb-0.5 shrink-0">
-                      <span className={cn(
-                        'text-[11px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full',
-                        isDayToday(day)
-                          ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white text-[10px] font-bold shadow-sm'
-                          : isCurrentMonth
-                            ? 'text-[var(--text-secondary)]'
-                            : 'text-[var(--text-muted)]'
-                      )}>
-                        {format(day, 'd')}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className={cn(
+                          'text-[11px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full',
+                          isDayToday(day)
+                            ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white text-[10px] font-extrabold shadow-md ring-2 ring-emerald-400/50'
+                            : isCurrentMonth
+                              ? 'text-[var(--text-secondary)]'
+                              : 'text-[var(--text-muted)]'
+                        )}>
+                          {format(day, 'd')}
+                        </span>
+                        {isDayToday(day) && (
+                          <span className="text-[9px] font-extrabold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.2 rounded-full border border-emerald-500/40 shadow-sm">
+                            Hoy
+                          </span>
+                        )}
+                      </div>
                       {isCurrentMonth && (
                         <button
                           type="button"
@@ -625,7 +641,7 @@ export function CalendarView() {
                     className={cn(
                       'relative flex flex-col rounded-2xl p-2.5 border transition-all min-h-[460px] cursor-pointer hover:border-emerald-500/40 group/col',
                       isCurrentDay
-                        ? 'bg-emerald-500/[0.04] border-emerald-500/30'
+                        ? 'bg-emerald-500/[0.08] border-emerald-500/50 ring-1 ring-emerald-500/40 shadow-sm'
                         : 'glass border-[var(--border)]',
                       isDayTargeted && 'ring-2 ring-emerald-400 border-emerald-400 z-20'
                     )}
@@ -654,9 +670,16 @@ export function CalendarView() {
                         <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                           {format(day, 'EEEE', { locale: es })}
                         </p>
-                        <p className={cn('text-base font-bold', isCurrentDay ? 'text-emerald-400' : 'text-white')}>
-                          {format(day, 'd MMM')}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className={cn('text-base font-bold', isCurrentDay ? 'text-emerald-400' : 'text-white')}>
+                            {format(day, 'd MMM')}
+                          </p>
+                          {isCurrentDay && (
+                            <span className="text-[9px] font-extrabold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded-full border border-emerald-500/40 shadow-sm">
+                              Hoy
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <button onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
                         className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/25 transition-colors"

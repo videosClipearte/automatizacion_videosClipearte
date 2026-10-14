@@ -40,7 +40,7 @@ function formatLocalDateTime(isoOrDate: string | Date): string {
 }
 
 export function PublicationScheduler() {
-  const { videos, accounts, campaigns, updateVideo, driveUploads } = useAppStore();
+  const { videos, accounts, campaigns, updateVideo } = useAppStore();
   const processingRef = useRef<Set<string>>(new Set());
   const lastDailyAlertDateRef = useRef<string | null>(null);
   const lastTelegramUpdateIdRef = useRef<number>(0);
@@ -57,8 +57,9 @@ export function PublicationScheduler() {
   campaignsRef.current = campaigns;
   const updateVideoRef = useRef(updateVideo);
   updateVideoRef.current = updateVideo;
-  const driveUploadsRef = useRef(driveUploads);
-  driveUploadsRef.current = driveUploads;
+  const driveUploadsRef = {
+    get current() { return useAppStore.getState().driveUploads; },
+  };
 
   useEffect(() => {
     const checkScheduledPublications = async () => {

@@ -1,5 +1,6 @@
 // src/store/useAppStore.ts
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { getSupabase } from '@/lib/supabase';
 
 // ─── Tipos de dominio ────────────────────────────────────────────────────────
@@ -195,7 +196,7 @@ interface AppState {
   setDriveUploadError: (videoId: string, error: string) => void;
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
+const useAppStoreBase = create<AppState>((set, get) => ({
   videos: [],
   accounts: [],
   campaigns: [],
@@ -588,3 +589,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ campaigns: s.campaigns.filter((c) => c.id !== id) }));
   },
 }));
+
+// ── Optimización CPU: useAppStore() sin selector excluye `driveUploads` ──
+// Así el progreso de subida a Drive no re-renderiza toda la app.
+// Para leer el progreso usar: useAppStore((s) => s.driveUploads)
+const omitDriveUploads = (s: AppState) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { driveUploads, ...rest } = s;
+  return rest as AppState;
+};
+
+function useAppStoreHook(): AppState;
+function useAppStoreHook<T>(selector: (s: AppState) => T): T;
+function useAppStoreHook<T>(selector?: (s: AppState) => T) {
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return useAppStoreBase(useShallow((selector ?? omitDriveUploads) as (s: AppState) => T));
+}
+
+export const useAppStore = Object.assign(useAppStoreHook, {
+  getState: useAppStoreBase.getState,
+  setState: useAppStoreBase.setState,
+  subscribe: useAppStoreBase.subscribe,
+});

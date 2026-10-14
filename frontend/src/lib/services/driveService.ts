@@ -214,7 +214,7 @@ function uploadSingleAttempt(
           const pct = Math.round((evt.loaded / evt.total) * 100);
           const now = Date.now();
           // Throttling: emitir al 100% o si pasaron al menos 300ms y el porcentaje varió
-          if (pct === 100 || (pct !== lastPct && now - lastTime >= 300)) {
+          if (pct === 100 || (pct !== lastPct && now - lastTime >= 1000)) {
             lastPct = pct;
             lastTime = now;
             onProgress(pct);

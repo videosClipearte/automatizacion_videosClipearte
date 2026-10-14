@@ -14,6 +14,7 @@ export interface VideoAudioPayload {
  * Extrae el audio de un archivo de video de forma silenciosa en el navegador.
  * Captura los primeros `maxDurationSeconds` segundos del audio.
  * Devuelve null si el navegador no soporta la API o no hay pista de audio.
+ * Garantiza la liberación total de recursos (MediaStreamTracks, decodificadores y AudioContext).
  */
 export async function extractAudioFromVideo(
   file: File,
@@ -30,53 +31,104 @@ export async function extractAudioFromVideo(
     const objectUrl = URL.createObjectURL(file);
     videoEl.src = objectUrl;
 
-    const cleanup = (audioCtx?: AudioContext) => {
-      URL.revokeObjectURL(objectUrl);
-      videoEl.pause();
-      videoEl.removeAttribute('src');
-      videoEl.load();
-      audioCtx?.close().catch(() => {});
+    let audioCtx: AudioContext | null = null;
+    let source: MediaElementAudioSourceNode | null = null;
+    let destination: MediaStreamAudioDestinationNode | null = null;
+    let recorder: MediaRecorder | null = null;
+    let stopTimer: any = null;
+    let timeoutId: any = null;
+    let isCleanedUp = false;
+
+    const cleanup = () => {
+      if (isCleanedUp) return;
+      isCleanedUp = true;
+
+      clearTimeout(timeoutId);
+      clearTimeout(stopTimer);
+
+      // 1. Detener MediaRecorder
+      try {
+        if (recorder && recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+      } catch {}
+
+      // 2. DETENER TODAS LAS PISTAS del MediaStream (CRÍTICO: Libera hilos nativos de audio en el navegador)
+      try {
+        if (destination?.stream) {
+          destination.stream.getTracks().forEach((track) => {
+            try {
+              track.stop();
+            } catch {}
+          });
+        }
+      } catch {}
+
+      // 3. Desconectar nodos Web Audio
+      try {
+        source?.disconnect();
+      } catch {}
+      try {
+        destination?.disconnect();
+      } catch {}
+
+      // 4. Cerrar AudioContext
+      try {
+        if (audioCtx && audioCtx.state !== 'closed') {
+          audioCtx.close().catch(() => {});
+        }
+      } catch {}
+
+      // 5. Destruir elemento de video y liberar decodificadores de hardware
+      try {
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        videoEl.srcObject = null;
+        videoEl.src = '';
+        videoEl.load();
+        URL.revokeObjectURL(objectUrl);
+      } catch {}
     };
 
-    const timeoutId = setTimeout(() => {
+    timeoutId = setTimeout(() => {
       cleanup();
       resolve(null);
-    }, 20_000);
+    }, 15_000);
 
     videoEl.onloadedmetadata = async () => {
       const rawDuration = isFinite(videoEl.duration) ? videoEl.duration : 20;
       const captureDuration = Math.min(rawDuration, maxDurationSeconds);
 
-      let audioCtx: AudioContext | undefined;
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
         audioCtx = new AudioCtx();
 
-        const source = audioCtx.createMediaElementSource(videoEl);
-        const destination = audioCtx.createMediaStreamDestination();
-        // Solo al destino MediaStream, NO a los altavoces
+        source = audioCtx.createMediaElementSource(videoEl);
+        destination = audioCtx.createMediaStreamDestination();
+        // Conexión exclusiva al MediaStream de captura (NO a los altavoces de audioCtx.destination)
         source.connect(destination);
 
         const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg']
           .find((m) => MediaRecorder.isTypeSupported(m)) || 'audio/webm';
 
-        const recorder = new MediaRecorder(destination.stream, { mimeType });
+        recorder = new MediaRecorder(destination.stream, { mimeType });
         const chunks: Blob[] = [];
 
         recorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) chunks.push(e.data);
         };
 
-        recorder.onstop = async () => {
-          clearTimeout(timeoutId);
-          cleanup(audioCtx);
+        recorder.onstop = () => {
+          // Liberar inmediatamente decodificadores y pistas de audio
+          cleanup();
 
-          if (chunks.length === 0) { resolve(null); return; }
+          if (chunks.length === 0) {
+            resolve(null);
+            return;
+          }
 
           try {
             const blob = new Blob(chunks, { type: mimeType });
-            
-            // Optimización CPU: Usar FileReader nativo (C++) en lugar de bucle manual JS de concatenación
             const reader = new FileReader();
             reader.onloadend = () => {
               const resultStr = (reader.result as string) || '';
@@ -96,34 +148,37 @@ export async function extractAudioFromVideo(
         };
 
         recorder.onerror = () => {
-          clearTimeout(timeoutId);
-          cleanup(audioCtx);
+          cleanup();
           resolve(null);
         };
 
         recorder.start(250);
         videoEl.play().catch(() => {});
 
-        const stopTimer = setTimeout(() => {
-          if (recorder.state !== 'inactive') recorder.stop();
-          videoEl.pause();
-        }, captureDuration * 1000 + 500);
+        stopTimer = setTimeout(() => {
+          if (recorder && recorder.state !== 'inactive') {
+            recorder.stop();
+          } else {
+            cleanup();
+            resolve(null);
+          }
+        }, captureDuration * 1000 + 400);
 
         videoEl.onended = () => {
           clearTimeout(stopTimer);
-          if (recorder.state !== 'inactive') recorder.stop();
+          if (recorder && recorder.state !== 'inactive') {
+            recorder.stop();
+          }
         };
 
       } catch (err) {
-        clearTimeout(timeoutId);
-        cleanup(audioCtx);
+        cleanup();
         console.warn('[AudioExtractor] Error al capturar audio:', err);
         resolve(null);
       }
     };
 
     videoEl.onerror = () => {
-      clearTimeout(timeoutId);
       cleanup();
       resolve(null);
     };

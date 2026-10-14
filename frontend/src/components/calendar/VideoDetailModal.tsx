@@ -57,8 +57,8 @@ export function VideoDetailModal() {
     campaigns,
     deleteVideo,
     updateVideo,
-    driveUploads,
   } = useAppStore();
+  const driveUploads = useAppStore((s) => s.driveUploads);
 
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [telegramFeedback, setTelegramFeedback] = useState<{ success: boolean; msg: string } | null>(null);
