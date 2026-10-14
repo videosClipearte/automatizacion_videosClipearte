@@ -76,11 +76,9 @@ export async function GET(request: Request) {
       const isYoutube = account?.plataforma === 'youtube';
       const hasValidDrive = Boolean(video.drive_file_url && video.drive_file_url !== '#' && video.drive_file_url.trim().length > 5);
 
-      // Si es plataforma manual (Instagram/TikTok) y no tiene enlace válido de Google Drive, no despachar a Telegram sin el video
+      // Si es plataforma manual (Instagram/TikTok) y no tiene enlace de Google Drive, registrar advertencia pero no bloquear el despacho
       if (!isYoutube && !hasValidDrive) {
-        console.warn(`[Cron/Publish] Video "${video.titulo}" pospuesto: sin enlace de Google Drive válido. No se enviará a Telegram.`);
-        results.push({ id: video.id, titulo: video.titulo, skipped: true, reason: 'Sin enlace de Google Drive válido' });
-        continue;
+        console.warn(`[Cron/Publish] Video "${video.titulo}" sin enlace de Google Drive confirmado. Despachando a Telegram con aviso.`);
       }
 
       // ── Actualización atómica: solo procesar si el video SIGUE en PROGRAMADO ──

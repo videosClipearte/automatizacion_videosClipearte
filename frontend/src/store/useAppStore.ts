@@ -440,11 +440,25 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     if (video.thumbnail_url) {
       row.thumbnail_url = video.thumbnail_url;
     }
-    const { error: insErr } = await db.from('publicaciones').insert(row);
-    if (insErr && row.thumbnail_url) {
-      console.warn('[addVideo] Error insertando con thumbnail_url, reintentando sin él:', insErr.message);
-      delete row.thumbnail_url;
-      await db.from('publicaciones').insert(row);
+    let { error: insErr } = await db.from('publicaciones').insert(row);
+    if (insErr) {
+      console.warn('[addVideo] Error inicial insertando en publicaciones:', insErr.message);
+      // Reintento 1: Si falló por tamaño o formato de miniatura
+      if (row.thumbnail_url) {
+        delete row.thumbnail_url;
+        const res2 = await db.from('publicaciones').insert(row);
+        insErr = res2.error;
+      }
+      // Reintento 2: Si falló por clave foránea de campana_id no existente
+      if (insErr && row.campana_id) {
+        console.warn('[addVideo] Reintentando inserción sin campana_id por restricción FK:', insErr.message);
+        row.campana_id = null;
+        const res3 = await db.from('publicaciones').insert(row);
+        insErr = res3.error;
+      }
+      if (insErr) {
+        console.error('[addVideo] Fallo persistente insertando en Supabase publicaciones:', insErr.message);
+      }
     }
     set((s) => {
       const videos = [...s.videos, video];

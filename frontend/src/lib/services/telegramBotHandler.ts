@@ -457,14 +457,19 @@ async function handleLinkConfirmation({
   }
 
   // 2. PRIORIDAD 2: Si no hubo Reply directo o no coincidió,
-  //    buscar el video que el usuario haya confirmado en la encuesta MÁS RECIENTEMENTE:
-  //    (estado = 'ESPERANDO_LINK' ordenado por respondido_en DESC, ¡NO por created_at!)
+  // 3. PRIORIDAD 3: Si no hubo Reply directo ni ref explícito:
+  //    SOLO vincular si hay un video que esté ACTIVAMENTE esperando enlace (estado = 'ESPERANDO_LINK')
+  //    y que haya sido solicitado RECIENTEMENTE (menos de 20 minutos atrás).
+  //    ¡NUNCA vincular a encuestas PENDIENTES ni a videos de YouTube!
   if (!targetConf) {
+    const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+
     const { data: waitingConfs } = await db
       .from('confirmaciones_telegram')
       .select('*, publicaciones(*, cuentas(*))')
       .eq('chat_id', String(chatId))
       .eq('estado', 'ESPERANDO_LINK')
+      .gte('respondido_en', twentyMinutesAgo)
       .order('respondido_en', { ascending: false, nullsFirst: false })
       .order('updated_at', { ascending: false })
       .limit(1);
@@ -474,26 +479,20 @@ async function handleLinkConfirmation({
     }
   }
 
-  // 3. PRIORIDAD 3: Si no hay ninguno en ESPERANDO_LINK, buscar si hay una encuesta PENDIENTE
+  // Si no se encontró ninguna confirmación que estuviera explícitamente esperando link:
+  // NO TOCAR el mensaje, NO responder y NO confirmar ningún video arbitrario.
   if (!targetConf) {
-    const { data: pendingConfs } = await db
-      .from('confirmaciones_telegram')
-      .select('*, publicaciones(*, cuentas(*))')
-      .eq('chat_id', String(chatId))
-      .eq('estado', 'PENDIENTE')
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (pendingConfs && pendingConfs.length > 0) {
-      targetConf = pendingConfs[0];
-    }
-  }
-
-  if (!targetConf) {
-    return false; // No hay ninguna confirmación esperando link
+    return false;
   }
 
   const video = targetConf.publicaciones;
+
+  // REGLA ESTRICTA: Los videos de YouTube se gestionan de forma automatizada y NUNCA se confirman por enlace manual en Telegram
+  const platform = (video?.cuentas?.plataforma || '').toLowerCase();
+  if (platform === 'youtube') {
+    console.log(`[TelegramBot] Omitiendo enlace para video de YouTube ${video?.id} (no requiere confirmación manual).`);
+    return false;
+  }
   const now = new Date().toISOString();
 
   // 1. Marcar confirmación como CONFIRMADO con la URL enviada

@@ -93,20 +93,38 @@ export function PublicationScheduler() {
       for (let i = 0; i < dueVideos.length; i++) {
         const video = dueVideos[i];
 
-        // ── Validar que la subida a Drive haya terminado antes de despachar ──
+        // ── Validar que la subida a Drive no esté activamente en progreso ──
         const uploadState = driveUploadsRef.current?.[video.id];
-        if (uploadState?.status === 'uploading') {
+        const progTime = new Date(video.programado_para).getTime();
+        const minutesOverdue = (now.getTime() - progTime) / 60000;
+
+        // Si la subida a Drive está ACTIVA en este segundo y lleva menos de 2 minutos vencido, esperar
+        if (uploadState?.status === 'uploading' && minutesOverdue < 2) {
           console.log(`[PublicationScheduler] Video "${video.titulo}" aún subiendo a Google Drive (${uploadState.progress}%). Postergando despacho...`);
           continue;
         }
 
-        const account = accountsRef.current.find((a) => a.id === video.cuenta_id);
-        const isYoutube = account?.plataforma === 'youtube';
+        let account = accountsRef.current.find((a) => a.id === video.cuenta_id);
+        if (!account && video.cuenta_id) {
+          try {
+            const { data: dbAcc } = await db.from('cuentas').select('*').eq('id', video.cuenta_id).single();
+            if (dbAcc) account = dbAcc;
+          } catch {}
+        }
+
+        let campaign = campaignsRef.current.find((c) => c.id === video.campana_id);
+        if (!campaign && video.campana_id) {
+          try {
+            const { data: dbCamp } = await db.from('campanas').select('*').eq('id', video.campana_id).single();
+            if (dbCamp) campaign = dbCamp;
+          } catch {}
+        }
+
+        const isYoutube = account?.plataforma?.toLowerCase() === 'youtube';
         const hasValidDrive = Boolean(video.drive_file_url && video.drive_file_url !== '#' && video.drive_file_url.trim().length > 5);
 
-        // Si es plataforma manual (TikTok/Instagram) y no tiene enlace de Drive válido
+        // Si es plataforma manual (TikTok/Instagram) y no tiene enlace de Drive válido, intentar reintento si el archivo está en memoria
         if (!isYoutube && !hasValidDrive) {
-          // Si el archivo sigue en memoria, intentar auto-reintento en segundo plano
           const pending = getPendingDriveUpload(video.id);
           if (pending) {
             console.log(`[PublicationScheduler] Reintentando subida a Drive en segundo plano para "${video.titulo}"...`);
@@ -129,43 +147,51 @@ export function PublicationScheduler() {
               }).catch((e) => console.error('[PublicationScheduler] Error en reintento Drive:', e));
             }
           }
-
-          console.warn(`[PublicationScheduler] Video "${video.titulo}" pospuesto: no tiene enlace de Google Drive válido. No se enviará a Telegram sin el video.`);
-          continue;
+          console.warn(`[PublicationScheduler] Video "${video.titulo}" sin enlace de Google Drive confirmado. Despachando a Telegram con aviso.`);
         }
 
-        // Bloquear ID inmediatamente para no procesar en paralelo
+        // Bloquear ID inmediatamente para no procesar en paralelo en esta pasada
         processingRef.current.add(video.id);
 
         try {
-          // ── IMPORTANTE: Marcar como ENVIADO en Supabase ANTES de enviar a Telegram ──
-          // Esto evita que el cron del servidor lo tome también (double-dispatch).
-          const { data: freshVideo, error: fetchErr } = await db
-            .from('publicaciones')
-            .select('id, estado')
-            .eq('id', video.id)
-            .single();
+          // ── Verificar si ya fue procesado en la BD (ej. por el cron del servidor) ──
+          let isAlreadyProcessed = false;
+          try {
+            const { data: freshVideo } = await db
+              .from('publicaciones')
+              .select('id, estado')
+              .eq('id', video.id)
+              .single();
 
-          // Si en la BD ya está ENVIADO/PUBLICADO (procesado por el cron), saltar.
-          if (fetchErr || !freshVideo || freshVideo.estado !== 'PROGRAMADO') {
-            console.log(`[PublicationScheduler] Video "${video.titulo}" ya fue procesado por otro mecanismo (estado actual: ${freshVideo?.estado}). Saltando.`);
-            // Sincronizar store local
-            if (freshVideo && freshVideo.estado !== video.estado) {
-              await updateVideoRef.current(video.id, { estado: freshVideo.estado });
+            if (freshVideo && freshVideo.estado !== 'PROGRAMADO') {
+              console.log(`[PublicationScheduler] Video "${video.titulo}" ya fue procesado por otro mecanismo (estado actual: ${freshVideo.estado}). Saltando.`);
+              isAlreadyProcessed = true;
+              if (freshVideo.estado !== video.estado) {
+                await updateVideoRef.current(video.id, { estado: freshVideo.estado });
+              }
             }
+          } catch (fetchErr) {
+            console.warn('[PublicationScheduler] Advertencia consultando estado en Supabase, continuando despacho local:', fetchErr);
+          }
+
+          if (isAlreadyProcessed) {
             continue;
           }
 
-          // Marcar ENVIADO en BD primero (bloqueo contra el cron)
-          await db
-            .from('publicaciones')
-            .update({ estado: 'ENVIADO', enviado_en: new Date().toISOString() })
-            .eq('id', video.id)
-            .eq('estado', 'PROGRAMADO'); // condición atómica: solo si sigue PROGRAMADO
+          // Marcar ENVIADO en BD primero (bloqueo atómico contra el cron)
+          try {
+            await db
+              .from('publicaciones')
+              .update({ estado: 'ENVIADO', enviado_en: new Date().toISOString() })
+              .eq('id', video.id)
+              .eq('estado', 'PROGRAMADO');
+          } catch (updErr) {
+            console.warn('[PublicationScheduler] Error actualizando estado en Supabase:', updErr);
+          }
 
-          // Obtener configuración fresca de Telegram desde Supabase
+          // Obtener configuración fresca de Telegram desde Supabase o caché
           let cfg = getCachedConfig();
-          if (!cfg.telegram_bot_token) {
+          if (!cfg.telegram_bot_token || (!cfg.telegram_group_id && !cfg.telegram_admin_chat_id)) {
             cfg = await loadAppConfig();
           }
 
@@ -173,16 +199,12 @@ export function PublicationScheduler() {
           const targetChat = (cfg.telegram_group_id || cfg.telegram_admin_chat_id || '').trim();
           const inSilence = isWithinSilenceHours(cfg);
 
-          const account = accountsRef.current.find((a) => a.id === video.cuenta_id);
-          const campaign = campaignsRef.current.find((c) => c.id === video.campana_id);
-
           const horaLocal = formatLocalDateTime(video.programado_para);
 
           console.log(
             `[PublicationScheduler] Publicación alcanzada para "${video.titulo}". Despachando a Telegram...`
           );
 
-          const isYoutube = account?.plataforma === 'youtube';
           let sentTelegram = false;
 
           if (!isYoutube) {
@@ -192,7 +214,7 @@ export function PublicationScheduler() {
               const sendRes = await sendPublicationAlert(botToken, targetChat, {
                 videoTitle: video.titulo,
                 accountUsername: account?.username || 'cuenta',
-                platform: account?.plataforma || 'red',
+                platform: account?.plataforma || 'tiktok',
                 campaignName: campaign?.nombre,
                 driveFileUrl: video.drive_file_url,
                 descripcion: video.descripcion_aprobada_ia,
@@ -214,7 +236,7 @@ export function PublicationScheduler() {
                   publicacionId: video.id,
                   videoTitle: video.titulo,
                   accountUsername: account?.username || 'cuenta',
-                  platform: account?.plataforma || 'red',
+                  platform: account?.plataforma || 'tiktok',
                   programadoPara: horaLocal,
                 });
 
@@ -231,7 +253,7 @@ export function PublicationScheduler() {
                 await createNotification({
                   tipo: 'info',
                   titulo: 'Publicación enviada a Telegram',
-                  mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'red').toUpperCase()}) despachado a Telegram. Encuesta de confirmación enviada.`,
+                  mensaje: `Video "${video.titulo}" para @${account?.username || 'cuenta'} (${(account?.plataforma || 'tiktok').toUpperCase()}) despachado a Telegram. Encuesta de confirmación enviada.`,
                   video_id: video.id,
                   cuenta_id: video.cuenta_id,
                   origen: 'programador',
@@ -247,11 +269,18 @@ export function PublicationScheduler() {
                   `[PublicationScheduler] ⚠️ Fallo al enviar a Telegram: ${sendRes.message}`
                 );
 
-                // ❗ REVERTIR a PROGRAMADO en la BD para que no quede como falso ENVIADO ni pase a ERROR_DE_RED
-                await db
-                  .from('publicaciones')
-                  .update({ estado: 'PROGRAMADO', enviado_en: null })
-                  .eq('id', video.id);
+                // Revertir a PROGRAMADO en la BD para que no quede como falso ENVIADO
+                try {
+                  await db
+                    .from('publicaciones')
+                    .update({ estado: 'PROGRAMADO', enviado_en: null })
+                    .eq('id', video.id);
+                } catch {}
+
+                await updateVideoRef.current(video.id, {
+                  estado: 'PROGRAMADO',
+                  enviado_en: undefined,
+                });
 
                 await createNotification({
                   tipo: 'error',
@@ -273,10 +302,17 @@ export function PublicationScheduler() {
               );
 
               // Revertir a PROGRAMADO para no dejar en falso ENVIADO
-              await db
-                .from('publicaciones')
-                .update({ estado: 'PROGRAMADO', enviado_en: null })
-                .eq('id', video.id);
+              try {
+                await db
+                  .from('publicaciones')
+                  .update({ estado: 'PROGRAMADO', enviado_en: null })
+                  .eq('id', video.id);
+              } catch {}
+
+              await updateVideoRef.current(video.id, {
+                estado: 'PROGRAMADO',
+                enviado_en: undefined,
+              });
 
               await createNotification({
                 tipo: 'warning',
@@ -312,12 +348,14 @@ export function PublicationScheduler() {
             const effectiveClientId = cfgFresh.youtube_client_id || cfgFresh.drive_client_id || localYtId || undefined;
             const effectiveClientSecret = cfgFresh.youtube_client_secret || cfgFresh.drive_client_secret || localYtSec || undefined;
 
+            const accountName = account?.username || 'canal';
+
             fetch('/api/youtube/publish', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 publicacion_id: video.id,
-                canal_id: account.username,
+                canal_id: accountName,
                 video_url: video.drive_file_url,
                 titulo: video.titulo,
                 descripcion: video.descripcion_aprobada_ia || video.titulo,
@@ -344,7 +382,7 @@ export function PublicationScheduler() {
                   createNotification({
                     tipo: 'success',
                     titulo: 'Video publicado en YouTube',
-                    mensaje: `"${video.titulo}" fue publicado exitosamente en @${account.username}.`,
+                    mensaje: `"${video.titulo}" fue publicado exitosamente en @${accountName}.`,
                     video_id: video.id,
                     cuenta_id: video.cuenta_id,
                     origen: 'youtube',
@@ -355,7 +393,7 @@ export function PublicationScheduler() {
                     await sendTelegramMessage(
                       botToken,
                       targetChat,
-                      `✅ <b>Video publicado en YouTube</b>\n\n📺 <b>${video.titulo}</b>\n👤 Canal: @${account.username}\n🔗 ${resData.video_url}`,
+                      `✅ <b>Video publicado en YouTube</b>\n\n📺 <b>${video.titulo}</b>\n👤 Canal: @${accountName}\n🔗 ${resData.video_url}`,
                       'HTML'
                     );
                   }
@@ -367,7 +405,7 @@ export function PublicationScheduler() {
                   createNotification({
                     tipo: 'error',
                     titulo: '❌ Falló la publicación en YouTube',
-                    mensaje: `"${video.titulo}" no se pudo publicar en @${account.username}. Error: ${resData.error || 'Desconocido'}${resData.needs_reauth ? ' — Reconecta la cuenta en Configuración → Cuentas con el scope youtube.upload.' : ''}`,
+                    mensaje: `"${video.titulo}" no se pudo publicar en @${accountName}. Error: ${resData.error || 'Desconocido'}${resData.needs_reauth ? ' — Reconecta la cuenta en Configuración → Cuentas con el scope youtube.upload.' : ''}`,
                     video_id: video.id,
                     cuenta_id: video.cuenta_id,
                     origen: 'youtube',
@@ -381,7 +419,7 @@ export function PublicationScheduler() {
                     await sendTelegramMessage(
                       botToken,
                       targetChat,
-                      `❌ <b>Fallo en publicación de YouTube</b>\n\n📺 <b>${video.titulo}</b>\n👤 Canal: @${account.username}\n\n🚨 <b>Error:</b> ${resData.error || 'Error desconocido'}\n⏱️ <b>Retraso:</b> ${delayMinutes} min (superó margen de tolerancia de ${toleranciaMinutos} min)`,
+                      `❌ <b>Fallo en publicación de YouTube</b>\n\n📺 <b>${video.titulo}</b>\n👤 Canal: @${accountName}\n\n🚨 <b>Error:</b> ${resData.error || 'Error desconocido'}\n⏱️ <b>Retraso:</b> ${delayMinutes} min (superó margen de tolerancia de ${toleranciaMinutos} min)`,
                       'HTML'
                     );
                   } else if (delayMinutes < toleranciaMinutos) {
@@ -395,6 +433,12 @@ export function PublicationScheduler() {
           }
         } catch (err: any) {
           console.error(`[PublicationScheduler] Error procesando video ${video.id}:`, err);
+          if (!isYoutube) {
+            try {
+              await db.from('publicaciones').update({ estado: 'PROGRAMADO', enviado_en: null }).eq('id', video.id);
+              await updateVideoRef.current(video.id, { estado: 'PROGRAMADO', enviado_en: undefined });
+            } catch {}
+          }
           await createNotification({
             tipo: 'error',
             titulo: 'Error crítico en publicación',
@@ -404,7 +448,9 @@ export function PublicationScheduler() {
             origen: 'sistema',
           });
           // Si falló de manera crítica, retirar de bloqueados para reintentar más adelante
-          processingRef.current.delete(video.id);
+          setTimeout(() => {
+            processingRef.current.delete(video.id);
+          }, 30000);
         }
 
         // ── Pausa entre videos para evitar colisiones y desorden en Telegram cuando coinciden a la misma hora ──
