@@ -100,22 +100,19 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-export function ScheduleModal() {
-  const {
-    isScheduleModalOpen,
-    closeScheduleModal,
-    scheduleModalDate,
-    scheduleModalFile,
-    selectedAccountId,
-    accounts,
-    campaigns,
-    videos,
-    addVideo,
-    updateVideo,
-    setDriveUploadProgress,
-    setDriveUploadComplete,
-    setDriveUploadError,
-  } = useAppStore();
+function ScheduleModalDialog() {
+  const closeScheduleModal = useAppStore((s) => s.closeScheduleModal);
+  const scheduleModalDate = useAppStore((s) => s.scheduleModalDate);
+  const scheduleModalFile = useAppStore((s) => s.scheduleModalFile);
+  const selectedAccountId = useAppStore((s) => s.selectedAccountId);
+  const accounts = useAppStore((s) => s.accounts);
+  const campaigns = useAppStore((s) => s.campaigns);
+  const videos = useAppStore((s) => s.videos);
+  const addVideo = useAppStore((s) => s.addVideo);
+  const updateVideo = useAppStore((s) => s.updateVideo);
+  const setDriveUploadProgress = useAppStore((s) => s.setDriveUploadProgress);
+  const setDriveUploadComplete = useAppStore((s) => s.setDriveUploadComplete);
+  const setDriveUploadError = useAppStore((s) => s.setDriveUploadError);
 
   const [videoFile, setVideoFile] = useState<File | null>(scheduleModalFile);
   const [videoTitle, setVideoTitle] = useState<string>(
@@ -139,6 +136,46 @@ export function ScheduleModal() {
   const [driveError, setDriveError] = useState<string | null>(null);
   const [driveSuccessUrl, setDriveSuccessUrl] = useState<string | null>(null);
   const [manualDriveUrl, setManualDriveUrl] = useState('');
+
+  // Confirmación al cerrar si hay video listo para subir a Drive
+  const [showConfirmDiscard, setShowConfirmDiscard] = useState(false);
+
+  const handleAttemptClose = useCallback(() => {
+    if (videoFile) {
+      setShowConfirmDiscard(true);
+    } else {
+      closeScheduleModal();
+    }
+  }, [videoFile, closeScheduleModal]);
+
+  const handleForceDiscardAndClose = useCallback(() => {
+    setShowConfirmDiscard(false);
+    setVideoFile(null);
+    setThumbnailFile(null);
+    setThumbnailPreview(null);
+    setThumbnailBase64(null);
+    setVideoTitle('');
+    setShortTitle('');
+    setManualDriveUrl('');
+    setDriveSuccessUrl(null);
+    setDriveError(null);
+    closeScheduleModal();
+  }, [closeScheduleModal]);
+
+  // Interceptar tecla Escape para confirmación (se limpia automáticamente al desmontar el modal)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showConfirmDiscard) {
+          setShowConfirmDiscard(false);
+        } else {
+          handleAttemptClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showConfirmDiscard, handleAttemptClose]);
 
   // Thumbnail state (especialmente para YouTube)
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
@@ -204,6 +241,12 @@ export function ScheduleModal() {
   }, [selectedAccountId, campaigns]);
 
   const initialDateTime = getDeviceScheduleTime(scheduleModalDate);
+  const initialCleanName = scheduleModalFile
+    ? scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim()
+    : '';
+  const initialDescription = initialCleanName
+    ? `🎬 ${initialCleanName} - Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
+    : '';
 
   const {
     register,
@@ -219,7 +262,7 @@ export function ScheduleModal() {
       cuenta_id: selectedAccountId && selectedAccountId !== 'ALL' ? selectedAccountId : '',
       campana_id: defaultMatchingCampaign ? defaultMatchingCampaign.id : '',
       auto_reprogramacion: false,
-      descripcion: '',
+      descripcion: initialDescription,
     },
   });
 
@@ -247,67 +290,57 @@ export function ScheduleModal() {
     }
   }, [selectedCampanaId, selectedCuentaId, campaigns, setValue]);
 
-  // Cargar token existente de Google Drive y preseleccionar cuenta/campaña/hora al abrir modal
+  // Cargar token existente de Google Drive y preseleccionar cuenta/campaña/hora al abrir modal (solo se ejecuta 1 vez al montar)
   useEffect(() => {
-    if (isScheduleModalOpen) {
-      setDriveToken(getGoogleDriveToken());
-      setDriveError(null);
-      setDriveSuccessUrl(null);
-      setUploadProgress(0);
-      setThumbnailFile(null);
-      setThumbnailPreview(null);
-      setThumbnailBase64(null);
+    setShowConfirmDiscard(false);
+    setDriveToken(getGoogleDriveToken());
+    setDriveError(null);
+    setDriveSuccessUrl(null);
+    setUploadProgress(0);
+    setThumbnailFile(null);
+    setThumbnailPreview(null);
+    setThumbnailBase64(null);
 
-      // 1. Sincronizar fecha y hora con el dispositivo
-      const { fecha, hora } = getDeviceScheduleTime(scheduleModalDate);
-      setValue('fecha', fecha);
-      setValue('hora', hora);
+    // 1. Sincronizar fecha y hora con el dispositivo
+    const { fecha, hora } = getDeviceScheduleTime(scheduleModalDate);
+    setValue('fecha', fecha);
+    setValue('hora', hora);
 
-      // 2. Preseleccionar automáticamente cuenta y campaña del filtro del calendario
-      if (selectedAccountId && selectedAccountId !== 'ALL') {
-        const matchingAccount = accounts.find((a) => a.id === selectedAccountId);
-        if (matchingAccount) {
-          setValue('cuenta_id', matchingAccount.id);
+    // 2. Preseleccionar automáticamente cuenta y campaña del filtro del calendario
+    if (selectedAccountId && selectedAccountId !== 'ALL') {
+      const matchingAccount = accounts.find((a) => a.id === selectedAccountId);
+      if (matchingAccount) {
+        setValue('cuenta_id', matchingAccount.id);
 
-          const matchingCamp =
-            campaigns.find(
-              (c) => c.activo && Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(matchingAccount.id)
-            ) ||
-            campaigns.find(
-              (c) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(matchingAccount.id)
-            );
+        const matchingCamp =
+          campaigns.find(
+            (c) => c.activo && Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(matchingAccount.id)
+          ) ||
+          campaigns.find(
+            (c) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(matchingAccount.id)
+          );
 
-          if (matchingCamp) {
-            setValue('campana_id', matchingCamp.id);
-          }
+        if (matchingCamp) {
+          setValue('campana_id', matchingCamp.id);
         }
       }
-
-      if (scheduleModalFile) {
-        setVideoFile(scheduleModalFile);
-        const cleanName = scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
-        setVideoTitle(cleanName);
-        setShortTitle(cleanName);
-        setValue(
-          'descripcion',
-          `🎬 ${cleanName} - Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
-        );
-      } else {
-        setVideoFile(null);
-        setVideoTitle('');
-        setShortTitle('');
-      }
     }
-  }, [
-    isScheduleModalOpen,
-    scheduleModalDate,
-    scheduleModalFile,
-    selectedAccountId,
-    accounts,
-    campaigns,
-    getDeviceScheduleTime,
-    setValue,
-  ]);
+
+    if (scheduleModalFile) {
+      setVideoFile(scheduleModalFile);
+      const cleanName = scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
+      setVideoTitle(cleanName);
+      setShortTitle(cleanName);
+      setValue(
+        'descripcion',
+        `🎬 ${cleanName} - Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
+      );
+    } else {
+      setVideoFile(null);
+      setVideoTitle('');
+      setShortTitle('');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Limpiar subtitulos y audio previo cuando cambia el video (extraccion bajo demanda al pulsar Generar IA)
   useEffect(() => {
@@ -756,19 +789,24 @@ export function ScheduleModal() {
     const targetDateStr = currentFecha || (scheduleModalDate ? format(scheduleModalDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
     const activeAccounts = accounts.filter(a => a.activo);
 
-    return activeAccounts.map(account => {
-      const dayVideos = videos.filter(v => {
-        if (v.cuenta_id !== account.id) return false;
-        if (v.estado === 'CANCELADO') return false;
-        try {
-          const vDateStr = format(new Date(v.programado_para), 'yyyy-MM-dd');
-          return vDateStr === targetDateStr;
-        } catch {
-          return false;
+    // Conteo en un solo paso O(videos) para evitar re-análisis costoso de fechas
+    const countsByAccount: Record<string, number> = {};
+    for (const v of videos) {
+      if (v.estado === 'CANCELADO' || !v.cuenta_id) continue;
+      try {
+        const vDateStr = typeof v.programado_para === 'string'
+          ? (v.programado_para as string).slice(0, 10)
+          : format(new Date(v.programado_para), 'yyyy-MM-dd');
+        if (vDateStr === targetDateStr) {
+          countsByAccount[v.cuenta_id] = (countsByAccount[v.cuenta_id] || 0) + 1;
         }
-      });
+      } catch {
+        // Ignorar fechas inválidas
+      }
+    }
 
-      const count = dayVideos.length;
+    return activeAccounts.map(account => {
+      const count = countsByAccount[account.id] || 0;
       const target = account.publicaciones_estimadas_diarias ?? 3;
       const missing = Math.max(0, target - count);
 
@@ -789,10 +827,26 @@ export function ScheduleModal() {
   const totalScheduled = accountQuotaStats.reduce((sum, item) => sum + item.count, 0);
   const selectedAccountStat = accountQuotaStats.find(s => s.id === selectedCuentaId);
 
-  // Análisis anti-duplicados en tiempo real (verifica el archivo de video y el short de YouTube)
+  // Pre-tokenizar videos existentes una sola vez (memoizado) para no saturar la CPU al escribir
+  const preparedVideoTokens = useMemo(() => {
+    return videos
+      .filter((v) => v.estado !== 'CANCELADO')
+      .map((v) => ({
+        video: v,
+        cleanTitle: cleanTitleForComparison(v.titulo),
+        tokens: getTokens(v.titulo),
+        account: accounts.find((a) => a.id === v.cuenta_id),
+      }));
+  }, [videos, accounts]);
+
+  // Análisis anti-duplicados optimizado (utiliza tokens precalculados en caché)
   const duplicateAnalysis = useMemo(() => {
+    if (!videoFile) {
+      return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
+    }
+
     const fileQuery = (videoTitle || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || '').trim();
-    if (!fileQuery || !videoFile) {
+    if (!fileQuery) {
       return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
@@ -801,30 +855,28 @@ export function ScheduleModal() {
     const normShortQuery = (isYouTube && shortTitle) ? cleanTitleForComparison(shortTitle) : '';
 
     // 1. Coincidencia exacta con el archivo de video
-    const exactFile = videos.find(v => v.estado !== 'CANCELADO' && cleanTitleForComparison(v.titulo) === normFileQuery);
-    if (exactFile) {
-      const matchAccount = accounts.find(a => a.id === exactFile.cuenta_id);
+    const exactFileItem = preparedVideoTokens.find(item => item.cleanTitle === normFileQuery);
+    if (exactFileItem) {
       return {
         status: 'exact_duplicate',
-        exactMatch: exactFile,
-        matchAccount,
+        exactMatch: exactFileItem.video,
+        matchAccount: exactFileItem.account,
         matchSource: 'archivo',
-        similarMatches: [{ video: exactFile, score: 100, account: matchAccount }],
+        similarMatches: [{ video: exactFileItem.video, score: 100, account: exactFileItem.account }],
         topScore: 100,
       };
     }
 
-    // 1b. Si es YouTube y hay título de Short aparte, verificar si el título del Short coincide exactamente
+    // 1b. Si es YouTube y hay título de Short aparte, verificar si coincide exactamente
     if (normShortQuery && normShortQuery !== normFileQuery) {
-      const exactShort = videos.find(v => v.estado !== 'CANCELADO' && cleanTitleForComparison(v.titulo) === normShortQuery);
-      if (exactShort) {
-        const matchAccount = accounts.find(a => a.id === exactShort.cuenta_id);
+      const exactShortItem = preparedVideoTokens.find(item => item.cleanTitle === normShortQuery);
+      if (exactShortItem) {
         return {
           status: 'exact_duplicate',
-          exactMatch: exactShort,
-          matchAccount,
+          exactMatch: exactShortItem.video,
+          matchAccount: exactShortItem.account,
           matchSource: 'short',
-          similarMatches: [{ video: exactShort, score: 100, account: matchAccount }],
+          similarMatches: [{ video: exactShortItem.video, score: 100, account: exactShortItem.account }],
           topScore: 100,
         };
       }
@@ -835,24 +887,20 @@ export function ScheduleModal() {
       return { status: 'available', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
-    const scored = videos
-      .filter(v => v.estado !== 'CANCELADO')
-      .map(v => {
-        const vClean = cleanTitleForComparison(v.titulo);
-        const vTokens = getTokens(v.titulo);
-
+    const scored = preparedVideoTokens
+      .map(({ video, cleanTitle: vClean, tokens: vTokens, account }) => {
         if (normFileQuery.length > 5 && (vClean.includes(normFileQuery) || normFileQuery.includes(vClean))) {
-          return { video: v, score: 90, account: accounts.find(a => a.id === v.cuenta_id) };
+          return { video, score: 90, account };
         }
 
         if (normShortQuery && normShortQuery.length > 5 && (vClean.includes(normShortQuery) || normShortQuery.includes(vClean))) {
-          return { video: v, score: 90, account: accounts.find(a => a.id === v.cuenta_id) };
+          return { video, score: 90, account };
         }
 
-        if (vTokens.length === 0) return { video: v, score: 0, account: accounts.find(a => a.id === v.cuenta_id) };
+        if (vTokens.length === 0) return { video, score: 0, account };
         const common = queryTokens.filter(t => vTokens.includes(t));
         const score = Math.round((common.length / Math.max(queryTokens.length, vTokens.length)) * 100);
-        return { video: v, score, account: accounts.find(a => a.id === v.cuenta_id) };
+        return { video, score, account };
       })
       .filter(item => item.score >= 40)
       .sort((a, b) => b.score - a.score);
@@ -876,34 +924,31 @@ export function ScheduleModal() {
       similarMatches: [],
       topScore: 0,
     };
-  }, [videoTitle, shortTitle, isYouTube, videoFile, videos, accounts]);
+  }, [videoTitle, shortTitle, isYouTube, videoFile, preparedVideoTokens]);
 
   const cfg = getCachedConfig();
   const folderIdConfigured = cfg.drive_folder_id;
 
   return (
-    <AnimatePresence>
-      {isScheduleModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
-        >
-          {/* Overlay oscuro sin blur excesivo */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={closeScheduleModal}
-            className="fixed inset-0 bg-black/80"
-          />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
+      {/* Overlay oscuro sin blur excesivo */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+        onClick={handleAttemptClose}
+        className="fixed inset-0 bg-black/80"
+      />
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.94, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: 16 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-            className="relative z-10 w-full max-w-xl bg-[#0b0f19] rounded-3xl border border-emerald-500/30 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className="relative z-10 w-full max-w-xl bg-[#0b0f19] rounded-3xl border border-emerald-500/30 shadow-2xl overflow-hidden h-[90vh] max-h-[820px] flex flex-col will-change-transform"
+        onClick={(e) => e.stopPropagation()}
+      >
 
             {/* Header */}
             <div className="px-5 py-3.5 border-b border-white/[0.07] bg-white/[0.015] space-y-2.5">
@@ -921,7 +966,7 @@ export function ScheduleModal() {
                 </div>
                 <button
                   type="button"
-                  onClick={closeScheduleModal}
+                  onClick={handleAttemptClose}
                   className="w-8 h-8 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all shrink-0 ml-2 cursor-pointer"
                   title="Cerrar"
                 >
@@ -1642,7 +1687,7 @@ export function ScheduleModal() {
               <div className="flex items-center justify-end gap-2 pt-0.5">
                 <button
                   type="button"
-                  onClick={closeScheduleModal}
+                  onClick={handleAttemptClose}
                   disabled={uploadingDrive}
                   className="px-4 py-2 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
                 >
@@ -1666,8 +1711,82 @@ export function ScheduleModal() {
               </div>
             </div>
           </motion.div>
+
+          {/* Modal de confirmación si hay un video listo para subir a Drive */}
+          <AnimatePresence>
+            {showConfirmDiscard && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <motion.div
+                  initial={{ scale: 0.92, opacity: 0, y: 12 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.92, opacity: 0, y: 12 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                  className="w-full max-w-md rounded-2xl bg-[#0f172a] border border-amber-500/40 p-5 shadow-2xl space-y-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <h3 className="text-sm font-bold text-white">¿Cancelar la programación?</h3>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Tienes un video cargado listo para programar y subir a Drive:
+                      </p>
+                      <div className="p-2 rounded-lg bg-black/40 border border-white/10 flex items-center gap-2">
+                        <FileVideo size={14} className="text-emerald-400 shrink-0" />
+                        <span className="text-xs font-semibold text-white truncate">
+                          {videoFile?.name}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-300/90 leading-tight">
+                        Si cancelas ahora, se cerrará esta ventana y se descartarán los datos y el video seleccionado.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/[0.08]">
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmDiscard(false)}
+                      className="px-4 py-2 rounded-xl glass border border-white/10 text-xs text-slate-200 hover:text-white font-medium hover:bg-white/10 transition-colors cursor-pointer"
+                    >
+                      Continuar editando
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleForceDiscardAndClose}
+                      className="px-4 py-2 rounded-xl bg-red-500/25 hover:bg-red-500/35 border border-red-500/40 text-xs text-red-200 font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Trash2 size={13} />
+                      <span>Sí, cancelar programación</span>
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-      )}
+  );
+}
+
+/**
+ * Componente contenedor exportado:
+ * Se suscribe ÚNICAMENTE al booleano isScheduleModalOpen.
+ * Cuando el modal está cerrado, NO monta ScheduleModalDialog, garantizando CERO consumo de CPU en reposo.
+ */
+export function ScheduleModal() {
+  const isScheduleModalOpen = useAppStore((s) => s.isScheduleModalOpen);
+
+  return (
+    <AnimatePresence mode="wait">
+      {isScheduleModalOpen && <ScheduleModalDialog key="schedule-modal-dialog" />}
     </AnimatePresence>
   );
 }
