@@ -43,9 +43,7 @@ import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import {
   getGoogleDriveToken,
   requestGoogleDriveOAuthToken,
-  uploadVideoToGoogleDrive,
-  registerPendingDriveUpload,
-  unregisterPendingDriveUpload,
+  startBackgroundDriveUpload,
 } from '@/lib/services/driveService';
 import { createNotification } from '@/lib/services/notificationService';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -121,6 +119,23 @@ function ScheduleModalDialog() {
   const [shortTitle, setShortTitle] = useState<string>(
     scheduleModalFile ? scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim() : ''
   );
+  // Optimización CPU (Problema 2): Debounce de 400ms sobre el título para no recalcular similitud con cada tecla
+  const [debouncedVideoTitle, setDebouncedVideoTitle] = useState<string>(videoTitle);
+  const [debouncedShortTitle, setDebouncedShortTitle] = useState<string>(shortTitle);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedVideoTitle(videoTitle);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [videoTitle]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedShortTitle(shortTitle);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [shortTitle]);
   const [generatingAI, setGeneratingAI] = useState(false);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
   const [extractedAudio, setExtractedAudio] = useState<VideoAudioPayload | null>(null);
@@ -153,9 +168,10 @@ function ScheduleModalDialog() {
     setVideoFile(null);
     setThumbnailFile(null);
     setThumbnailPreview(null);
-    setThumbnailBase64(null);
     setVideoTitle('');
     setShortTitle('');
+    setDebouncedVideoTitle('');
+    setDebouncedShortTitle('');
     setManualDriveUrl('');
     setDriveSuccessUrl(null);
     setDriveError(null);
@@ -178,26 +194,19 @@ function ScheduleModalDialog() {
   }, [showConfirmDiscard, handleAttemptClose]);
 
   // Thumbnail state (especialmente para YouTube)
+  // Optimización CPU/Memoria (Problema 1): Solo usar objectUrl para previsualización local, sin Base64
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
-  const [thumbnailBase64, setThumbnailBase64] = useState<string | null>(null);
 
   const handleThumbnailChange = useCallback((file: File | null) => {
     if (!file) {
       setThumbnailFile(null);
       setThumbnailPreview(null);
-      setThumbnailBase64(null);
       return;
     }
     setThumbnailFile(file);
     const objectUrl = URL.createObjectURL(file);
     setThumbnailPreview(objectUrl);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setThumbnailBase64(reader.result as string);
-    };
-    reader.readAsDataURL(file);
   }, []);
 
   useEffect(() => {
@@ -299,7 +308,6 @@ function ScheduleModalDialog() {
     setUploadProgress(0);
     setThumbnailFile(null);
     setThumbnailPreview(null);
-    setThumbnailBase64(null);
 
     // 1. Sincronizar fecha y hora con el dispositivo
     const { fecha, hora } = getDeviceScheduleTime(scheduleModalDate);
@@ -331,6 +339,8 @@ function ScheduleModalDialog() {
       const cleanName = scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
       setVideoTitle(cleanName);
       setShortTitle(cleanName);
+      setDebouncedVideoTitle(cleanName);
+      setDebouncedShortTitle(cleanName);
       setValue(
         'descripcion',
         `🎬 ${cleanName} - Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
@@ -339,6 +349,8 @@ function ScheduleModalDialog() {
       setVideoFile(null);
       setVideoTitle('');
       setShortTitle('');
+      setDebouncedVideoTitle('');
+      setDebouncedShortTitle('');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -612,7 +624,6 @@ function ScheduleModalDialog() {
 
     const newVideoId = `v-${Date.now()}`;
     const initialDriveUrl = manualDriveUrl.trim() || '#';
-    const capturedThumbnailBase64 = thumbnailBase64 || undefined;
 
     // Guardar referencias de los archivos para la subida en segundo plano
     const fileToUpload = videoFile;
@@ -646,7 +657,7 @@ function ScheduleModalDialog() {
       }
     }
 
-    // ── 1. Crear el video y añadirlo INMEDIATAMENTE al calendario ──
+    // ── 1. Crear el video y añadirlo INMEDIATAMENTE al calendario (sin Base64 para evitar saturar red y Supabase) ──
     const newVideo: Video = {
       id: newVideoId,
       cuenta_id: data.cuenta_id,
@@ -654,7 +665,7 @@ function ScheduleModalDialog() {
       titulo: cleanTitle,
       descripcion_aprobada_ia: data.descripcion,
       thumbnail_color: isYouTube ? '#ef4444' : '#10b981',
-      thumbnail_url: capturedThumbnailBase64,
+      thumbnail_url: undefined,
       drive_file_url: initialDriveUrl,
       programado_para: programadoPara,
       estado: 'PROGRAMADO',
@@ -687,85 +698,26 @@ function ScheduleModalDialog() {
     setVideoFile(null);
     setThumbnailFile(null);
     setThumbnailPreview(null);
-    setThumbnailBase64(null);
     setVideoTitle('');
     setShortTitle('');
+    setDebouncedVideoTitle('');
+    setDebouncedShortTitle('');
     setManualDriveUrl('');
     setDriveSuccessUrl(null);
     setDriveError(null);
 
-    // ── 5. Si requiere subida a Drive, registrar para reintentos y ejecutar en segundo plano ──
+    // ── 5. Si requiere subida a Drive, delegar a módulo desacoplado (Problema 4 - libera memoria) ──
     if (needsDriveUpload && fileToUpload) {
-      registerPendingDriveUpload(newVideoId, {
-        videoId: newVideoId,
-        file: fileToUpload,
-        folderId: folderId || '',
-        thumbFile: thumbToUpload,
-        videoTitle: cleanTitle,
-      });
-
       if (token && folderId) {
-        (async () => {
-          try {
-            const uploadRes = await uploadVideoToGoogleDrive(
-              fileToUpload,
-              folderId,
-              token,
-              (pct) => setDriveUploadProgress(newVideoId, pct)
-            );
-
-            let finalThumbnailUrl = capturedThumbnailBase64;
-            if (thumbToUpload) {
-              try {
-                const thumbUploadRes = await uploadVideoToGoogleDrive(
-                  thumbToUpload,
-                  folderId,
-                  token
-                );
-                if (thumbUploadRes.success && thumbUploadRes.fileUrl) {
-                  finalThumbnailUrl = thumbUploadRes.fileUrl;
-                }
-              } catch (tUpErr) {
-                console.warn('[ScheduleModal] No se pudo subir miniatura a Drive, usando base64:', tUpErr);
-              }
-            }
-
-            if (uploadRes.success && uploadRes.fileUrl) {
-              unregisterPendingDriveUpload(newVideoId);
-              await updateVideo(newVideoId, {
-                drive_file_url: uploadRes.fileUrl,
-                thumbnail_url: finalThumbnailUrl,
-              });
-              setDriveUploadComplete(newVideoId);
-              createNotification({
-                tipo: 'success',
-                titulo: 'Video subido a Google Drive',
-                mensaje: `"${cleanTitle}" se subió a Google Drive exitosamente.`,
-                cuenta_id: data.cuenta_id,
-                origen: 'drive',
-              });
-            } else {
-              setDriveUploadError(newVideoId, uploadRes.error || 'Error desconocido al subir a Drive');
-              createNotification({
-                tipo: 'error',
-                titulo: 'Fallo al subir video a Google Drive',
-                mensaje: `El video "${cleanTitle}" no se pudo subir a Drive: ${uploadRes.error || 'Error desconocido'}. Puedes reintentar la subida desde el detalle del video.`,
-                cuenta_id: data.cuenta_id,
-                origen: 'drive',
-              });
-            }
-          } catch (bgErr: any) {
-            console.error('[ScheduleModal] Error en subida en segundo plano:', bgErr);
-            setDriveUploadError(newVideoId, bgErr?.message || 'Error de red al subir a Drive');
-            createNotification({
-              tipo: 'error',
-              titulo: 'Error subiendo a Google Drive',
-              mensaje: `Error al subir "${cleanTitle}" a Drive: ${bgErr?.message || 'Fallo inesperado'}. Puedes reintentar desde el calendario.`,
-              cuenta_id: data.cuenta_id,
-              origen: 'drive',
-            });
-          }
-        })();
+        startBackgroundDriveUpload({
+          videoId: newVideoId,
+          videoTitle: cleanTitle,
+          file: fileToUpload,
+          thumbFile: thumbToUpload,
+          folderId,
+          token,
+          cuentaId: data.cuenta_id,
+        });
       } else {
         setDriveUploadError(newVideoId, 'Google Drive no configurado o falta autorización.');
       }
@@ -785,25 +737,33 @@ function ScheduleModalDialog() {
 
   const displayDateStr = format(targetDateObj, "EEEE, d 'de' MMMM yyyy", { locale: es });
 
-  const accountQuotaStats = useMemo(() => {
-    const targetDateStr = currentFecha || (scheduleModalDate ? format(scheduleModalDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
-    const activeAccounts = accounts.filter(a => a.activo);
-
-    // Conteo en un solo paso O(videos) para evitar re-análisis costoso de fechas
-    const countsByAccount: Record<string, number> = {};
+  // Optimización CPU (Problema 3): Pre-agrupar conteo de videos por fecha y cuenta en O(videos), recalculado SOLO si cambia 'videos'
+  const videosCountByDateAndAccount = useMemo(() => {
+    const map = new Map<string, Record<string, number>>();
     for (const v of videos) {
       if (v.estado === 'CANCELADO' || !v.cuenta_id) continue;
       try {
         const vDateStr = typeof v.programado_para === 'string'
           ? (v.programado_para as string).slice(0, 10)
           : format(new Date(v.programado_para), 'yyyy-MM-dd');
-        if (vDateStr === targetDateStr) {
-          countsByAccount[v.cuenta_id] = (countsByAccount[v.cuenta_id] || 0) + 1;
+        let counts = map.get(vDateStr);
+        if (!counts) {
+          counts = {};
+          map.set(vDateStr, counts);
         }
+        counts[v.cuenta_id] = (counts[v.cuenta_id] || 0) + 1;
       } catch {
         // Ignorar fechas inválidas
       }
     }
+    return map;
+  }, [videos]);
+
+  const accountQuotaStats = useMemo(() => {
+    const targetDateStr = currentFecha || (scheduleModalDate ? format(scheduleModalDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
+    const activeAccounts = accounts.filter(a => a.activo);
+    // Búsqueda O(1) en el Map precalculado sin iterar sobre todos los videos
+    const countsByAccount = videosCountByDateAndAccount.get(targetDateStr) || {};
 
     return activeAccounts.map(account => {
       const count = countsByAccount[account.id] || 0;
@@ -820,7 +780,7 @@ function ScheduleModalDialog() {
         isOver: count > target,
       };
     });
-  }, [accounts, videos, currentFecha, scheduleModalDate]);
+  }, [accounts, videosCountByDateAndAccount, currentFecha, scheduleModalDate]);
 
   const totalMissing = accountQuotaStats.reduce((sum, item) => sum + item.missing, 0);
   const totalTarget = accountQuotaStats.reduce((sum, item) => sum + item.target, 0);
@@ -839,20 +799,20 @@ function ScheduleModalDialog() {
       }));
   }, [videos, accounts]);
 
-  // Análisis anti-duplicados optimizado (utiliza tokens precalculados en caché)
+  // Análisis anti-duplicados optimizado (Problema 2: utiliza debounced titles para no recalcular con cada tecla)
   const duplicateAnalysis = useMemo(() => {
     if (!videoFile) {
       return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
-    const fileQuery = (videoTitle || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || '').trim();
+    const fileQuery = (debouncedVideoTitle || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || '').trim();
     if (!fileQuery) {
       return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
     const normFileQuery = cleanTitleForComparison(fileQuery);
     const queryTokens = getTokens(fileQuery);
-    const normShortQuery = (isYouTube && shortTitle) ? cleanTitleForComparison(shortTitle) : '';
+    const normShortQuery = (isYouTube && debouncedShortTitle) ? cleanTitleForComparison(debouncedShortTitle) : '';
 
     // 1. Coincidencia exacta con el archivo de video
     const exactFileItem = preparedVideoTokens.find(item => item.cleanTitle === normFileQuery);
@@ -924,7 +884,7 @@ function ScheduleModalDialog() {
       similarMatches: [],
       topScore: 0,
     };
-  }, [videoTitle, shortTitle, isYouTube, videoFile, preparedVideoTokens]);
+  }, [debouncedVideoTitle, debouncedShortTitle, isYouTube, videoFile, preparedVideoTokens]);
 
   const cfg = getCachedConfig();
   const folderIdConfigured = cfg.drive_folder_id;

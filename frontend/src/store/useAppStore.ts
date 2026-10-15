@@ -502,7 +502,8 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       auto_reprogramacion: video.auto_reprogramacion,
       reintentos_alerta: video.reintentos_alerta,
     };
-    if (video.thumbnail_url) {
+    // Optimización CPU/Red: no guardar Base64 enorme en Supabase publicaciones
+    if (video.thumbnail_url && !video.thumbnail_url.startsWith('data:')) {
       row.thumbnail_url = video.thumbnail_url;
     }
     let { error: insErr } = await db.from('publicaciones').insert(row);
@@ -526,7 +527,10 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       }
     }
     set((s) => {
-      const videos = [...s.videos, video];
+      const sanitizedVideo = (video.thumbnail_url && video.thumbnail_url.startsWith('data:'))
+        ? { ...video, thumbnail_url: undefined }
+        : video;
+      const videos = [...s.videos, sanitizedVideo];
       return { videos, metrics: computeMetrics(videos) };
     });
   },
@@ -562,7 +566,13 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     if (finalUpdates.reintentos_alerta !== undefined) dbUpdates.reintentos_alerta = finalUpdates.reintentos_alerta;
     if (finalUpdates.post_url_publica !== undefined) dbUpdates.post_url_publica = finalUpdates.post_url_publica;
     if (finalUpdates.thumbnail_color !== undefined) dbUpdates.thumbnail_color = finalUpdates.thumbnail_color;
-    if (finalUpdates.thumbnail_url !== undefined) dbUpdates.thumbnail_url = finalUpdates.thumbnail_url;
+    if (finalUpdates.thumbnail_url !== undefined) {
+      if (finalUpdates.thumbnail_url && !finalUpdates.thumbnail_url.startsWith('data:')) {
+        dbUpdates.thumbnail_url = finalUpdates.thumbnail_url;
+      } else {
+        dbUpdates.thumbnail_url = null;
+      }
+    }
     if (finalUpdates.drive_file_url !== undefined) dbUpdates.drive_file_url = finalUpdates.drive_file_url;
     if (finalUpdates.campana_id !== undefined) dbUpdates.campana_id = finalUpdates.campana_id;
 
@@ -592,6 +602,9 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       const videos = s.videos.map((v) => {
         if (v.id === id) {
           const updated = { ...v, ...finalUpdates };
+          if (updated.thumbnail_url && updated.thumbnail_url.startsWith('data:')) {
+            updated.thumbnail_url = undefined;
+          }
           if (isRescheduledToFuture) {
             delete (updated as any).enviado_en;
             delete (updated as any).publicado_en;

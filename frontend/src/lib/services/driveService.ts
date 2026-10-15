@@ -1,4 +1,6 @@
 // src/lib/services/driveService.ts
+import { useAppStore } from '@/store/useAppStore';
+import { createNotification } from './notificationService';
 
 export interface DriveConfig {
   clientId: string;
@@ -340,3 +342,95 @@ export async function verifyDriveFolderAccess(
     };
   }
 }
+
+export interface StartBackgroundUploadParams {
+  videoId: string;
+  videoTitle: string;
+  file: File;
+  thumbFile?: File | null;
+  folderId: string;
+  token: string;
+  cuentaId?: string;
+}
+
+/**
+ * Ejecuta la subida de un video (y miniatura) a Google Drive en segundo plano,
+ * totalmente fuera de los componentes React para liberar memoria y evitar retención por closures.
+ */
+export async function startBackgroundDriveUpload(params: StartBackgroundUploadParams): Promise<void> {
+  const { videoId, videoTitle, file, thumbFile, folderId, token, cuentaId } = params;
+
+  // Registrar para posibles reintentos en PublicationScheduler
+  registerPendingDriveUpload(videoId, {
+    videoId,
+    file,
+    folderId,
+    thumbFile,
+    videoTitle,
+  });
+
+  useAppStore.getState().setDriveUploadProgress(videoId, 0);
+
+  try {
+    const uploadRes = await uploadVideoToGoogleDrive(
+      file,
+      folderId,
+      token,
+      (pct) => {
+        useAppStore.getState().setDriveUploadProgress(videoId, pct);
+      }
+    );
+
+    let finalThumbnailUrl: string | undefined = undefined;
+    if (thumbFile) {
+      try {
+        const thumbUploadRes = await uploadVideoToGoogleDrive(
+          thumbFile,
+          folderId,
+          token
+        );
+        if (thumbUploadRes.success && thumbUploadRes.fileUrl) {
+          finalThumbnailUrl = thumbUploadRes.fileUrl;
+        }
+      } catch (tUpErr) {
+        console.warn('[driveService] No se pudo subir miniatura a Drive:', tUpErr);
+      }
+    }
+
+    if (uploadRes.success && uploadRes.fileUrl) {
+      unregisterPendingDriveUpload(videoId);
+      await useAppStore.getState().updateVideo(videoId, {
+        drive_file_url: uploadRes.fileUrl,
+        ...(finalThumbnailUrl ? { thumbnail_url: finalThumbnailUrl } : {}),
+      });
+      useAppStore.getState().setDriveUploadComplete(videoId);
+      createNotification({
+        tipo: 'success',
+        titulo: 'Video subido a Google Drive',
+        mensaje: `"${videoTitle}" se subió a Google Drive exitosamente.`,
+        cuenta_id: cuentaId,
+        origen: 'drive',
+      });
+    } else {
+      useAppStore.getState().setDriveUploadError(videoId, uploadRes.error || 'Error desconocido al subir a Drive');
+      createNotification({
+        tipo: 'error',
+        titulo: 'Fallo al subir video a Google Drive',
+        mensaje: `El video "${videoTitle}" no se pudo subir a Drive: ${uploadRes.error || 'Error desconocido'}. Puedes reintentar la subida desde el detalle del video.`,
+        cuenta_id: cuentaId,
+        origen: 'drive',
+      });
+    }
+  } catch (bgErr: any) {
+    console.error('[driveService] Error en subida en segundo plano:', bgErr);
+    useAppStore.getState().setDriveUploadError(videoId, bgErr?.message || 'Error de red al subir a Drive');
+    createNotification({
+      tipo: 'error',
+      titulo: 'Error subiendo a Google Drive',
+      mensaje: `Error al subir "${videoTitle}" a Drive: ${bgErr?.message || 'Fallo inesperado'}. Puedes reintentar desde el calendario.`,
+      cuenta_id: cuentaId,
+      origen: 'drive',
+    });
+  }
+}
+
