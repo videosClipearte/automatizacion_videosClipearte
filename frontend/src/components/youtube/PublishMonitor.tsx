@@ -106,11 +106,11 @@ function LogRow({ log }: LogRowProps) {
 interface PublishMonitorProps {
   /** Si se pasa un publicacion_id específico, solo muestra sus logs */
   publicacion_id?: string;
-  /** Polling interval en ms (default 5000) */
+  /** Polling interval en ms (default 25000 ms = 25s para optimizar CPU y red) */
   pollIntervalMs?: number;
 }
 
-export function PublishMonitor({ publicacion_id, pollIntervalMs = 5000 }: PublishMonitorProps) {
+export function PublishMonitor({ publicacion_id, pollIntervalMs = 25000 }: PublishMonitorProps) {
   const [logs, setLogs] = useState<PublishLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +145,10 @@ export function PublishMonitor({ publicacion_id, pollIntervalMs = 5000 }: Publis
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(fetchLogs, pollIntervalMs);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchLogs();
+    }, pollIntervalMs);
     return () => clearInterval(interval);
   }, [autoRefresh, fetchLogs, pollIntervalMs]);
 

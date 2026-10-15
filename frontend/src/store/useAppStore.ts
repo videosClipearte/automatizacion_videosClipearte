@@ -196,6 +196,68 @@ interface AppState {
   setDriveUploadError: (videoId: string, error: string) => void;
 }
 
+let realtimePublicacionesChannel: any = null;
+
+function subscribeRealtimePublicaciones(db: any, set: any) {
+  if (typeof window === 'undefined') return;
+  if (realtimePublicacionesChannel) return;
+
+  try {
+    realtimePublicacionesChannel = db
+      .channel('realtime:publicaciones')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'publicaciones' },
+        (payload: any) => {
+          console.log('[Supabase Realtime] Evento recibido en publicaciones:', payload.eventType);
+
+          if (payload.eventType === 'INSERT' && payload.new) {
+            const newVideo = mapVideo(payload.new);
+            set((state: AppState) => {
+              if (state.videos.some((v) => v.id === newVideo.id)) {
+                return state;
+              }
+              const nextVideos = [...state.videos, newVideo].sort(
+                (a, b) => new Date(a.programado_para).getTime() - new Date(b.programado_para).getTime()
+              );
+              return {
+                videos: nextVideos,
+                metrics: computeMetrics(nextVideos),
+              };
+            });
+          } else if (payload.eventType === 'UPDATE' && payload.new) {
+            const updatedVideo = mapVideo(payload.new);
+            set((state: AppState) => {
+              const nextVideos = state.videos.map((v) =>
+                v.id === updatedVideo.id ? updatedVideo : v
+              );
+              return {
+                videos: nextVideos,
+                metrics: computeMetrics(nextVideos),
+              };
+            });
+          } else if (payload.eventType === 'DELETE' && payload.old?.id) {
+            const deletedId = payload.old.id;
+            set((state: AppState) => {
+              const nextVideos = state.videos.filter((v) => v.id !== deletedId);
+              return {
+                videos: nextVideos,
+                metrics: computeMetrics(nextVideos),
+              };
+            });
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Supabase Realtime] ✅ Suscripción activa a publicaciones (WebSocket en reposo).');
+        }
+      });
+  } catch (e) {
+    console.warn('[Supabase Realtime] No se pudo inicializar WebSocket Realtime:', e);
+  }
+}
+
 const useAppStoreBase = create<AppState>((set, get) => ({
   videos: [],
   accounts: [],
@@ -379,6 +441,9 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         selectedAccountId: get().selectedAccountId ?? accounts[0]?.id ?? null,
         isLoading: false,
       });
+
+      // Suscripción WebSocket a cambios en la tabla publicaciones en tiempo real
+      subscribeRealtimePublicaciones(db, set);
     } catch (err: any) {
       const msg = err?.message ?? 'Error al cargar datos de Supabase';
       console.error('[Supabase] initializeStore falló:', msg);

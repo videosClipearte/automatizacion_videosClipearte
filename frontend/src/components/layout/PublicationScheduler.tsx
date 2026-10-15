@@ -61,8 +61,17 @@ export function PublicationScheduler() {
     get current() { return useAppStore.getState().driveUploads; },
   };
 
-  useEffect(() => {
-    const checkScheduledPublications = async () => {
+  // Orquestador Backend opcional: si está habilitado, el frontend omite el despacho para evitar duplicación
+  const isBackendSchedulerEnabled =
+    typeof process !== 'undefined' &&
+    process.env.NEXT_PUBLIC_BACKEND_SCHEDULER_ENABLED === 'true';
+
+  // Detección de trabajo pendiente
+  const hasScheduledVideos = videos.some((v) => v.estado === 'PROGRAMADO');
+  const hasSentVideos = videos.some((v) => v.estado === 'ENVIADO');
+  const hasPendingWork = hasScheduledVideos || hasSentVideos;
+
+  const checkScheduledPublications = async () => {
       const now = new Date();
       const currentVideos = videosRef.current;
 
@@ -649,42 +658,74 @@ export function PublicationScheduler() {
       }
     };
 
-    // Comprobador de publicaciones inicial
-    checkScheduledPublications();
-    checkDailyQuotaAlert();
-    checkToleranceAlerts();
-    checkScraperVerifications();
-    checkTelegramCommands();
+    // ── 1. Intervalo de Publicaciones (60s) — Se pausa completamente si no hay trabajo ──
+    useEffect(() => {
+      if (isBackendSchedulerEnabled) {
+        console.log(
+          '[PublicationScheduler] ⚙️ Backend Scheduler habilitado (NEXT_PUBLIC_BACKEND_SCHEDULER_ENABLED=true). El frontend opera como visualizador pasivo.'
+        );
+        return;
+      }
 
-    // Intervalo de publicaciones cada 15s (revisa publicaciones SIEMPRE a tiempo, incluso si la pestaña está en segundo plano)
-    const interval = setInterval(() => {
+      if (!hasPendingWork) {
+        // Pausar: no hay videos programados ni pendientes, CPU en reposo
+        return;
+      }
+
+      console.log(
+        '[PublicationScheduler] ▶️ Hay videos pendientes de despacho/verificación. Intervalo de publicaciones activo (cada 60s).'
+      );
+
+      // Verificación inicial inmediata al detectar trabajo
       checkScheduledPublications();
-      if (typeof document !== 'undefined' && document.hidden) return;
-      checkDailyQuotaAlert();
       checkToleranceAlerts();
       checkScraperVerifications();
-    }, 15000);
 
-    // Escuchar comandos de Telegram cada 12 segundos (reducido de 4s a 12s para optimizar CPU y red)
-    const commandInterval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      checkTelegramCommands();
-    }, 12000);
-
-    // Listener para reanudar de inmediato cuando el usuario regresa a la pestaña
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && !document.hidden) {
+      // Intervalo de publicaciones cada 60s (optimizado de 15s a 60s)
+      const interval = setInterval(() => {
         checkScheduledPublications();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+        if (typeof document !== 'undefined' && document.hidden) return;
+        checkDailyQuotaAlert();
+        checkToleranceAlerts();
+        checkScraperVerifications();
+      }, 60000);
 
-    return () => {
-      clearInterval(interval);
-      clearInterval(commandInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []); // Sin dependencias reactivas: se monta una sola vez y no satura CPU
+      return () => {
+        clearInterval(interval);
+      };
+    }, [hasPendingWork, isBackendSchedulerEnabled]);
+
+    // ── 2. Intervalo de Comandos de Telegram (60s) ──
+    useEffect(() => {
+      checkTelegramCommands();
+
+      // Escuchar comandos de Telegram cada 60 segundos (optimizado de 12s a 60s)
+      const commandInterval = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        checkTelegramCommands();
+      }, 60000);
+
+      return () => {
+        clearInterval(commandInterval);
+      };
+    }, []);
+
+    // ── 3. Listener para reanudar de inmediato cuando el usuario regresa a la pestaña ──
+    useEffect(() => {
+      const handleVisibilityChange = () => {
+        if (typeof document !== 'undefined' && !document.hidden) {
+          if (!isBackendSchedulerEnabled && hasScheduledVideos) {
+            checkScheduledPublications();
+          }
+          checkDailyQuotaAlert();
+          checkTelegramCommands();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }, [isBackendSchedulerEnabled, hasScheduledVideos]);
 
   return null;
 }

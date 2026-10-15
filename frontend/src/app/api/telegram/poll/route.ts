@@ -3,8 +3,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { handleTelegramUpdate } from '@/lib/services/telegramBotHandler';
 import { loadAppConfig } from '@/lib/services/appConfigService';
-import fs from 'fs';
-import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,20 +17,10 @@ export async function POST(req: NextRequest) {
     const supabaseUrl = body.supabaseUrl?.trim();
     const supabaseKey = body.supabaseKey?.trim();
 
-    // Guardar credenciales de Supabase en proceso y en .env.local para entorno servidor
+    // Guardar credenciales de Supabase en proceso en memoria para entorno servidor (sin escribir a disco)
     if (supabaseUrl && supabaseKey) {
       process.env.NEXT_PUBLIC_SUPABASE_URL = supabaseUrl;
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = supabaseKey;
-
-      try {
-        const envPath = path.join(process.cwd(), '.env.local');
-        const desired = `NEXT_PUBLIC_SUPABASE_URL=${supabaseUrl}\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${supabaseKey}\n`;
-        if (!fs.existsSync(envPath) || fs.readFileSync(envPath, 'utf8') !== desired) {
-          fs.writeFileSync(envPath, desired, 'utf8');
-        }
-      } catch (err) {
-        // En entornos de solo lectura (como Vercel Serverless), ignorar escritura en disco
-      }
     }
 
     if (!botToken) {
