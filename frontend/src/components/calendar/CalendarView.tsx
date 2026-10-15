@@ -56,10 +56,11 @@ export function CalendarView() {
   } = useAppStore();
   const driveUploads = useAppStore((s) => s.driveUploads);
 
+  // Control de sincronización con la fecha local del dispositivo
+  const hasUserNavigatedRef = useRef(false);
+  const lastTodayStrRef = useRef<string>('');
+
   const [currentDate, setCurrentDate] = useState(new Date());
-  // Fecha actual del dispositivo: se calcula SOLO en el cliente tras montar
-  // (la página se pre-renderiza en build y la fecha quedaba congelada en el HTML)
-  // Fecha actual del dispositivo: se calcula en el cliente y se sincroniza continuamente
   const [clientToday, setClientToday] = useState<string>(() => {
     try {
       return format(new Date(), 'yyyy-MM-dd');
@@ -68,22 +69,61 @@ export function CalendarView() {
     }
   });
 
-  useEffect(() => {
-    const syncToday = () => {
-      const now = new Date();
-      setClientToday(format(now, 'yyyy-MM-dd'));
-    };
-    syncToday();
-    // Re-evaluar periódicamente para actualizar el día inmediatamente al pasar la medianoche
-    const interval = setInterval(syncToday, 30000);
-    return () => clearInterval(interval);
+  // Sincronización continua con el reloj y fecha local del dispositivo
+  const syncDeviceDate = useCallback((forceSyncCurrentDate = false) => {
+    const now = new Date();
+    const todayStr = format(now, 'yyyy-MM-dd');
+    const prevTodayStr = lastTodayStrRef.current;
+    lastTodayStrRef.current = todayStr;
+
+    setClientToday(todayStr);
+
+    if (forceSyncCurrentDate || !hasUserNavigatedRef.current) {
+      setCurrentDate(now);
+    } else if (prevTodayStr && prevTodayStr !== todayStr) {
+      // El día cambió en el dispositivo (pasó la medianoche o retorno de suspensión)
+      // Si el usuario estaba visualizando el día anterior que era "hoy", avanzar automáticamente
+      setCurrentDate((prev) => {
+        const prevDateStr = format(prev, 'yyyy-MM-dd');
+        if (prevDateStr === prevTodayStr) {
+          return now;
+        }
+        return prev;
+      });
+    }
   }, []);
 
+  useEffect(() => {
+    // 1. Sincronizar inmediatamente al montar en el cliente con la fecha real del dispositivo
+    syncDeviceDate(true);
+
+    // 2. Intervalo periódico (cada 10s) para detectar cambio de medianoche en tiempo real
+    const interval = setInterval(() => {
+      syncDeviceDate(false);
+    }, 10000);
+
+    // 3. Sincronizar de inmediato cuando la pestaña/ventana vuelve a estar activa o visible
+    // (muy común al abrir la laptop, desbloquear el móvil o regresar de otra app)
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        syncDeviceDate(false);
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, [syncDeviceDate]);
+
   const handleGoToday = useCallback(() => {
-    const now = new Date();
-    setClientToday(format(now, 'yyyy-MM-dd'));
-    setCurrentDate(now);
-  }, []);
+    hasUserNavigatedRef.current = false;
+    syncDeviceDate(true);
+  }, [syncDeviceDate]);
 
   const isDayToday = useCallback((day: Date) => {
     const formattedDay = format(day, 'yyyy-MM-dd');
@@ -174,15 +214,17 @@ export function CalendarView() {
   }, [currentDate]);
 
   const handlePrevious = () => {
-    if (calendarView === 'month') setCurrentDate(subMonths(currentDate, 1));
-    else if (calendarView === 'week') setCurrentDate(subWeeks(currentDate, 1));
-    else setCurrentDate(subDays(currentDate, 1));
+    hasUserNavigatedRef.current = true;
+    if (calendarView === 'month') setCurrentDate((d) => subMonths(d, 1));
+    else if (calendarView === 'week') setCurrentDate((d) => subWeeks(d, 1));
+    else setCurrentDate((d) => subDays(d, 1));
   };
 
   const handleNext = () => {
-    if (calendarView === 'month') setCurrentDate(addMonths(currentDate, 1));
-    else if (calendarView === 'week') setCurrentDate(addWeeks(currentDate, 1));
-    else setCurrentDate(addDays(currentDate, 1));
+    hasUserNavigatedRef.current = true;
+    if (calendarView === 'month') setCurrentDate((d) => addMonths(d, 1));
+    else if (calendarView === 'week') setCurrentDate((d) => addWeeks(d, 1));
+    else setCurrentDate((d) => addDays(d, 1));
   };
 
   const getTitle = () => {
@@ -457,6 +499,7 @@ export function CalendarView() {
                     onDragLeave={(e) => handleDayDragLeave(e, dayKey)}
                     onDrop={(e) => handleDayDrop(e, day)}
                     onClick={() => {
+                      hasUserNavigatedRef.current = true;
                       setCurrentDate(day);
                       setCalendarView('day');
                     }}
@@ -592,7 +635,12 @@ export function CalendarView() {
                         })}
                         {dayVideos.length > 2 && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); setCurrentDate(day); setCalendarView('day'); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              hasUserNavigatedRef.current = true;
+                              setCurrentDate(day);
+                              setCalendarView('day');
+                            }}
                             className="text-[8px] text-emerald-400 font-semibold hover:underline text-left pl-0.5 leading-none shrink-0"
                           >
                             +{dayVideos.length - 2} más →
@@ -635,6 +683,7 @@ export function CalendarView() {
                     onDragLeave={(e) => handleDayDragLeave(e, dayKey)}
                     onDrop={(e) => handleDayDrop(e, day)}
                     onClick={() => {
+                      hasUserNavigatedRef.current = true;
                       setCurrentDate(day);
                       setCalendarView('day');
                     }}
