@@ -927,7 +927,7 @@ function ScheduleModalDialog() {
                 <button
                   type="button"
                   onClick={handleAttemptClose}
-                  className="w-8 h-8 rounded-xl glass hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all shrink-0 ml-2 cursor-pointer"
+                  className="w-8 h-8 rounded-xl bg-white/[0.05] hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all shrink-0 ml-2 cursor-pointer"
                   title="Cerrar"
                 >
                   <X size={16} />
@@ -1523,7 +1523,7 @@ function ScheduleModalDialog() {
                         }
                       }
                     }}
-                    className="w-full glass rounded-xl px-3 py-2 text-xs text-white bg-transparent border border-[var(--border)] focus:border-emerald-500/50 outline-none"
+                    className="w-full rounded-xl px-3 py-2 text-xs text-white bg-[#0d1422] border border-[var(--border)] focus:border-emerald-500/50 outline-none"
                   >
                     <option value="" className="bg-[#0d0d1a]">
                       Seleccionar cuenta...
@@ -1559,7 +1559,7 @@ function ScheduleModalDialog() {
                   </label>
                   <select
                     {...register('campana_id')}
-                    className="w-full glass rounded-xl px-3 py-2 text-xs text-white bg-transparent border border-[var(--border)] focus:border-emerald-500/50 outline-none"
+                    className="w-full rounded-xl px-3 py-2 text-xs text-white bg-[#0d1422] border border-[var(--border)] focus:border-emerald-500/50 outline-none"
                   >
                     <option value="" className="bg-[#0d0d1a]">
                       Seleccionar campaña...
@@ -1634,7 +1634,7 @@ function ScheduleModalDialog() {
                   minHeight={76}
                   maxHeight={320}
                   placeholder="El copy se generará respetando las reglas de la campaña y la red social seleccionada..."
-                  className="glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent leading-relaxed placeholder:text-[var(--text-muted)]"
+                  className="rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-[#0d1422] leading-relaxed placeholder:text-[var(--text-muted)]"
                 />
                 {aiFeedback && (
                   <p className="text-[10px] text-cyan-300 mt-1 leading-snug">{aiFeedback}</p>
@@ -1770,7 +1770,7 @@ function ScheduleModalDialog() {
                   type="button"
                   onClick={handleAttemptClose}
                   disabled={uploadingDrive}
-                  className="px-4 py-2 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -1800,15 +1800,16 @@ function ScheduleModalDialog() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm"
+                transition={{ duration: 0.15 }}
+                className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/85"
                 onClick={(e) => e.stopPropagation()}
               >
                 <motion.div
-                  initial={{ scale: 0.92, opacity: 0, y: 12 }}
+                  initial={{ scale: 0.94, opacity: 0, y: 10 }}
                   animate={{ scale: 1, opacity: 1, y: 0 }}
-                  exit={{ scale: 0.92, opacity: 0, y: 12 }}
-                  transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-                  className="w-full max-w-md rounded-2xl bg-[#0f172a] border border-amber-500/40 p-5 shadow-2xl space-y-4"
+                  exit={{ scale: 0.94, opacity: 0, y: 10 }}
+                  transition={{ duration: 0.16, ease: 'easeOut' }}
+                  className="w-full max-w-md rounded-2xl bg-[#0f172a] border border-amber-500/40 p-5 shadow-2xl space-y-4 will-change-transform"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-start gap-3.5">
@@ -1836,7 +1837,7 @@ function ScheduleModalDialog() {
                     <button
                       type="button"
                       onClick={() => setShowConfirmDiscard(false)}
-                      className="px-4 py-2 rounded-xl glass border border-white/10 text-xs text-slate-200 hover:text-white font-medium hover:bg-white/10 transition-colors cursor-pointer"
+                      className="px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/10 border border-white/10 text-xs text-slate-200 hover:text-white font-medium transition-colors cursor-pointer"
                     >
                       Continuar editando
                     </button>

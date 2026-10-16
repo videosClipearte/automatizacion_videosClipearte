@@ -48,17 +48,16 @@ import { verifyScraperPost } from '@/lib/services/scraperService';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { TimePicker } from '@/components/ui/TimePicker';
 
-export function VideoDetailModal() {
-  const {
-    selectedVideoId,
-    setSelectedVideoId,
-    videos,
-    accounts,
-    campaigns,
-    deleteVideo,
-    updateVideo,
-  } = useAppStore();
+function VideoDetailDialog({ videoId }: { videoId: string }) {
+  const setSelectedVideoId = useAppStore((s) => s.setSelectedVideoId);
+  const deleteVideo = useAppStore((s) => s.deleteVideo);
+  const updateVideo = useAppStore((s) => s.updateVideo);
+  const videos = useAppStore((s) => s.videos);
+  const accounts = useAppStore((s) => s.accounts);
+  const campaigns = useAppStore((s) => s.campaigns);
   const driveUploads = useAppStore((s) => s.driveUploads);
+
+  const video = videos.find((v) => v.id === videoId);
 
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [telegramFeedback, setTelegramFeedback] = useState<{ success: boolean; msg: string } | null>(null);
@@ -75,16 +74,22 @@ export function VideoDetailModal() {
   const [loadingYtLogs, setLoadingYtLogs] = useState(false);
   const [ytLogsOpen, setYtLogsOpen] = useState(false);
 
-  // Edit mode state
+  // Edit mode state — inicializados limpiamente a partir del video actual al montar
   const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
-  const [editCuentaId, setEditCuentaId] = useState('');
-  const [editCampanaId, setEditCampanaId] = useState('');
-  const [editFecha, setEditFecha] = useState('');
-  const [editHora, setEditHora] = useState('');
-  const [editDescripcion, setEditDescripcion] = useState('');
-  const [editDriveUrl, setEditDriveUrl] = useState('');
-  const [editReelUrl, setEditReelUrl] = useState('');
+  const [editTitle, setEditTitle] = useState(() => video?.titulo || '');
+  const [editCuentaId, setEditCuentaId] = useState(() => video?.cuenta_id || '');
+  const [editCampanaId, setEditCampanaId] = useState(() => video?.campana_id || '');
+  const [editFecha, setEditFecha] = useState(() => {
+    if (!video?.programado_para) return '';
+    try { return format(new Date(video.programado_para), 'yyyy-MM-dd'); } catch { return ''; }
+  });
+  const [editHora, setEditHora] = useState(() => {
+    if (!video?.programado_para) return '';
+    try { return format(new Date(video.programado_para), 'HH:mm'); } catch { return ''; }
+  });
+  const [editDescripcion, setEditDescripcion] = useState(() => video?.descripcion_aprobada_ia || '');
+  const [editDriveUrl, setEditDriveUrl] = useState(() => video?.drive_file_url || '');
+  const [editReelUrl, setEditReelUrl] = useState(() => (video?.post_url_publica && video.post_url_publica !== '#' ? video.post_url_publica : ''));
   const [confirmandoEdit, setConfirmandoEdit] = useState(false);
   const [replacementFile, setReplacementFile] = useState<File | null>(null);
   const [extractedReplacementAudio, setExtractedReplacementAudio] = useState<VideoAudioPayload | null>(null);
@@ -98,7 +103,6 @@ export function VideoDetailModal() {
   const driveFileInputRef = useRef<HTMLInputElement>(null);
   const [retryingDrive, setRetryingDrive] = useState(false);
 
-  const video = selectedVideoId ? videos.find(v => v.id === selectedVideoId) : null;
   const account = accounts.find(a => a.id === (isEditing ? editCuentaId : video?.cuenta_id));
   const campaign = campaigns.find(c => c.id === (isEditing ? editCampanaId : video?.campana_id));
 
@@ -113,8 +117,7 @@ export function VideoDetailModal() {
     ? accounts.filter(a => editingCampaign.cuentas_ids.includes(a.id))
     : accounts;
 
-  // Sincronizar campos de edición cuando se selecciona un video
-  useEffect(() => {
+  const handleCancelEdit = () => {
     if (video) {
       setEditTitle(video.titulo || '');
       setEditCuentaId(video.cuenta_id || '');
@@ -130,14 +133,10 @@ export function VideoDetailModal() {
       setExtractingReplacementAudio(false);
       setExtractedSubtitles(null);
       setShowSubtitlesJson(false);
-      setIsEditing(false);
-      setTelegramFeedback(null);
       setEditFeedback(null);
-      setUploadProgress(0);
-      setYtLogs([]);
-      setYtLogsOpen(false);
     }
-  }, [video]);
+    setIsEditing(false);
+  };
 
   // Consultar logs de YouTube para este video
   const fetchYtLogs = async () => {
@@ -160,7 +159,7 @@ export function VideoDetailModal() {
     if (video && account?.plataforma === 'youtube') {
       fetchYtLogs();
     }
-  }, [video?.id, account?.plataforma]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [videoId, account?.plataforma]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Subir directamente a YouTube desde el modal
   const handlePublishToYouTube = async () => {
@@ -836,56 +835,57 @@ export function VideoDetailModal() {
     }
   };
 
-  return (
-    <AnimatePresence mode="wait">
-      {selectedVideoId && video && (
-        <div key="video-detail-root" className="fixed inset-0 z-50 flex items-center justify-center sm:justify-end p-2 sm:p-4 pointer-events-none">
-          {/* Backdrop */}
-          <motion.div
-            key="video-detail-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => { setSelectedVideoId(null); setTelegramFeedback(null); setIsEditing(false); }}
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm pointer-events-auto"
-          />
+  if (!video) return null;
 
-          {/* Drawer Panel */}
-          <motion.div
-            key={`video-detail-drawer-${video.id}`}
-            initial={{ opacity: 0, scale: 0.95, x: 50 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            exit={{ opacity: 0, scale: 0.95, x: 50 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-            className="relative z-10 w-full max-w-md glass-strong rounded-2xl border border-[var(--border-strong)] shadow-2xl overflow-y-auto max-h-[92vh] pointer-events-auto flex flex-col"
-          >
-            {/* Header */}
-            <div
-              className="p-5 border-b border-[var(--border)]"
-              style={{ background: `linear-gradient(135deg, ${platformColor}25, transparent)` }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={video.estado} />
-                    {isEditing && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
-                        Modo Edición
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-white font-bold mt-2 text-sm leading-snug break-words">
-                    {isEditing ? editTitle : video.titulo}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => { setSelectedVideoId(null); setTelegramFeedback(null); setIsEditing(false); }}
-                  className="w-7 h-7 rounded-lg glass flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0"
-                >
-                  <X size={13} />
-                </button>
+  return (
+    <div key="video-detail-root" className="fixed inset-0 z-50 flex items-center justify-center sm:justify-end p-2 sm:p-4 pointer-events-none">
+      {/* Backdrop oscuro sin blur pesado */}
+      <motion.div
+        key="video-detail-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+        onClick={() => { setSelectedVideoId(null); setTelegramFeedback(null); setIsEditing(false); }}
+        className="fixed inset-0 bg-black/80 pointer-events-auto"
+      />
+
+      {/* Drawer Panel con fondo sólido oscuro optimizado */}
+      <motion.div
+        key={`video-detail-drawer-${video.id}`}
+        initial={{ opacity: 0, scale: 0.96, x: 40 }}
+        animate={{ opacity: 1, scale: 1, x: 0 }}
+        exit={{ opacity: 0, scale: 0.96, x: 40 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className="relative z-10 w-full max-w-md bg-[#0b0f19] rounded-2xl border border-white/10 shadow-2xl overflow-y-auto max-h-[92vh] pointer-events-auto flex flex-col will-change-transform"
+      >
+        {/* Header */}
+        <div
+          className="p-5 border-b border-white/[0.08]"
+          style={{ background: `linear-gradient(135deg, ${platformColor}25, transparent)` }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <StatusBadge status={video.estado} />
+                {isEditing && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
+                    Modo Edición
+                  </span>
+                )}
               </div>
+              <h3 className="text-white font-bold mt-2 text-sm leading-snug break-words">
+                {isEditing ? editTitle : video.titulo}
+              </h3>
             </div>
+            <button
+              onClick={() => { setSelectedVideoId(null); setTelegramFeedback(null); setIsEditing(false); }}
+              className="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-white/10 border border-white/10 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0 cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
 
             {/* Content Body */}
             <div className="p-5 space-y-4 flex-1">
@@ -921,7 +921,7 @@ export function VideoDetailModal() {
                           alt={video.titulo}
                           className="w-full h-full object-contain"
                         />
-                        <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/70 text-[10px] text-white font-medium border border-white/20 backdrop-blur-sm">
+                        <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 text-[10px] text-white font-medium border border-white/20">
                           Miniatura
                         </span>
                       </div>
@@ -1241,7 +1241,7 @@ export function VideoDetailModal() {
                     <p className="text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
                       Descripción (Reglas de Campaña)
                     </p>
-                    <p className="text-xs text-[var(--text-primary)] leading-relaxed glass rounded-xl p-3 border border-[var(--border)] max-h-72 overflow-y-auto whitespace-pre-wrap [scrollbar-gutter:stable]">
+                    <p className="text-xs text-[var(--text-primary)] leading-relaxed bg-[#0d1422] rounded-xl p-3 border border-white/10 max-h-72 overflow-y-auto whitespace-pre-wrap [scrollbar-gutter:stable]">
                       {video.descripcion_aprobada_ia}
                     </p>
                   </div>
@@ -1370,11 +1370,11 @@ export function VideoDetailModal() {
                   </button>
 
                   {/* Bottom Actions */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">
+                  <div className="flex items-center gap-2 pt-2 border-t border-white/[0.08]">
                     <button
                       type="button"
                       onClick={handleDelete}
-                      className="w-9 h-9 rounded-xl glass border border-red-500/20 text-red-400 hover:bg-red-500/15 flex items-center justify-center transition-colors shrink-0"
+                      className="w-9 h-9 rounded-xl bg-white/[0.04] hover:bg-red-500/15 border border-red-500/20 text-red-400 flex items-center justify-center transition-colors shrink-0 cursor-pointer"
                       title="Eliminar publicación"
                     >
                       <Trash2 size={13} />
@@ -1382,7 +1382,7 @@ export function VideoDetailModal() {
                     <button
                       type="button"
                       onClick={() => setIsEditing(true)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl glass border border-[var(--border)] text-xs font-semibold text-[var(--text-secondary)] hover:text-white hover:border-emerald-500/40 transition-all"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-[var(--text-secondary)] hover:text-white hover:border-emerald-500/40 transition-all cursor-pointer"
                     >
                       <Edit3 size={12} className="text-emerald-400" /> Modificar Publicación o Reemplazar Video
                     </button>
@@ -1470,7 +1470,7 @@ export function VideoDetailModal() {
                       type="text"
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
-                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent"
+                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-emerald-500/50 outline-none bg-[#0d1422] transition-colors"
                     />
                   </div>
 
@@ -1485,7 +1485,7 @@ export function VideoDetailModal() {
                       value={editDriveUrl}
                       onChange={(e) => setEditDriveUrl(e.target.value)}
                       placeholder="https://drive.google.com/file/d/.../view"
-                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent font-mono"
+                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-cyan-500/50 outline-none bg-[#0d1422] font-mono transition-colors"
                     />
                     <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                       Puedes pegar directamente el link compartido de Drive si no usas OAuth.
@@ -1510,7 +1510,7 @@ export function VideoDetailModal() {
                       value={editReelUrl}
                       onChange={(e) => setEditReelUrl(e.target.value)}
                       placeholder="https://www.instagram.com/reel/Cxxxxxx/ o TikTok..."
-                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/60 outline-none bg-black/40 font-mono placeholder:text-[var(--text-muted)]"
+                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-emerald-500/60 outline-none bg-[#0d1422] font-mono placeholder:text-[var(--text-muted)] transition-colors"
                     />
                     <div className="flex items-center justify-between gap-2 pt-1">
                       <p className="text-[10px] text-[var(--text-muted)] leading-tight flex-1">
@@ -1554,7 +1554,7 @@ export function VideoDetailModal() {
                             setEditCuentaId('');
                           }
                         }}
-                        className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d0d1a] border border-[var(--border)] focus:border-purple-500/50 outline-none"
+                        className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/10 focus:border-purple-500/50 outline-none transition-colors"
                       >
                         <option value="" className="bg-[#0d0d1a]">Seleccionar campaña...</option>
                         {campaigns.map(c => (
@@ -1571,7 +1571,7 @@ export function VideoDetailModal() {
                         value={editCuentaId}
                         onChange={(e) => setEditCuentaId(e.target.value)}
                         disabled={!editCampanaId}
-                        className="w-full glass rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d0d1a] border border-[var(--border)] focus:border-emerald-500/50 outline-none disabled:opacity-50"
+                        className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/10 focus:border-emerald-500/50 outline-none disabled:opacity-50 transition-colors"
                       >
                         <option value="" className="bg-[#0d0d1a]">
                           {editCampanaId ? 'Seleccionar cuenta...' : 'Primero selecciona campaña'}
@@ -1650,7 +1650,7 @@ export function VideoDetailModal() {
                       onChange={(e) => setEditDescripcion(e.target.value)}
                       minHeight={80}
                       maxHeight={320}
-                      className="glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent leading-relaxed"
+                      className="rounded-xl p-3 text-xs text-white border border-white/10 focus:border-emerald-500/50 outline-none bg-[#0d1422] leading-relaxed transition-colors"
                     />
 
                     {/* Subtítulos y Diálogo extraídos en JSON */}
@@ -1695,12 +1695,12 @@ export function VideoDetailModal() {
                   </div>
 
                   {/* Action buttons de Edición */}
-                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
                     <button
                       type="button"
-                      onClick={() => setIsEditing(false)}
+                      onClick={handleCancelEdit}
                       disabled={savingEdit || confirmandoEdit}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors"
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
                     >
                       <RotateCcw size={12} />
                       <span>Cancelar</span>
@@ -1709,7 +1709,7 @@ export function VideoDetailModal() {
                       type="button"
                       onClick={handleSaveEdit}
                       disabled={savingEdit || confirmandoEdit}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass border border-[var(--border)] hover:border-white/20 text-xs font-semibold text-white transition-all disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/20 text-xs font-semibold text-white transition-all disabled:opacity-50 cursor-pointer"
                     >
                       {savingEdit ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                       <span>Guardar Cambios</span>
@@ -1718,7 +1718,7 @@ export function VideoDetailModal() {
                       type="button"
                       onClick={handleConfirmarFromEdit}
                       disabled={savingEdit || confirmandoEdit}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold shadow-lg shadow-emerald-500/25 active:scale-95 transition-all disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold shadow-lg shadow-emerald-500/25 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                     >
                       {confirmandoEdit ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
                       <span>Confirmar Publicado con Reel</span>
@@ -1729,6 +1729,20 @@ export function VideoDetailModal() {
             </div>
           </motion.div>
         </div>
+  );
+}
+
+/**
+ * Componente contenedor exportado:
+ * Se suscribe ÚNICAMENTE al id del video seleccionado.
+ * Cuando no hay video abierto, NO monta VideoDetailDialog, garantizando CERO consumo de CPU en reposo.
+ */
+export function VideoDetailModal() {
+  const selectedVideoId = useAppStore((s) => s.selectedVideoId);
+  return (
+    <AnimatePresence>
+      {selectedVideoId && (
+        <VideoDetailDialog key={selectedVideoId} videoId={selectedVideoId} />
       )}
     </AnimatePresence>
   );

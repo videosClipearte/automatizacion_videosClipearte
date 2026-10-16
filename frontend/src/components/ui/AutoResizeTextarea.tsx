@@ -71,15 +71,12 @@ export const AutoResizeTextarea = forwardRef<HTMLTextAreaElement, AutoResizeText
         ref={setRefs}
         value={value}
         defaultValue={defaultValue}
-        onChange={(e) => {
-          adjustHeight();
-          onChange?.(e);
-        }}
+        onChange={onChange}
         onInput={(e) => {
           adjustHeight();
           onInput?.(e);
         }}
-        className={`w-full transition-[height] duration-100 ease-out [scrollbar-gutter:stable] ${className}`}
+        className={`w-full [scrollbar-gutter:stable] ${className}`}
         style={{
           minHeight: `${minHeight}px`,
           maxHeight: `${maxHeight}px`,

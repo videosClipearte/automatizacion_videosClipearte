@@ -75,14 +75,14 @@ export function CalendarView() {
 
     setClientToday(todayStr);
 
-    if (forceSyncCurrentDate || !hasUserNavigatedRef.current) {
+    if (forceSyncCurrentDate) {
       setCurrentDate(now);
     } else if (prevTodayStr && prevTodayStr !== todayStr) {
       // El día cambió en el dispositivo (pasó la medianoche o retorno de suspensión)
-      // Si el usuario estaba visualizando el día anterior que era "hoy", avanzar automáticamente
+      // Si el usuario estaba visualizando el día anterior que era "hoy" o no ha navegado, avanzar automáticamente
       setCurrentDate((prev) => {
         const prevDateStr = format(prev, 'yyyy-MM-dd');
-        if (prevDateStr === prevTodayStr) {
+        if (!hasUserNavigatedRef.current || prevDateStr === prevTodayStr) {
           return now;
         }
         return prev;
