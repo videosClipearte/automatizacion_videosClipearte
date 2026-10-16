@@ -60,14 +60,11 @@ export function CalendarView() {
   const hasUserNavigatedRef = useRef(false);
   const lastTodayStrRef = useRef<string>('');
 
+  const [mounted, setMounted] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [clientToday, setClientToday] = useState<string>(() => {
-    try {
-      return format(new Date(), 'yyyy-MM-dd');
-    } catch {
-      return '';
-    }
-  });
+  // clientToday se inicializa VACÍO para que el build/SSR de Next.js NUNCA congele
+  // una fecha pasada o de build estático como "Hoy". Se sincroniza 100% en el cliente al montar.
+  const [clientToday, setClientToday] = useState<string>('');
 
   // Sincronización continua con el reloj y fecha local del dispositivo
   const syncDeviceDate = useCallback((forceSyncCurrentDate = false) => {
@@ -94,7 +91,8 @@ export function CalendarView() {
   }, []);
 
   useEffect(() => {
-    // 1. Sincronizar inmediatamente al montar en el cliente con la fecha real del dispositivo
+    // 1. Activar bandera de cliente y sincronizar inmediatamente con la fecha real del dispositivo
+    setMounted(true);
     syncDeviceDate(true);
 
     // 2. Intervalo periódico (cada 10s) para detectar cambio de medianoche en tiempo real
@@ -126,10 +124,11 @@ export function CalendarView() {
   }, [syncDeviceDate]);
 
   const isDayToday = useCallback((day: Date) => {
+    // Si aún no se ha montado en el cliente o no hay clientToday, no marcar ningún día como "Hoy"
+    if (!mounted || !clientToday) return false;
     const formattedDay = format(day, 'yyyy-MM-dd');
-    if (clientToday) return formattedDay === clientToday;
-    return isSameDay(day, new Date());
-  }, [clientToday]);
+    return formattedDay === clientToday;
+  }, [mounted, clientToday]);
 
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const currentDragKeyRef = useRef<string | null>(null);
