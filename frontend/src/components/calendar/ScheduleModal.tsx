@@ -709,9 +709,11 @@ function ScheduleModalDialog() {
     // ── 5. Si requiere subida a Drive, delegar a módulo desacoplado (Problema 4 - libera memoria) ──
     if (needsDriveUpload && fileToUpload) {
       if (token && folderId) {
+        const customFileName = (videoTitle.trim() || fileToUpload.name.replace(/\.[^/.]+$/, '')).trim();
         startBackgroundDriveUpload({
           videoId: newVideoId,
           videoTitle: cleanTitle,
+          customFileName,
           file: fileToUpload,
           thumbFile: thumbToUpload,
           folderId,
@@ -801,12 +803,10 @@ function ScheduleModalDialog() {
 
   // Análisis anti-duplicados optimizado (Problema 2: utiliza debounced titles para no recalcular con cada tecla)
   const duplicateAnalysis = useMemo(() => {
-    if (!videoFile) {
-      return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
-    }
-
     const fileQuery = (debouncedVideoTitle || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || '').trim();
-    if (!fileQuery) {
+    const shortQuery = (isYouTube && debouncedShortTitle) ? debouncedShortTitle.trim() : '';
+
+    if (!fileQuery && !shortQuery) {
       return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
@@ -1040,14 +1040,14 @@ function ScheduleModalDialog() {
                 </div>
               )}
 
-              {/* ── 1. TÍTULO DEL ARCHIVO DE VIDEO & VERIFICADOR ANTI-DUPLICADOS (Siempre presente al cargar un archivo) ── */}
-              {videoFile && (
+              {/* ── MODO ESTÁNDAR (Instagram, TikTok, Facebook, etc.): TÍTULO / NOMBRE DE ARCHIVO & ANTI-DUPLICADOS ── */}
+              {!isYouTube && (
                 <div className="space-y-2">
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                         <FileVideo size={13} className="text-cyan-400" />
-                        <span>Título del Archivo de Video</span>
+                        <span>Nombre / Título del Archivo de Video</span>
                       </label>
                       <span className="text-[10px] text-cyan-400 font-mono flex items-center gap-1">
                         <ShieldCheck size={11} />
@@ -1066,8 +1066,8 @@ function ScheduleModalDialog() {
                     </p>
                   </div>
 
-                  {/* Estado del Verificador Anti-Duplicados para el archivo / short */}
-                  {(videoTitle || shortTitle) && (
+                  {/* Estado del Verificador Anti-Duplicados para el archivo */}
+                  {videoTitle && (
                     <div className="space-y-2 pt-1">
                       {duplicateAnalysis.status === 'exact_duplicate' && duplicateAnalysis.exactMatch && (
                         <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/70 via-rose-950/50 to-red-950/70 border border-red-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(239,68,68,0.18)]">
@@ -1154,7 +1154,7 @@ function ScheduleModalDialog() {
                 </div>
               )}
 
-              {/* ── 2. CONFIGURACIÓN YOUTUBE SHORT (Con título del short aparte y miniatura opcional) ── */}
+              {/* ── MODO YOUTUBE SHORT: INPUTS SEPARADOS PARA NOMBRE DE ARCHIVO Y TÍTULO DE SHORT ── */}
               {isYouTube && (
                 <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/40 via-[#180d12] to-red-950/30 border border-red-500/35 text-xs space-y-3 shadow-[0_0_25px_rgba(239,68,68,0.12)]">
                   <div className="flex items-center justify-between">
@@ -1169,13 +1169,42 @@ function ScheduleModalDialog() {
                   </div>
 
                   <p className="text-[11px] text-slate-300 leading-relaxed">
-                    Este video se publicará en YouTube como un <b>Short / Reel vertical</b>. Se incluirá automáticamente la etiqueta <code>#Shorts</code> para asegurar que el algoritmo lo reconozca en el reproductor de Shorts.
+                    Este video se publicará en YouTube como un <b>Short / Reel vertical</b>. Aquí puedes ingresar de forma independiente el <b>nombre del archivo de video</b> y el <b>título visible del Short en YouTube</b>.
                   </p>
 
-                  {/* Título del Short aparte para YouTube */}
+                  {/* 1. Input: Nombre del archivo del video */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <FileVideo size={13} className="text-cyan-400" />
+                        <span>Nombre del archivo del video</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono">
+                          Archivo / Drive
+                        </span>
+                      </label>
+                      {videoFile && (
+                        <span className="text-[10px] text-cyan-400 font-mono truncate max-w-[200px]" title={videoFile.name}>
+                          {videoFile.name}
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={videoTitle}
+                      onChange={(e) => setVideoTitle(e.target.value)}
+                      placeholder="Nombre o archivo del video (ej. MiVideoOriginal_01)..."
+                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-cyan-500/40 focus:border-cyan-400 outline-none bg-black/50 transition-colors hover:border-cyan-400/70"
+                    />
+                    <p className="text-[10px] text-[var(--text-muted)]">
+                      Nombre técnico con el que se guardará el archivo en Google Drive y control interno. No es el título del Short en YouTube.
+                    </p>
+                  </div>
+
+                  {/* 2. Input: Título del Short en YouTube (Aparte) */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <Play size={13} className="text-red-400 fill-red-400" />
                         <span>Título del Short en YouTube (Aparte)</span>
                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-mono">
                           Aparte
@@ -1198,9 +1227,101 @@ function ScheduleModalDialog() {
                       </span>
                     </div>
                     <p className="text-[10px] text-[var(--text-muted)]">
-                      Título visible con el que se publicará tu Short en YouTube. Si lo dejas vacío, se usará el título del archivo del video.
+                      Título visible y público con el que se publicará tu Short en YouTube.
                     </p>
                   </div>
+
+                  {/* Estado del Verificador Anti-Duplicados para el archivo / short */}
+                  {(videoTitle || shortTitle) && (
+                    <div className="space-y-2 pt-1 border-t border-red-500/20">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-cyan-400 font-mono flex items-center gap-1">
+                          <ShieldCheck size={11} />
+                          Verificador Anti-Duplicados (Archivo y Título)
+                        </span>
+                      </div>
+                      {duplicateAnalysis.status === 'exact_duplicate' && duplicateAnalysis.exactMatch && (
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/70 via-rose-950/50 to-red-950/70 border border-red-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(239,68,68,0.18)]">
+                          <div className="flex items-center gap-2 text-red-300 font-bold">
+                            <ShieldAlert size={16} className="text-red-400 shrink-0 animate-pulse" />
+                            <span>
+                              🚨 ALERTA: {duplicateAnalysis.matchSource === 'short' ? 'El título del Short' : 'Este archivo de video'} ya existe y fue publicado antes
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-red-200/90 leading-relaxed">
+                            El Verificador Anti-Duplicados detectó que ya existe una publicación previa registrada con este video/título:
+                          </p>
+                          <div className="p-2.5 rounded-xl bg-black/50 border border-red-500/30 text-[11px] space-y-1">
+                            <div className="flex items-center justify-between text-white font-semibold">
+                              <span className="truncate">"{duplicateAnalysis.exactMatch.titulo}"</span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-mono uppercase">
+                                {duplicateAnalysis.exactMatch.estado}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-300 pt-0.5">
+                              <span>Cuenta: <b>@{duplicateAnalysis.matchAccount?.username || 'cuenta'}</b> ({duplicateAnalysis.matchAccount?.plataforma})</span>
+                              <span>
+                                {(() => {
+                                  try {
+                                    const d = duplicateAnalysis.exactMatch.publicado_en || duplicateAnalysis.exactMatch.programado_para;
+                                    return d ? format(new Date(d), 'dd/MM/yyyy HH:mm') : '';
+                                  } catch {
+                                    return '';
+                                  }
+                                })()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {duplicateAnalysis.status === 'similar_found' && (
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-orange-950/40 to-amber-950/60 border border-amber-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
+                          <div className="flex items-center gap-2 text-amber-300 font-bold">
+                            <AlertTriangle size={16} className="text-amber-400 shrink-0" />
+                            <span>⚠️ Posible video duplicado ({duplicateAnalysis.topScore}% de similitud detectada)</span>
+                          </div>
+                          <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                            Se encontraron publicaciones anteriores con títulos muy parecidos. Verifica si no se trata del mismo video:
+                          </p>
+                          <div className="space-y-1.5">
+                            {duplicateAnalysis.similarMatches.map(({ video, score, account }) => (
+                              <div key={video.id} className="p-2 rounded-xl bg-black/40 border border-amber-500/25 text-[10px] flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-white truncate">"{video.titulo}"</p>
+                                  <p className="text-[9px] text-slate-400">
+                                    @{account?.username} • {(() => {
+                                      try {
+                                        const d = video.publicado_en || video.programado_para;
+                                        return d ? format(new Date(d), 'dd/MM/yyyy') : '';
+                                      } catch { return ''; }
+                                    })()} • {video.estado}
+                                  </p>
+                                </div>
+                                <span className="text-[9px] font-mono font-bold text-amber-400 shrink-0 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                                  {score}% coincidencia
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {duplicateAnalysis.status === 'available' && (
+                        <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/25 text-xs flex items-center justify-between gap-2 text-emerald-300">
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
+                            <span className="font-medium">
+                              <b>Verificador Anti-Duplicados:</b> Archivo no publicado anteriormente. Título disponible.
+                            </span>
+                          </div>
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
+                            Disponible
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Subir Miniatura para YouTube */}
                   <div className="space-y-1.5 pt-2 border-t border-red-500/20">

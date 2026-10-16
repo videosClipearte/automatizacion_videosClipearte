@@ -183,11 +183,17 @@ function uploadSingleAttempt(
   file: File,
   folderId: string,
   accessToken: string,
-  onProgress?: (progressPercent: number) => void
+  onProgress?: (progressPercent: number) => void,
+  customFileName?: string
 ): Promise<{ success: boolean; fileId?: string; fileUrl?: string; error?: string }> {
   const cleanFolderId = folderId.trim();
+  const extension = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4';
+  const resolvedName = customFileName && customFileName.trim()
+    ? (customFileName.trim().endsWith(extension) ? customFileName.trim() : `${customFileName.trim()}${extension}`)
+    : file.name;
+
   const metadata: Record<string, any> = {
-    name: file.name,
+    name: resolvedName,
     mimeType: file.type || 'video/mp4',
   };
 
@@ -266,7 +272,8 @@ export async function uploadVideoToGoogleDrive(
   folderId: string,
   accessToken: string,
   onProgress?: (progressPercent: number) => void,
-  maxAttempts = 3
+  maxAttempts = 3,
+  customFileName?: string
 ): Promise<{ success: boolean; fileId?: string; fileUrl?: string; error?: string }> {
   let lastError = 'Fallo desconocido al subir a Drive';
 
@@ -278,7 +285,7 @@ export async function uploadVideoToGoogleDrive(
         await new Promise((r) => setTimeout(r, attempt * 2000));
       }
 
-      const res = await uploadSingleAttempt(file, folderId, accessToken, onProgress);
+      const res = await uploadSingleAttempt(file, folderId, accessToken, onProgress, customFileName);
       if (res.success) {
         return res;
       }
@@ -346,6 +353,7 @@ export async function verifyDriveFolderAccess(
 export interface StartBackgroundUploadParams {
   videoId: string;
   videoTitle: string;
+  customFileName?: string;
   file: File;
   thumbFile?: File | null;
   folderId: string;
@@ -358,7 +366,7 @@ export interface StartBackgroundUploadParams {
  * totalmente fuera de los componentes React para liberar memoria y evitar retención por closures.
  */
 export async function startBackgroundDriveUpload(params: StartBackgroundUploadParams): Promise<void> {
-  const { videoId, videoTitle, file, thumbFile, folderId, token, cuentaId } = params;
+  const { videoId, videoTitle, customFileName, file, thumbFile, folderId, token, cuentaId } = params;
 
   // Registrar para posibles reintentos en PublicationScheduler
   registerPendingDriveUpload(videoId, {
@@ -378,7 +386,9 @@ export async function startBackgroundDriveUpload(params: StartBackgroundUploadPa
       token,
       (pct) => {
         useAppStore.getState().setDriveUploadProgress(videoId, pct);
-      }
+      },
+      3,
+      customFileName
     );
 
     let finalThumbnailUrl: string | undefined = undefined;
