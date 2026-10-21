@@ -441,7 +441,20 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
       const accounts = (accRes.data ?? []).map(mapAccount);
       const campaigns = (campRes.data ?? []).map(mapCampaign);
-      const videos = (vidRes.data ?? []).map(mapVideo);
+      const rawVideos = (vidRes.data ?? []).map(mapVideo);
+      const seenVideoKeys = new Set<string>();
+      const videos: Video[] = [];
+      for (const v of rawVideos) {
+        if (seenVideoKeys.has(v.id)) continue;
+        const cloneKey = `${v.cuenta_id}_${v.titulo.toLowerCase().trim()}_${new Date(v.programado_para).getTime()}`;
+        if (seenVideoKeys.has(cloneKey)) {
+          console.warn('[initializeStore] Clon previo omitido de memoria:', v.titulo);
+          continue;
+        }
+        seenVideoKeys.add(v.id);
+        seenVideoKeys.add(cloneKey);
+        videos.push(v);
+      }
 
       console.log(`[Supabase] Cargado: ${accounts.length} cuentas, ${campaigns.length} campañas, ${videos.length} publicaciones`);
 
@@ -472,7 +485,17 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         .order('programado_para', { ascending: true });
 
       if (!error && data) {
-        const videos = data.map(mapVideo);
+        const rawVideos = data.map(mapVideo);
+        const seenVideoKeys = new Set<string>();
+        const videos: Video[] = [];
+        for (const v of rawVideos) {
+          if (seenVideoKeys.has(v.id)) continue;
+          const cloneKey = `${v.cuenta_id}_${v.titulo.toLowerCase().trim()}_${new Date(v.programado_para).getTime()}`;
+          if (seenVideoKeys.has(cloneKey)) continue;
+          seenVideoKeys.add(v.id);
+          seenVideoKeys.add(cloneKey);
+          videos.push(v);
+        }
         set({
           videos,
           metrics: computeMetrics(videos),
@@ -548,6 +571,23 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       }
     }
     set((s) => {
+      // 1. Evitar duplicar por mismo ID si ya fue añadido previamente (por Realtime o por optimistic update)
+      if (s.videos.some((v) => v.id === video.id)) {
+        return s;
+      }
+      // 2. Evitar clones accidentales generados con milisegundos de diferencia por doble clic (mismo cuenta_id, mismo titulo, misma fecha programada)
+      const progTime = new Date(video.programado_para).getTime();
+      const isClone = s.videos.some(
+        (v) =>
+          v.cuenta_id === video.cuenta_id &&
+          v.titulo.toLowerCase().trim() === video.titulo.toLowerCase().trim() &&
+          Math.abs(new Date(v.programado_para).getTime() - progTime) < 10000
+      );
+      if (isClone) {
+        console.warn('[addVideo] Publicación clonada prevenida en el store:', video.titulo);
+        return s;
+      }
+
       const sanitizedVideo = (video.thumbnail_url && video.thumbnail_url.startsWith('data:'))
         ? { ...video, thumbnail_url: undefined }
         : video;

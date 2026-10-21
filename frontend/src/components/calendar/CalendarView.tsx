@@ -240,8 +240,15 @@ export function CalendarView() {
   const { videosByDayMap, metricsByDayMap } = useMemo(() => {
     const vMap = new Map<string, Video[]>();
     const mMap = new Map<string, { scheduled: number; sent: number; published: number }>();
+    const seenVideoIds = new Set<string>();
 
     for (const v of videos) {
+      if (seenVideoIds.has(v.id)) continue;
+      const cloneKey = `${v.cuenta_id}_${v.titulo.toLowerCase().trim()}_${new Date(v.programado_para).getTime()}`;
+      if (seenVideoIds.has(cloneKey)) continue;
+      seenVideoIds.add(v.id);
+      seenVideoIds.add(cloneKey);
+
       if (selectedAccountId && selectedAccountId !== 'ALL' && v.cuenta_id !== selectedAccountId) {
         continue;
       }

@@ -29,7 +29,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useAppStore, type Video } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -142,6 +142,9 @@ function ScheduleModalDialog() {
   const [extractingAudio, setExtractingAudio] = useState(false);
   const [extractedSubtitles, setExtractedSubtitles] = useState<ExtractedSubtitlesJson | null>(null);
   const [showSubtitlesJson, setShowSubtitlesJson] = useState(false);
+
+  const [isScheduling, setIsScheduling] = useState(false);
+  const isSchedulingRef = useRef(false);
 
   // Google Drive state
   const [driveToken, setDriveToken] = useState<string | null>(null);
@@ -607,129 +610,138 @@ function ScheduleModalDialog() {
   };
 
   const onSubmit = async (data: FormData) => {
-    const programadoPara = new Date(`${data.fecha}T${data.hora}`);
-    
-    // El título de la publicación en la app es SIEMPRE el nombre del archivo de video
-    const fileTitle = (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || (isYouTube ? 'Short sin título' : 'Video sin título')).replace(/[_-]/g, ' ');
+    if (isSchedulingRef.current) return;
+    isSchedulingRef.current = true;
+    setIsScheduling(true);
 
-    // El título de YouTube es EXCLUSIVAMENTE para el Reel/Short en YouTube (no en la tarjeta de la app)
-    let cleanShortTitle = '';
-    if (isYouTube) {
-      cleanShortTitle = (shortTitle.trim() || fileTitle).trim();
-      if (!/#shorts\b/i.test(cleanShortTitle)) {
-        cleanShortTitle = `${cleanShortTitle} #Shorts`;
-      }
-      if (cleanShortTitle.length > 100) {
-        cleanShortTitle = cleanShortTitle.slice(0, 92).trim() + ' #Shorts';
-      }
-    }
+    try {
+      const programadoPara = new Date(`${data.fecha}T${data.hora}`);
+      
+      // El título de la publicación en la app es SIEMPRE el nombre del archivo de video
+      const fileTitle = (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || (isYouTube ? 'Short sin título' : 'Video sin título')).replace(/[_-]/g, ' ');
 
-    const newVideoId = `v-${Date.now()}`;
-    const initialDriveUrl = manualDriveUrl.trim() || '#';
-
-    // Guardar referencias de los archivos para la subida en segundo plano
-    const fileToUpload = videoFile;
-    const thumbToUpload = thumbnailFile;
-    const needsDriveUpload = !!(fileToUpload && !manualDriveUrl.trim());
-
-    let token = driveToken || getGoogleDriveToken();
-    let folderId = '';
-
-    if (needsDriveUpload) {
-      let cfg = getCachedConfig();
-      if (!cfg.drive_folder_id && !cfg.drive_client_id) {
-        cfg = await loadAppConfig();
-      }
-
-      folderId = cfg.drive_folder_id || '';
-      const clientId = cfg.drive_client_id || '';
-
-      // Si no hay token pero hay clientId, solicitar autorización con el gesto de clic del usuario
-      if (!token && clientId) {
-        setConnectingDrive(true);
-        const authRes = await requestGoogleDriveOAuthToken(clientId);
-        setConnectingDrive(false);
-        if (authRes.success && authRes.token) {
-          token = authRes.token;
-          setDriveToken(token);
-        } else {
-          setDriveError(authRes.error || 'Error al conectar con Google Drive');
-          return;
+      // El título de YouTube es EXCLUSIVAMENTE para el Reel/Short en YouTube (no en la tarjeta de la app)
+      let cleanShortTitle = '';
+      if (isYouTube) {
+        cleanShortTitle = (shortTitle.trim() || fileTitle).trim();
+        if (!/#shorts\b/i.test(cleanShortTitle)) {
+          cleanShortTitle = `${cleanShortTitle} #Shorts`;
+        }
+        if (cleanShortTitle.length > 100) {
+          cleanShortTitle = cleanShortTitle.slice(0, 92).trim() + ' #Shorts';
         }
       }
-    }
 
-    // ── 1. Crear el video y añadirlo INMEDIATAMENTE al calendario (con el nombre del archivo como título en la tarjeta) ──
-    const finalDescription = isYouTube && cleanShortTitle
-      ? `<!--YT_TITLE:${cleanShortTitle}-->\n${data.descripcion || ''}`
-      : (data.descripcion || '');
+      const newVideoId = `v-${Date.now()}`;
+      const initialDriveUrl = manualDriveUrl.trim() || '#';
 
-    const newVideo: Video = {
-      id: newVideoId,
-      cuenta_id: data.cuenta_id,
-      campana_id: data.campana_id,
-      titulo: fileTitle,
-      titulo_youtube: isYouTube ? cleanShortTitle : undefined,
-      descripcion_aprobada_ia: finalDescription,
-      thumbnail_color: isYouTube ? '#ef4444' : '#10b981',
-      thumbnail_url: undefined,
-      drive_file_url: initialDriveUrl,
-      programado_para: programadoPara,
-      estado: 'PROGRAMADO',
-      vistas_obtenidas: 0,
-      ganancias_estimadas: 0,
-      auto_reprogramacion: data.auto_reprogramacion,
-      reintentos_alerta: 0,
-    };
+      // Guardar referencias de los archivos para la subida en segundo plano
+      const fileToUpload = videoFile;
+      const thumbToUpload = thumbnailFile;
+      const needsDriveUpload = !!(fileToUpload && !manualDriveUrl.trim());
 
-    await addVideo(newVideo);
+      let token = driveToken || getGoogleDriveToken();
+      let folderId = '';
 
-    // ── 2. Si requiere subida a Drive, registrar estado inicial 0% ──
-    if (needsDriveUpload) {
-      setDriveUploadProgress(newVideoId, 0);
-    }
+      if (needsDriveUpload) {
+        let cfg = getCachedConfig();
+        if (!cfg.drive_folder_id && !cfg.drive_client_id) {
+          cfg = await loadAppConfig();
+        }
 
-    // ── 3. Notificación visible para el usuario ──
-    createNotification({
-      tipo: 'info',
-      titulo: isYouTube ? 'Nuevo YouTube Short programado' : 'Nuevo video programado',
-      mensaje: needsDriveUpload
-        ? `"${fileTitle}" programado. Subiendo a Google Drive en segundo plano...`
-        : `"${fileTitle}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
-      cuenta_id: data.cuenta_id,
-      origen: isYouTube ? 'youtube' : 'sistema',
-    });
+        folderId = cfg.drive_folder_id || '';
+        const clientId = cfg.drive_client_id || '';
 
-    // ── 4. CERRAR INMEDIATAMENTE EL MODAL para permitir programar el siguiente video rápido ──
-    closeScheduleModal();
-    setVideoFile(null);
-    setThumbnailFile(null);
-    setThumbnailPreview(null);
-    setVideoTitle('');
-    setShortTitle('');
-    setDebouncedVideoTitle('');
-    setDebouncedShortTitle('');
-    setManualDriveUrl('');
-    setDriveSuccessUrl(null);
-    setDriveError(null);
-
-    // ── 5. Si requiere subida a Drive, delegar a módulo desacoplado (Problema 4 - libera memoria) ──
-    if (needsDriveUpload && fileToUpload) {
-      if (token && folderId) {
-        const customFileName = (videoTitle.trim() || fileToUpload.name.replace(/\.[^/.]+$/, '')).trim();
-        startBackgroundDriveUpload({
-          videoId: newVideoId,
-          videoTitle: fileTitle,
-          customFileName,
-          file: fileToUpload,
-          thumbFile: thumbToUpload,
-          folderId,
-          token,
-          cuentaId: data.cuenta_id,
-        });
-      } else {
-        setDriveUploadError(newVideoId, 'Google Drive no configurado o falta autorización.');
+        // Si no hay token pero hay clientId, solicitar autorización con el gesto de clic del usuario
+        if (!token && clientId) {
+          setConnectingDrive(true);
+          const authRes = await requestGoogleDriveOAuthToken(clientId);
+          setConnectingDrive(false);
+          if (authRes.success && authRes.token) {
+            token = authRes.token;
+            setDriveToken(token);
+          } else {
+            setDriveError(authRes.error || 'Error al conectar con Google Drive');
+            return;
+          }
+        }
       }
+
+      // ── 1. Crear el video y añadirlo INMEDIATAMENTE al calendario (con el nombre del archivo como título en la tarjeta) ──
+      const finalDescription = isYouTube && cleanShortTitle
+        ? `<!--YT_TITLE:${cleanShortTitle}-->\n${data.descripcion || ''}`
+        : (data.descripcion || '');
+
+      const newVideo: Video = {
+        id: newVideoId,
+        cuenta_id: data.cuenta_id,
+        campana_id: data.campana_id,
+        titulo: fileTitle,
+        titulo_youtube: isYouTube ? cleanShortTitle : undefined,
+        descripcion_aprobada_ia: finalDescription,
+        thumbnail_color: isYouTube ? '#ef4444' : '#10b981',
+        thumbnail_url: undefined,
+        drive_file_url: initialDriveUrl,
+        programado_para: programadoPara,
+        estado: 'PROGRAMADO',
+        vistas_obtenidas: 0,
+        ganancias_estimadas: 0,
+        auto_reprogramacion: data.auto_reprogramacion,
+        reintentos_alerta: 0,
+      };
+
+      await addVideo(newVideo);
+
+      // ── 2. Si requiere subida a Drive, registrar estado inicial 0% ──
+      if (needsDriveUpload) {
+        setDriveUploadProgress(newVideoId, 0);
+      }
+
+      // ── 3. Notificación visible para el usuario ──
+      createNotification({
+        tipo: 'info',
+        titulo: isYouTube ? 'Nuevo YouTube Short programado' : 'Nuevo video programado',
+        mensaje: needsDriveUpload
+          ? `"${fileTitle}" programado. Subiendo a Google Drive en segundo plano...`
+          : `"${fileTitle}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
+        cuenta_id: data.cuenta_id,
+        origen: isYouTube ? 'youtube' : 'sistema',
+      });
+
+      // ── 4. CERRAR INMEDIATAMENTE EL MODAL para permitir programar el siguiente video rápido ──
+      closeScheduleModal();
+      setVideoFile(null);
+      setThumbnailFile(null);
+      setThumbnailPreview(null);
+      setVideoTitle('');
+      setShortTitle('');
+      setDebouncedVideoTitle('');
+      setDebouncedShortTitle('');
+      setManualDriveUrl('');
+      setDriveSuccessUrl(null);
+      setDriveError(null);
+
+      // ── 5. Si requiere subida a Drive, delegar a módulo desacoplado (Problema 4 - libera memoria) ──
+      if (needsDriveUpload && fileToUpload) {
+        if (token && folderId) {
+          const customFileName = (videoTitle.trim() || fileToUpload.name.replace(/\.[^/.]+$/, '')).trim();
+          startBackgroundDriveUpload({
+            videoId: newVideoId,
+            videoTitle: fileTitle,
+            customFileName,
+            file: fileToUpload,
+            thumbFile: thumbToUpload,
+            folderId,
+            token,
+            cuentaId: data.cuenta_id,
+          });
+        } else {
+          setDriveUploadError(newVideoId, 'Google Drive no configurado o falta autorización.');
+        }
+      }
+    } finally {
+      isSchedulingRef.current = false;
+      setIsScheduling(false);
     }
   };
 
@@ -1784,10 +1796,15 @@ function ScheduleModalDialog() {
                 <button
                   type="submit"
                   form="schedule-modal-form"
-                  disabled={uploadingDrive}
+                  disabled={uploadingDrive || isScheduling}
                   className="px-6 py-2 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
-                  {uploadingDrive ? (
+                  {isScheduling ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Programando video...</span>
+                    </>
+                  ) : uploadingDrive ? (
                     <>
                       <Loader2 size={13} className="animate-spin" />
                       <span>Subiendo a Drive ({uploadProgress}%)...</span>
