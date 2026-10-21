@@ -41,6 +41,7 @@ export interface Video {
   cuenta_id: string;
   campana_id: string;
   titulo: string;
+  titulo_youtube?: string;
   descripcion_aprobada_ia: string;
   thumbnail_color: string;
   thumbnail_url?: string;
@@ -98,12 +99,23 @@ function mapCampaign(row: any): Campaign {
 }
 
 function mapVideo(row: any): Video {
+  let rawDesc = row.descripcion_aprobada_ia ?? '';
+  let ytTitle: string | undefined = row.titulo_youtube || undefined;
+  if (!ytTitle && rawDesc) {
+    const match = rawDesc.match(/<!--YT_TITLE:(.*?)-->/);
+    if (match) {
+      ytTitle = match[1];
+    }
+  }
+  const cleanDesc = rawDesc ? rawDesc.replace(/<!--YT_TITLE:.*?-->\s*/, '') : '';
+
   return {
     id: row.id,
     cuenta_id: row.cuenta_id,
     campana_id: row.campana_id ?? '',
     titulo: row.titulo,
-    descripcion_aprobada_ia: row.descripcion_aprobada_ia ?? '',
+    titulo_youtube: ytTitle,
+    descripcion_aprobada_ia: cleanDesc,
     thumbnail_color: row.thumbnail_color ?? '#10b981',
     thumbnail_url: row.thumbnail_url ?? (row.thumbnail_color && (row.thumbnail_color.startsWith('http') || row.thumbnail_color.startsWith('data:image')) ? row.thumbnail_color : undefined),
     drive_file_url: row.drive_file_url ?? '',
@@ -502,6 +514,9 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       auto_reprogramacion: video.auto_reprogramacion,
       reintentos_alerta: video.reintentos_alerta,
     };
+    if (video.titulo_youtube) {
+      row.titulo_youtube = video.titulo_youtube;
+    }
     // Optimización CPU/Red: no guardar Base64 enorme en Supabase publicaciones
     if (video.thumbnail_url && !video.thumbnail_url.startsWith('data:')) {
       row.thumbnail_url = video.thumbnail_url;
@@ -509,8 +524,14 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     let { error: insErr } = await db.from('publicaciones').insert(row);
     if (insErr) {
       console.warn('[addVideo] Error inicial insertando en publicaciones:', insErr.message);
+      // Reintento 0: Si falló por columna titulo_youtube inexistente
+      if (row.titulo_youtube) {
+        delete row.titulo_youtube;
+        const resYt = await db.from('publicaciones').insert(row);
+        insErr = resYt.error;
+      }
       // Reintento 1: Si falló por tamaño o formato de miniatura
-      if (row.thumbnail_url) {
+      if (insErr && row.thumbnail_url) {
         delete row.thumbnail_url;
         const res2 = await db.from('publicaciones').insert(row);
         insErr = res2.error;
@@ -555,6 +576,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
     const dbUpdates: any = {};
     if (finalUpdates.titulo !== undefined) dbUpdates.titulo = finalUpdates.titulo;
+    if (finalUpdates.titulo_youtube !== undefined) dbUpdates.titulo_youtube = finalUpdates.titulo_youtube;
     if (finalUpdates.descripcion_aprobada_ia !== undefined) dbUpdates.descripcion_aprobada_ia = finalUpdates.descripcion_aprobada_ia;
     if (finalUpdates.estado !== undefined) dbUpdates.estado = finalUpdates.estado;
     if (finalUpdates.programado_para !== undefined) dbUpdates.programado_para = (finalUpdates.programado_para as Date).toISOString();
@@ -583,7 +605,12 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       dbUpdates.reintentos_alerta = 0;
     }
 
-    const { error: updErr } = await db.from('publicaciones').update(dbUpdates).eq('id', id);
+    let { error: updErr } = await db.from('publicaciones').update(dbUpdates).eq('id', id);
+    if (updErr && dbUpdates.titulo_youtube) {
+      delete dbUpdates.titulo_youtube;
+      const resYt = await db.from('publicaciones').update(dbUpdates).eq('id', id);
+      updErr = resYt.error;
+    }
     if (updErr && dbUpdates.thumbnail_url) {
       console.warn('[updateVideo] Error actualizando con thumbnail_url, reintentando sin él:', updErr.message);
       delete dbUpdates.thumbnail_url;

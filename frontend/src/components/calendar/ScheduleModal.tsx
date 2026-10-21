@@ -608,18 +608,20 @@ function ScheduleModalDialog() {
 
   const onSubmit = async (data: FormData) => {
     const programadoPara = new Date(`${data.fecha}T${data.hora}`);
-    let baseTitle = isYouTube
-      ? (shortTitle.trim() || videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || 'Short sin título')
-      : (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || 'Video sin título');
+    
+    // El título de la publicación en la app es SIEMPRE el nombre del archivo de video
+    const fileTitle = (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '') || (isYouTube ? 'Short sin título' : 'Video sin título')).replace(/[_-]/g, ' ');
 
-    let cleanTitle = baseTitle.replace(/[_-]/g, ' ');
-
-    // Si es YouTube, garantizar etiqueta #Shorts para categorización como Reel/Short
-    if (isYouTube && !/#shorts\b/i.test(cleanTitle)) {
-      cleanTitle = `${cleanTitle} #Shorts`;
-    }
-    if (isYouTube && cleanTitle.length > 100) {
-      cleanTitle = cleanTitle.slice(0, 92).trim() + ' #Shorts';
+    // El título de YouTube es EXCLUSIVAMENTE para el Reel/Short en YouTube (no en la tarjeta de la app)
+    let cleanShortTitle = '';
+    if (isYouTube) {
+      cleanShortTitle = (shortTitle.trim() || fileTitle).trim();
+      if (!/#shorts\b/i.test(cleanShortTitle)) {
+        cleanShortTitle = `${cleanShortTitle} #Shorts`;
+      }
+      if (cleanShortTitle.length > 100) {
+        cleanShortTitle = cleanShortTitle.slice(0, 92).trim() + ' #Shorts';
+      }
     }
 
     const newVideoId = `v-${Date.now()}`;
@@ -657,13 +659,18 @@ function ScheduleModalDialog() {
       }
     }
 
-    // ── 1. Crear el video y añadirlo INMEDIATAMENTE al calendario (sin Base64 para evitar saturar red y Supabase) ──
+    // ── 1. Crear el video y añadirlo INMEDIATAMENTE al calendario (con el nombre del archivo como título en la tarjeta) ──
+    const finalDescription = isYouTube && cleanShortTitle
+      ? `<!--YT_TITLE:${cleanShortTitle}-->\n${data.descripcion || ''}`
+      : (data.descripcion || '');
+
     const newVideo: Video = {
       id: newVideoId,
       cuenta_id: data.cuenta_id,
       campana_id: data.campana_id,
-      titulo: cleanTitle,
-      descripcion_aprobada_ia: data.descripcion,
+      titulo: fileTitle,
+      titulo_youtube: isYouTube ? cleanShortTitle : undefined,
+      descripcion_aprobada_ia: finalDescription,
       thumbnail_color: isYouTube ? '#ef4444' : '#10b981',
       thumbnail_url: undefined,
       drive_file_url: initialDriveUrl,
@@ -687,8 +694,8 @@ function ScheduleModalDialog() {
       tipo: 'info',
       titulo: isYouTube ? 'Nuevo YouTube Short programado' : 'Nuevo video programado',
       mensaje: needsDriveUpload
-        ? `"${cleanTitle}" programado. Subiendo a Google Drive en segundo plano...`
-        : `"${cleanTitle}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
+        ? `"${fileTitle}" programado. Subiendo a Google Drive en segundo plano...`
+        : `"${fileTitle}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
       cuenta_id: data.cuenta_id,
       origen: isYouTube ? 'youtube' : 'sistema',
     });
@@ -712,7 +719,7 @@ function ScheduleModalDialog() {
         const customFileName = (videoTitle.trim() || fileToUpload.name.replace(/\.[^/.]+$/, '')).trim();
         startBackgroundDriveUpload({
           videoId: newVideoId,
-          videoTitle: cleanTitle,
+          videoTitle: fileTitle,
           customFileName,
           file: fileToUpload,
           thumbFile: thumbToUpload,
@@ -1196,7 +1203,7 @@ function ScheduleModalDialog() {
                       className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-cyan-500/40 focus:border-cyan-400 outline-none bg-black/50 transition-colors hover:border-cyan-400/70"
                     />
                     <p className="text-[10px] text-[var(--text-muted)]">
-                      Nombre técnico con el que se guardará el archivo en Google Drive y control interno. No es el título del Short en YouTube.
+                      Nombre del archivo del video. Este mismo nombre será el título que se mostrará en la tarjeta del video ya programado en la app.
                     </p>
                   </div>
 
@@ -1227,7 +1234,7 @@ function ScheduleModalDialog() {
                       </span>
                     </div>
                     <p className="text-[10px] text-[var(--text-muted)]">
-                      Título visible y público con el que se publicará tu Short en YouTube.
+                      Título exclusivo para el Reel/Short en YouTube al publicarse. No se muestra en la tarjeta del calendario de la app.
                     </p>
                   </div>
 

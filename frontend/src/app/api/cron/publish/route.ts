@@ -165,6 +165,12 @@ export async function GET(request: Request) {
             ? new URL(request.url).origin
             : 'https://automatizacion-clipearte.vercel.app';
 
+          let effectiveYtTitle = video.titulo_youtube;
+          if (!effectiveYtTitle && video.descripcion_aprobada_ia) {
+            const match = video.descripcion_aprobada_ia.match(/<!--YT_TITLE:(.*?)-->/);
+            if (match) effectiveYtTitle = match[1];
+          }
+
           const ytRes = await fetch(`${host}/api/youtube/publish`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -172,8 +178,9 @@ export async function GET(request: Request) {
               publicacion_id: video.id,
               canal_id: account?.username,
               video_url: video.drive_file_url,
-              titulo: video.titulo,
-              descripcion: video.descripcion_aprobada_ia || video.titulo,
+              titulo: effectiveYtTitle || video.titulo,
+              titulo_youtube: effectiveYtTitle,
+              descripcion: video.descripcion_aprobada_ia ? video.descripcion_aprobada_ia.replace(/<!--YT_TITLE:.*?-->\s*/, '') : video.titulo,
               thumbnail_url: video.thumbnail_url,
               tags: video.hashtags ? String(video.hashtags).split(' ').filter(Boolean).map((t: string) => t.replace('#', '')) : [],
               privacidad: 'public',

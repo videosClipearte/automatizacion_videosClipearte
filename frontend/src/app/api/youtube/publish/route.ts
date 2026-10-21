@@ -417,6 +417,7 @@ export async function POST(req: NextRequest) {
     canal_id,
     video_url,
     titulo,
+    titulo_youtube,
     descripcion,
     tags,
     thumbnail_url,
@@ -618,7 +619,7 @@ export async function POST(req: NextRequest) {
     // YouTube categoriza como Short cuando:
     // 1. El video es vertical / cuadrado (duración <= 3min).
     // 2. Se incluye explícitamente el hashtag #Shorts en el título y/o descripción.
-    let shortTitle = (titulo || '').trim();
+    let shortTitle = (titulo_youtube || titulo || '').trim();
     if (!/#shorts\b/i.test(shortTitle)) {
       shortTitle = `${shortTitle} #Shorts`;
     }
@@ -878,7 +879,6 @@ export async function POST(req: NextRequest) {
       await supabase
         .from('publicaciones')
         .update({
-          titulo: shortTitle,
           estado: 'PUBLICADO',
           publicado_en: new Date().toISOString(),
           post_url_publica: videoUrl,

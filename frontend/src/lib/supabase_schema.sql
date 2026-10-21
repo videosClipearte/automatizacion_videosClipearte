@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS public.publicaciones (
     cuenta_id TEXT REFERENCES public.cuentas(id) ON DELETE CASCADE,
     campana_id TEXT REFERENCES public.campanas(id) ON DELETE SET NULL,
     titulo TEXT NOT NULL,
+    titulo_youtube TEXT,
     descripcion_aprobada_ia TEXT DEFAULT '',
     thumbnail_color TEXT DEFAULT '#10b981',
     thumbnail_url TEXT,
@@ -251,6 +252,7 @@ CREATE TABLE IF NOT EXISTS public.youtube_tokens (
 
 ALTER TABLE public.youtube_tokens ADD COLUMN IF NOT EXISTS client_id TEXT DEFAULT '';
 ALTER TABLE public.youtube_tokens ADD COLUMN IF NOT EXISTS client_secret TEXT DEFAULT '';
+ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS titulo_youtube TEXT;
 ALTER TABLE public.youtube_tokens ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
