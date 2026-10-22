@@ -77,8 +77,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
   // Edit mode state — inicializados limpiamente a partir del video actual al montar
   const [isEditing, setIsEditing] = useState(false);
+  const [editFileName, setEditFileName] = useState(() => video?.nombre_archivo || video?.titulo || '');
   const [editTitle, setEditTitle] = useState(() => video?.titulo || '');
-  const [editShortTitle, setEditShortTitle] = useState(() => video?.titulo_youtube || '');
+  const [editShortTitle, setEditShortTitle] = useState(() => video?.titulo_youtube || video?.titulo || '');
   const [editCuentaId, setEditCuentaId] = useState(() => video?.cuenta_id || '');
   const [editCampanaId, setEditCampanaId] = useState(() => video?.campana_id || '');
   const [editFecha, setEditFecha] = useState(() => {
@@ -121,8 +122,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
   const handleCancelEdit = () => {
     if (video) {
+      setEditFileName(video.nombre_archivo || video.titulo || '');
       setEditTitle(video.titulo || '');
-      setEditShortTitle(video.titulo_youtube || '');
+      setEditShortTitle(video.titulo_youtube || video.titulo || '');
       setEditCuentaId(video.cuenta_id || '');
       setEditCampanaId(video.campana_id || '');
       const progDate = new Date(video.programado_para);
@@ -262,6 +264,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     if (accepted[0]) {
       setReplacementFile(accepted[0]);
       const cleanName = accepted[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+      setEditFileName(cleanName);
       setEditTitle(cleanName);
     }
   };
@@ -479,8 +482,13 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     const newProgDate = new Date(`${editFecha}T${editHora}`);
     const isFuture = !isNaN(newProgDate.getTime()) && newProgDate.getTime() > Date.now();
 
+    const finalFileName = editFileName.trim() || video.nombre_archivo || video.titulo;
+    const finalYtTitle = editShortTitle.trim() || (video.titulo_youtube || video.titulo);
+
     const updates: any = {
-      titulo: editTitle.trim() || video.titulo,
+      nombre_archivo: finalFileName,
+      titulo: account?.plataforma === 'youtube' ? finalYtTitle : (editTitle.trim() || video.titulo),
+      titulo_youtube: account?.plataforma === 'youtube' ? finalYtTitle : undefined,
       cuenta_id: editCuentaId,
       campana_id: editCampanaId,
       programado_para: newProgDate,
@@ -488,10 +496,6 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       drive_file_url: finalDriveUrl,
       post_url_publica: editReelUrl.trim() || video.post_url_publica || undefined,
     };
-
-    if (account?.plataforma === 'youtube' || video.titulo_youtube) {
-      updates.titulo_youtube = editShortTitle.trim() || undefined;
-    }
 
     if (isFuture) {
       updates.estado = 'PROGRAMADO';
@@ -538,9 +542,13 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
     try {
       const newProgDate = new Date(`${editFecha}T${editHora}`);
+      const finalFileName = editFileName.trim() || video.nombre_archivo || video.titulo;
+      const finalYtTitle = editShortTitle.trim() || (video.titulo_youtube || video.titulo);
+
       const baseUpdates: any = {
-        titulo: editTitle.trim() || video.titulo,
-        titulo_youtube: account?.plataforma === 'youtube' ? (editShortTitle.trim() || undefined) : undefined,
+        nombre_archivo: finalFileName,
+        titulo: account?.plataforma === 'youtube' ? finalYtTitle : (editTitle.trim() || video.titulo),
+        titulo_youtube: account?.plataforma === 'youtube' ? finalYtTitle : undefined,
         cuenta_id: editCuentaId,
         campana_id: editCampanaId,
         programado_para: !isNaN(newProgDate.getTime()) ? newProgDate : video.programado_para,
@@ -884,7 +892,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                 )}
               </div>
               <h3 className="text-white font-bold mt-2 text-sm leading-snug break-words">
-                {isEditing ? editTitle : video.titulo}
+                {isEditing ? editFileName : (video.nombre_archivo || video.titulo)}
               </h3>
             </div>
             <button
@@ -1088,17 +1096,15 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           </div>
                         </div>
 
-                        {/* Título específico para YouTube Short si está configurado */}
-                        {video.titulo_youtube && (
-                          <div className="p-2.5 rounded-lg bg-black/40 border border-red-500/20 text-xs space-y-1">
-                            <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider block">
-                              Título del Reel/Short en YouTube:
-                            </span>
-                            <p className="text-white font-medium break-words">
-                              {video.titulo_youtube}
-                            </p>
-                          </div>
-                        )}
+                        {/* Título específico para YouTube Short */}
+                        <div className="p-2.5 rounded-lg bg-black/40 border border-red-500/20 text-xs space-y-1">
+                          <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider block">
+                            Título del Video en YouTube (Short):
+                          </span>
+                          <p className="text-white font-medium break-words">
+                            {video.titulo_youtube || video.titulo}
+                          </p>
+                        </div>
 
                         {/* Indicador de estado actual */}
                         {video.estado === 'PUBLICADO' ? (
@@ -1482,29 +1488,32 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     )}
                   </div>
 
-                  {/* Título de la Publicación (Nombre del Archivo) */}
+                  {/* Nombre del Archivo del Video (para identificar la publicación en la app) */}
                   <div>
                     <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
-                      Nombre del Archivo del Video (Título en la App)
+                      Nombre del Archivo del Video (Identificador en la App)
                     </label>
                     <input
                       type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
+                      value={editFileName}
+                      onChange={(e) => setEditFileName(e.target.value)}
                       className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-cyan-500/50 outline-none bg-[#0d1422] transition-colors"
                     />
                     <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                      Nombre del archivo del video y título que se muestra en la tarjeta del video ya programado en la app.
+                      Nombre del archivo del video. Se usa exclusivamente para identificar la publicación en el calendario y las tarjetas de la app.
                     </p>
                   </div>
 
-                  {/* Si es YouTube, Título del Short en YouTube (Aparte) */}
+                  {/* Título del Video / Short en YouTube (Visible al publicarse) */}
                   {account?.plataforma === 'youtube' && (
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                           <Play size={12} className="text-red-400 fill-red-400" />
-                          <span>Título del Short en YouTube (Aparte)</span>
+                          <span>Título del Video en YouTube (Short)</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-mono">
+                            Para YouTube
+                          </span>
                         </label>
                         <span className="text-[10px] text-red-300 font-mono">
                           {editShortTitle.length}/100 caracteres
@@ -1523,8 +1532,22 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         </span>
                       </div>
                       <p className="text-[10px] text-[var(--text-muted)]">
-                        Título exclusivo para el Reel/Short en YouTube al publicarse. No se muestra en la tarjeta de la app.
+                        Título real que se subirá y mostrará en YouTube para este video Short.
                       </p>
+                    </div>
+                  )}
+
+                  {account?.plataforma !== 'youtube' && (
+                    <div>
+                      <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+                        Título de la Publicación
+                      </label>
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-cyan-500/50 outline-none bg-[#0d1422] transition-colors"
+                      />
                     </div>
                   )}
 

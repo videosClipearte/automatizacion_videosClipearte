@@ -42,6 +42,7 @@ export interface Video {
   campana_id: string;
   titulo: string;
   titulo_youtube?: string;
+  nombre_archivo?: string;
   descripcion_aprobada_ia: string;
   thumbnail_color: string;
   thumbnail_url?: string;
@@ -72,6 +73,29 @@ export interface GlobalMetrics {
 
 type CalendarView = 'month' | 'week' | 'day';
 
+// ─── Helpers de tags para persistencia en descripcion_aprobada_ia ────────────
+export function buildDescriptionWithTags(
+  desc: string | undefined | null,
+  fileName?: string | null,
+  ytTitle?: string | null
+): string {
+  let clean = (desc || '')
+    .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+    .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+    .trim();
+
+  const tags: string[] = [];
+  if (fileName && fileName.trim()) {
+    tags.push(`<!--FILE_NAME:${fileName.trim()}-->`);
+  }
+  if (ytTitle && ytTitle.trim()) {
+    tags.push(`<!--YT_TITLE:${ytTitle.trim()}-->`);
+  }
+
+  if (tags.length === 0) return clean;
+  return `${tags.join('\n')}\n${clean}`.trim();
+}
+
 // ─── Mappers Supabase → dominio ───────────────────────────────────────────────
 function mapAccount(row: any): Account {
   return {
@@ -100,21 +124,43 @@ function mapCampaign(row: any): Campaign {
 
 function mapVideo(row: any): Video {
   let rawDesc = row.descripcion_aprobada_ia ?? '';
-  let ytTitle: string | undefined = row.titulo_youtube || undefined;
-  if (!ytTitle && rawDesc) {
-    const match = rawDesc.match(/<!--YT_TITLE:(.*?)-->/);
-    if (match) {
-      ytTitle = match[1];
+  let fileName: string | undefined = row.nombre_archivo || undefined;
+  if (!fileName && rawDesc) {
+    const matchFile = rawDesc.match(/<!--FILE_NAME:(.*?)-->/);
+    if (matchFile) {
+      fileName = matchFile[1].trim();
     }
   }
-  const cleanDesc = rawDesc ? rawDesc.replace(/<!--YT_TITLE:.*?-->\s*/, '') : '';
+
+  let ytTitle: string | undefined = row.titulo_youtube || undefined;
+  if (!ytTitle && rawDesc) {
+    const matchYt = rawDesc.match(/<!--YT_TITLE:(.*?)-->/);
+    if (matchYt) {
+      ytTitle = matchYt[1].trim();
+    }
+  }
+
+  // Retrocompatibilidad con publicaciones guardadas previamente:
+  // Si ytTitle existe y es distinto de row.titulo, row.titulo contenía el nombre de archivo
+  let canonicalTitle = row.titulo;
+  if (ytTitle && ytTitle !== row.titulo) {
+    if (!fileName) {
+      fileName = row.titulo;
+    }
+    canonicalTitle = ytTitle;
+  }
+
+  const cleanDesc = rawDesc
+    ? rawDesc.replace(/<!--FILE_NAME:.*?-->\s*/g, '').replace(/<!--YT_TITLE:.*?-->\s*/g, '').trim()
+    : '';
 
   return {
     id: row.id,
     cuenta_id: row.cuenta_id,
     campana_id: row.campana_id ?? '',
-    titulo: row.titulo,
-    titulo_youtube: ytTitle,
+    titulo: canonicalTitle,
+    titulo_youtube: ytTitle || (canonicalTitle !== fileName ? canonicalTitle : undefined),
+    nombre_archivo: fileName || undefined,
     descripcion_aprobada_ia: cleanDesc,
     thumbnail_color: row.thumbnail_color ?? '#10b981',
     thumbnail_url: row.thumbnail_url ?? (row.thumbnail_color && (row.thumbnail_color.startsWith('http') || row.thumbnail_color.startsWith('data:image')) ? row.thumbnail_color : undefined),
@@ -522,12 +568,18 @@ const useAppStoreBase = create<AppState>((set, get) => ({
   // ── Videos ────────────────────────────────────────────────────────────────
   addVideo: async (video) => {
     const db = getSupabase();
+    const finalDesc = buildDescriptionWithTags(
+      video.descripcion_aprobada_ia,
+      video.nombre_archivo,
+      video.titulo_youtube || video.titulo
+    );
+
     const row: any = {
       id: video.id,
       cuenta_id: video.cuenta_id,
       campana_id: video.campana_id || null,
       titulo: video.titulo,
-      descripcion_aprobada_ia: video.descripcion_aprobada_ia,
+      descripcion_aprobada_ia: finalDesc,
       thumbnail_color: video.thumbnail_color,
       drive_file_url: video.drive_file_url,
       programado_para: video.programado_para.toISOString(),
@@ -537,6 +589,9 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       auto_reprogramacion: video.auto_reprogramacion,
       reintentos_alerta: video.reintentos_alerta,
     };
+    if (video.nombre_archivo) {
+      row.nombre_archivo = video.nombre_archivo;
+    }
     if (video.titulo_youtube) {
       row.titulo_youtube = video.titulo_youtube;
     }
@@ -547,11 +602,12 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     let { error: insErr } = await db.from('publicaciones').insert(row);
     if (insErr) {
       console.warn('[addVideo] Error inicial insertando en publicaciones:', insErr.message);
-      // Reintento 0: Si falló por columna titulo_youtube inexistente
-      if (row.titulo_youtube) {
+      // Reintento 0: Si falló por columnas adicionales inexistentes (nombre_archivo, titulo_youtube)
+      if (row.nombre_archivo || row.titulo_youtube) {
+        delete row.nombre_archivo;
         delete row.titulo_youtube;
-        const resYt = await db.from('publicaciones').insert(row);
-        insErr = resYt.error;
+        const resCols = await db.from('publicaciones').insert(row);
+        insErr = resCols.error;
       }
       // Reintento 1: Si falló por tamaño o formato de miniatura
       if (insErr && row.thumbnail_url) {
@@ -575,12 +631,13 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       if (s.videos.some((v) => v.id === video.id)) {
         return s;
       }
-      // 2. Evitar clones accidentales generados con milisegundos de diferencia por doble clic (mismo cuenta_id, mismo titulo, misma fecha programada)
+      // 2. Evitar clones accidentales generados con milisegundos de diferencia por doble clic
       const progTime = new Date(video.programado_para).getTime();
       const isClone = s.videos.some(
         (v) =>
           v.cuenta_id === video.cuenta_id &&
-          v.titulo.toLowerCase().trim() === video.titulo.toLowerCase().trim() &&
+          (v.titulo.toLowerCase().trim() === video.titulo.toLowerCase().trim() ||
+           (v.nombre_archivo && video.nombre_archivo && v.nombre_archivo.toLowerCase().trim() === video.nombre_archivo.toLowerCase().trim())) &&
           Math.abs(new Date(v.programado_para).getTime() - progTime) < 10000
       );
       if (isClone) {
@@ -605,8 +662,6 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       const progDate = new Date(finalUpdates.programado_para);
       if (!isNaN(progDate.getTime()) && progDate.getTime() > Date.now()) {
         isRescheduledToFuture = true;
-        // Si la nueva fecha es posterior a la hora actual del dispositivo,
-        // el estatus pasa automáticamente a PROGRAMADO y se resetean envíos previos
         finalUpdates.estado = 'PROGRAMADO';
         finalUpdates.enviado_en = undefined;
         finalUpdates.publicado_en = undefined;
@@ -614,10 +669,18 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       }
     }
 
+    const currentVideo = get().videos.find((v) => v.id === id);
+    const targetDesc = finalUpdates.descripcion_aprobada_ia !== undefined ? finalUpdates.descripcion_aprobada_ia : currentVideo?.descripcion_aprobada_ia;
+    const targetFileName = finalUpdates.nombre_archivo !== undefined ? finalUpdates.nombre_archivo : currentVideo?.nombre_archivo;
+    const targetYtTitle = finalUpdates.titulo_youtube !== undefined ? finalUpdates.titulo_youtube : (finalUpdates.titulo || currentVideo?.titulo_youtube || currentVideo?.titulo);
+
+    const descWithTags = buildDescriptionWithTags(targetDesc, targetFileName, targetYtTitle);
+
     const dbUpdates: any = {};
     if (finalUpdates.titulo !== undefined) dbUpdates.titulo = finalUpdates.titulo;
+    if (finalUpdates.nombre_archivo !== undefined) dbUpdates.nombre_archivo = finalUpdates.nombre_archivo;
     if (finalUpdates.titulo_youtube !== undefined) dbUpdates.titulo_youtube = finalUpdates.titulo_youtube;
-    if (finalUpdates.descripcion_aprobada_ia !== undefined) dbUpdates.descripcion_aprobada_ia = finalUpdates.descripcion_aprobada_ia;
+    dbUpdates.descripcion_aprobada_ia = descWithTags;
     if (finalUpdates.estado !== undefined) dbUpdates.estado = finalUpdates.estado;
     if (finalUpdates.programado_para !== undefined) dbUpdates.programado_para = (finalUpdates.programado_para as Date).toISOString();
     if (finalUpdates.enviado_en !== undefined) dbUpdates.enviado_en = (finalUpdates.enviado_en as Date | undefined)?.toISOString() ?? null;
@@ -646,10 +709,11 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     }
 
     let { error: updErr } = await db.from('publicaciones').update(dbUpdates).eq('id', id);
-    if (updErr && dbUpdates.titulo_youtube) {
+    if (updErr && (dbUpdates.nombre_archivo || dbUpdates.titulo_youtube)) {
+      delete dbUpdates.nombre_archivo;
       delete dbUpdates.titulo_youtube;
-      const resYt = await db.from('publicaciones').update(dbUpdates).eq('id', id);
-      updErr = resYt.error;
+      const resCols = await db.from('publicaciones').update(dbUpdates).eq('id', id);
+      updErr = resCols.error;
     }
     if (updErr && dbUpdates.thumbnail_url) {
       console.warn('[updateVideo] Error actualizando con thumbnail_url, reintentando sin él:', updErr.message);
@@ -666,9 +730,19 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     }
 
     set((s) => {
+      const cleanDesc = (targetDesc || '')
+        .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+        .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+        .trim();
+
       const videos = s.videos.map((v) => {
         if (v.id === id) {
-          const updated = { ...v, ...finalUpdates };
+          const updated = {
+            ...v,
+            ...finalUpdates,
+            nombre_archivo: targetFileName,
+            descripcion_aprobada_ia: cleanDesc,
+          };
           if (updated.thumbnail_url && updated.thumbnail_url.startsWith('data:')) {
             updated.thumbnail_url = undefined;
           }

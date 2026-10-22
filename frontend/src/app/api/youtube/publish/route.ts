@@ -619,7 +619,7 @@ export async function POST(req: NextRequest) {
     // YouTube categoriza como Short cuando:
     // 1. El video es vertical / cuadrado (duración <= 3min).
     // 2. Se incluye explícitamente el hashtag #Shorts en el título y/o descripción.
-    let shortTitle = (titulo_youtube || titulo || '').trim();
+    let shortTitle = (titulo_youtube || titulo || '').replace(/<!--.*?-->/g, '').trim();
     if (!/#shorts\b/i.test(shortTitle)) {
       shortTitle = `${shortTitle} #Shorts`;
     }
@@ -628,7 +628,10 @@ export async function POST(req: NextRequest) {
       shortTitle = shortTitle.slice(0, 92).trim() + ' #Shorts';
     }
 
-    let shortDesc = (descripcion || '').trim();
+    let shortDesc = (descripcion || '')
+      .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+      .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+      .trim();
     if (!/#shorts\b/i.test(shortDesc)) {
       shortDesc = shortDesc ? `${shortDesc}\n\n#Shorts` : '#Shorts';
     }

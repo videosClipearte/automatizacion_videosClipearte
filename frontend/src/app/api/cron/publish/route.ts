@@ -180,7 +180,7 @@ export async function GET(request: Request) {
               video_url: video.drive_file_url,
               titulo: effectiveYtTitle || video.titulo,
               titulo_youtube: effectiveYtTitle,
-              descripcion: video.descripcion_aprobada_ia ? video.descripcion_aprobada_ia.replace(/<!--YT_TITLE:.*?-->\s*/, '') : video.titulo,
+              descripcion: video.descripcion_aprobada_ia ? video.descripcion_aprobada_ia.replace(/<!--.*?-->\s*/g, '').trim() : video.titulo,
               thumbnail_url: video.thumbnail_url,
               tags: video.hashtags ? String(video.hashtags).split(' ').filter(Boolean).map((t: string) => t.replace('#', '')) : [],
               privacidad: 'public',

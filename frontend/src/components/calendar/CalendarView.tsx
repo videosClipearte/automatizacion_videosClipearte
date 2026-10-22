@@ -244,7 +244,7 @@ export function CalendarView() {
 
     for (const v of videos) {
       if (seenVideoIds.has(v.id)) continue;
-      const cloneKey = `${v.cuenta_id}_${v.titulo.toLowerCase().trim()}_${new Date(v.programado_para).getTime()}`;
+      const cloneKey = `${v.cuenta_id}_${(v.nombre_archivo || v.titulo).toLowerCase().trim()}_${new Date(v.programado_para).getTime()}`;
       if (seenVideoIds.has(cloneKey)) continue;
       seenVideoIds.add(v.id);
       seenVideoIds.add(cloneKey);
@@ -589,7 +589,7 @@ export function CalendarView() {
                                   ? "bg-red-500/10 border-red-500/40 text-red-200"
                                   : "bg-white/[0.04] hover:bg-white/[0.08] border-[var(--border)] hover:border-emerald-500/40 text-white"
                               )}
-                              title={`${video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${
+                              title={`${video.nombre_archivo || video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${
                                 isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado
                               }`}
                             >
@@ -609,7 +609,7 @@ export function CalendarView() {
                                 {format(new Date(video.programado_para), 'HH:mm')}
                               </span>
                               <span className="text-[9px] font-medium truncate flex-1 group-hover/chip:text-emerald-300">
-                                {video.titulo}
+                                {video.nombre_archivo || video.titulo}
                               </span>
                               {isDriveUploading && (
                                 <span className="text-[8px] px-1 py-0 rounded bg-cyan-500/25 text-cyan-200 border border-cyan-400/40 font-bold shrink-0 flex items-center gap-0.5">
@@ -783,7 +783,7 @@ export function CalendarView() {
                                 </div>
                               </div>
                               <p className="text-xs font-semibold text-white truncate group-hover:text-emerald-300 mb-1.5">
-                                {video.titulo}
+                                {video.nombre_archivo || video.titulo}
                               </p>
 
                               {/* Si está subiendo a Google Drive: barra y porcentaje */}
@@ -958,7 +958,7 @@ export function CalendarView() {
                                       <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
                                         {format(new Date(video.programado_para), 'HH:mm')}
                                       </span>
-                                      <span className="text-xs font-bold text-white truncate">{video.titulo}</span>
+                                      <span className="text-xs font-bold text-white truncate">{video.nombre_archivo || video.titulo}</span>
                                       <span className="text-[10px] text-[var(--text-muted)]">@{acct?.username}</span>
                                     </div>
                                     <p className="text-[11px] text-[var(--text-secondary)] line-clamp-1 max-w-lg">

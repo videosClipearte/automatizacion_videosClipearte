@@ -48,7 +48,7 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
         {video.thumbnail_url ? (
           <img
             src={video.thumbnail_url}
-            alt={video.titulo}
+            alt={video.nombre_archivo || video.titulo}
             className="w-full h-full object-cover rounded-full"
           />
         ) : (
