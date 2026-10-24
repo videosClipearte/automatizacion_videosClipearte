@@ -75,12 +75,14 @@ export function PublicationScheduler() {
       const now = new Date();
       const currentVideos = videosRef.current;
 
-      // Desbloquear videos que estén PROGRAMADOS y cuya fecha sea futura (ej. fueron reprogramados)
+      // Desbloquear videos que estén PROGRAMADOS y cuya fecha sea futura o no hayan sido enviados aún
       currentVideos.forEach((v) => {
-        if (v.estado === 'PROGRAMADO' && new Date(v.programado_para).getTime() > now.getTime()) {
-          processingRef.current.delete(v.id);
-          alertedDelaysRef.current.delete(v.id);
-          alertedDelaysRef.current.delete(`scraped_verify_${v.id}`);
+        if (v.estado === 'PROGRAMADO') {
+          if (!v.enviado_en || new Date(v.programado_para).getTime() > now.getTime()) {
+            processingRef.current.delete(v.id);
+            alertedDelaysRef.current.delete(v.id);
+            alertedDelaysRef.current.delete(`scraped_verify_${v.id}`);
+          }
         }
       });
 
@@ -219,6 +221,20 @@ export function PublicationScheduler() {
           if (!isYoutube) {
             // ── Plataformas manuales (Instagram, TikTok): Despachar a Telegram y crear encuesta ──
             if (botToken && targetChat) {
+              const cleanDesc = (video.descripcion_aprobada_ia || '')
+                .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+                .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+                .replace(/<!--.*?-->\s*/g, '')
+                .trim();
+
+              // Si la descripción en la BD contenía etiquetas para una cuenta no-YouTube, limpiarla en Supabase
+              if (cleanDesc !== video.descripcion_aprobada_ia) {
+                db.from('publicaciones')
+                  .update({ descripcion_aprobada_ia: cleanDesc, nombre_archivo: null, titulo_youtube: null })
+                  .eq('id', video.id)
+                  .then(() => {});
+              }
+
               // Paso 1: ficha del video + descripción (2 mensajes)
               const sendRes = await sendPublicationAlert(botToken, targetChat, {
                 videoTitle: video.titulo,
@@ -226,7 +242,7 @@ export function PublicationScheduler() {
                 platform: account?.plataforma || 'tiktok',
                 campaignName: campaign?.nombre,
                 driveFileUrl: video.drive_file_url,
-                descripcion: video.descripcion_aprobada_ia,
+                descripcion: cleanDesc,
                 programadoPara: horaLocal,
               });
 

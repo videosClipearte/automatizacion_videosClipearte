@@ -37,6 +37,7 @@ import { sendPublicationAlert } from '@/lib/services/telegramService';
 import {
   getGoogleDriveToken,
   uploadVideoToGoogleDrive,
+  deleteGoogleDriveFile,
   requestGoogleDriveOAuthToken,
   getPendingDriveUpload,
   unregisterPendingDriveUpload,
@@ -443,76 +444,155 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     setEditFeedback(null);
 
     let finalDriveUrl = editDriveUrl.trim();
+    let oldDriveUrlToDelete: string | null = null;
+    let driveUploadDone = false;
 
-    // Si se cargó un archivo de reemplazo y hay Drive configurado, intentar subirlo
+    const finalFileName = editFileName.trim() || video.nombre_archivo || video.titulo;
+    const finalYtTitle = editShortTitle.trim() || (video.titulo_youtube || video.titulo);
+
+    // Si se cargó un archivo de reemplazo y hay Drive configurado, subirlo y eliminar el anterior
     if (replacementFile) {
       let cfg = getCachedConfig();
-      if (!cfg.drive_folder_id) {
+      if (!cfg.drive_folder_id || !cfg.drive_client_id) {
         cfg = await loadAppConfig();
       }
 
       const folderId = cfg.drive_folder_id;
       let token = getGoogleDriveToken();
 
-      if (token && folderId) {
-        const uploadRes = await uploadVideoToGoogleDrive(
-          replacementFile,
-          folderId,
-          token,
-          (pct) => setUploadProgress(pct)
-        );
-        if (uploadRes.success && uploadRes.fileUrl) {
-          finalDriveUrl = uploadRes.fileUrl;
-        } else {
-          setSavingEdit(false);
-          setEditFeedback({ success: false, msg: `❌ Error al subir a Drive: ${uploadRes.error}` });
-          createNotification({
-            tipo: 'error',
-            titulo: 'Fallo al actualizar video en Drive',
-            mensaje: `El video "${video.titulo}" no se pudo subir a Drive: ${uploadRes.error}.`,
-            cuenta_id: editCuentaId,
-            video_id: video.id,
-            origen: 'drive',
-          });
-          return;
+      if (!token && cfg.drive_client_id) {
+        const authRes = await requestGoogleDriveOAuthToken(cfg.drive_client_id);
+        if (authRes.success && authRes.token) {
+          token = authRes.token;
         }
+      }
+
+      if (!token) {
+        setSavingEdit(false);
+        setEditFeedback({
+          success: false,
+          msg: '⚠️ Se seleccionó un nuevo video pero Google Drive no está conectado o la sesión expiró. Conecta Google Drive en Configuración.',
+        });
+        return;
+      }
+
+      if (!folderId) {
+        setSavingEdit(false);
+        setEditFeedback({
+          success: false,
+          msg: '⚠️ Falta configurar el ID de la carpeta de Google Drive en Configuración → Integraciones.',
+        });
+        return;
+      }
+
+      const uploadRes = await uploadVideoToGoogleDrive(
+        replacementFile,
+        folderId,
+        token,
+        (pct) => setUploadProgress(pct),
+        3,
+        finalFileName
+      );
+
+      if (uploadRes.success && uploadRes.fileUrl) {
+        const prevUrl = video.drive_file_url;
+        finalDriveUrl = uploadRes.fileUrl;
+        driveUploadDone = true;
+        unregisterPendingDriveUpload(video.id);
+        useAppStore.getState().setDriveUploadComplete(video.id);
+
+        // Si existía un video anterior en Drive y es diferente al nuevo, marcar para eliminar
+        if (prevUrl && prevUrl !== '#' && prevUrl !== uploadRes.fileUrl) {
+          oldDriveUrlToDelete = prevUrl;
+        }
+      } else {
+        setSavingEdit(false);
+        setEditFeedback({ success: false, msg: `❌ Error al subir el nuevo video a Drive: ${uploadRes.error}` });
+        createNotification({
+          tipo: 'error',
+          titulo: 'Fallo al actualizar video en Drive',
+          mensaje: `El video "${finalFileName}" no se pudo subir a Drive: ${uploadRes.error}.`,
+          cuenta_id: editCuentaId,
+          video_id: video.id,
+          origen: 'drive',
+        });
+        return;
+      }
+    }
+
+    // Si se subió un nuevo video a Drive, eliminar de inmediato el video anterior en Google Drive
+    if (oldDriveUrlToDelete) {
+      console.log(`[VideoDetailModal] Eliminando video anterior en Google Drive: ${oldDriveUrlToDelete}`);
+      try {
+        const delRes = await deleteGoogleDriveFile(oldDriveUrlToDelete);
+        if (delRes.success) {
+          console.log('[VideoDetailModal] ✅ Video anterior eliminado de Google Drive con éxito.');
+        } else {
+          console.warn('[VideoDetailModal] Aviso al eliminar video anterior de Drive:', delRes.error);
+        }
+      } catch (delErr) {
+        console.warn('[VideoDetailModal] Error eliminando archivo viejo en Drive:', delErr);
       }
     }
 
     const newProgDate = new Date(`${editFecha}T${editHora}`);
     const isFuture = !isNaN(newProgDate.getTime()) && newProgDate.getTime() > Date.now();
 
-    const finalFileName = editFileName.trim() || video.nombre_archivo || video.titulo;
-    const finalYtTitle = editShortTitle.trim() || (video.titulo_youtube || video.titulo);
+    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
+    const cleanDesc = (editDescripcion || '')
+      .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+      .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+      .replace(/<!--.*?-->\s*/g, '')
+      .trim();
 
     const updates: any = {
-      nombre_archivo: finalFileName,
-      titulo: account?.plataforma === 'youtube' ? finalYtTitle : (editTitle.trim() || video.titulo),
-      titulo_youtube: account?.plataforma === 'youtube' ? finalYtTitle : undefined,
+      nombre_archivo: isYouTube ? finalFileName : undefined,
+      titulo: isYouTube ? finalFileName : (editTitle.trim() || video.titulo),
+      titulo_youtube: isYouTube ? finalYtTitle : undefined,
       cuenta_id: editCuentaId,
       campana_id: editCampanaId,
       programado_para: newProgDate,
-      descripcion_aprobada_ia: editDescripcion,
+      descripcion_aprobada_ia: isYouTube ? editDescripcion : cleanDesc,
       drive_file_url: finalDriveUrl,
       post_url_publica: editReelUrl.trim() || video.post_url_publica || undefined,
     };
 
-    if (isFuture) {
+    // Al actualizar un video programado (o reprogramar a futuro o reemplazar el video),
+    // se reactiva el envío reseteando enviado_en, publicado_en y reintentos_alerta
+    const shouldBeScheduled = video.estado === 'PROGRAMADO' || isFuture || Boolean(replacementFile);
+
+    if (shouldBeScheduled) {
       updates.estado = 'PROGRAMADO';
-      updates.enviado_en = undefined;
-      updates.publicado_en = undefined;
+      updates.enviado_en = null;
+      updates.publicado_en = null;
       updates.reintentos_alerta = 0;
     }
 
     await updateVideo(video.id, updates);
 
+    setReplacementFile(null);
+    setUploadProgress(0);
     setSavingEdit(false);
     setIsEditing(false);
+
+    let feedbackMsg = '✅ Publicación y video actualizados con éxito.';
+    if (driveUploadDone) {
+      feedbackMsg = '✅ Nuevo video subido y guardado en Google Drive. El video anterior fue eliminado de Drive y la publicación se volverá a enviar con el nuevo video.';
+      createNotification({
+        tipo: 'success',
+        titulo: 'Nuevo video guardado en Drive',
+        mensaje: `"${finalFileName}" guardado en Drive y el archivo anterior fue eliminado.`,
+        cuenta_id: editCuentaId,
+        video_id: video.id,
+        origen: 'drive',
+      });
+    } else if (isFuture) {
+      feedbackMsg = '✅ Fecha reprogramada a futuro. El estado cambió a PROGRAMADO y se volverá a enviar a Telegram en la fecha programada.';
+    }
+
     setEditFeedback({
       success: true,
-      msg: isFuture
-        ? '✅ Fecha reprogramada a futuro. El estado cambió a PROGRAMADO y se volverá a enviar a Telegram en la fecha programada.'
-        : '✅ Publicación y video actualizados con éxito.',
+      msg: feedbackMsg,
     });
   };
 
@@ -545,14 +625,21 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       const finalFileName = editFileName.trim() || video.nombre_archivo || video.titulo;
       const finalYtTitle = editShortTitle.trim() || (video.titulo_youtube || video.titulo);
 
+      const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
+      const cleanDesc = (editDescripcion || '')
+        .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+        .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+        .replace(/<!--.*?-->\s*/g, '')
+        .trim();
+
       const baseUpdates: any = {
-        nombre_archivo: finalFileName,
-        titulo: account?.plataforma === 'youtube' ? finalYtTitle : (editTitle.trim() || video.titulo),
-        titulo_youtube: account?.plataforma === 'youtube' ? finalYtTitle : undefined,
+        nombre_archivo: isYouTube ? finalFileName : undefined,
+        titulo: isYouTube ? finalFileName : (editTitle.trim() || video.titulo),
+        titulo_youtube: isYouTube ? finalYtTitle : undefined,
         cuenta_id: editCuentaId,
         campana_id: editCampanaId,
         programado_para: !isNaN(newProgDate.getTime()) ? newProgDate : video.programado_para,
-        descripcion_aprobada_ia: editDescripcion,
+        descripcion_aprobada_ia: isYouTube ? editDescripcion : cleanDesc,
         drive_file_url: editDriveUrl.trim(),
         post_url_publica: finalReelUrl,
       };
@@ -642,13 +729,19 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         return;
       }
 
+      const cleanDesc = (video.descripcion_aprobada_ia || '')
+        .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+        .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+        .replace(/<!--.*?-->\s*/g, '')
+        .trim();
+
       const res = await sendPublicationAlert(botToken, targetChat, {
         videoTitle: video.titulo,
         accountUsername: account?.username || 'cuenta',
         platform: account?.plataforma || 'red',
         campaignName: campaign?.nombre,
         driveFileUrl: video.drive_file_url,
-        descripcion: video.descripcion_aprobada_ia,
+        descripcion: cleanDesc,
         programadoPara: format(new Date(video.programado_para), 'yyyy-MM-dd HH:mm')
       });
 
@@ -734,18 +827,41 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       const folderId = pending?.folderId || cfg.drive_folder_id;
 
       useAppStore.getState().setDriveUploadProgress(video.id, 1);
-      const res = await uploadVideoToGoogleDrive(fileToUpload, folderId, token, (pct) => {
-        useAppStore.getState().setDriveUploadProgress(video.id, pct);
-      });
+      const res = await uploadVideoToGoogleDrive(
+        fileToUpload,
+        folderId,
+        token,
+        (pct) => {
+          useAppStore.getState().setDriveUploadProgress(video.id, pct);
+        },
+        3,
+        video.nombre_archivo || video.titulo
+      );
 
       if (res.success && res.fileUrl) {
+        const oldDriveUrl = video.drive_file_url;
         unregisterPendingDriveUpload(video.id);
         useAppStore.getState().setDriveUploadComplete(video.id);
-        await updateVideo(video.id, { drive_file_url: res.fileUrl });
+        await updateVideo(video.id, {
+          drive_file_url: res.fileUrl,
+          ...(video.estado === 'PROGRAMADO'
+            ? { enviado_en: null, publicado_en: null, reintentos_alerta: 0 }
+            : {}),
+        });
+
+        // Eliminar video previo en Google Drive si existía y es diferente al nuevo
+        if (oldDriveUrl && oldDriveUrl !== '#' && oldDriveUrl !== res.fileUrl) {
+          try {
+            await deleteGoogleDriveFile(oldDriveUrl, token);
+          } catch (delErr) {
+            console.warn('[VideoDetailModal] Error eliminando archivo anterior en Drive:', delErr);
+          }
+        }
+
         createNotification({
           tipo: 'success',
           titulo: 'Video subido a Google Drive',
-          mensaje: `"${video.titulo}" se subió exitosamente a Drive.`,
+          mensaje: `"${video.titulo}" se subió exitosamente a Drive${oldDriveUrl && oldDriveUrl !== '#' && oldDriveUrl !== res.fileUrl ? ' y el video anterior fue eliminado' : ''}.`,
           video_id: video.id,
           cuenta_id: video.cuenta_id,
           origen: 'drive',

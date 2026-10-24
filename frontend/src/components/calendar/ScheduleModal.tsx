@@ -670,6 +670,12 @@ function ScheduleModalDialog() {
         }
       }
 
+      const cleanDesc = (data.descripcion || '')
+        .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+        .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+        .replace(/<!--.*?-->\s*/g, '')
+        .trim();
+
       // ── 1. Crear el video con el nombre de archivo para la app y el título para YouTube ──
       const newVideo: Video = {
         id: newVideoId,
@@ -677,8 +683,8 @@ function ScheduleModalDialog() {
         campana_id: data.campana_id,
         titulo: officialTitle,
         titulo_youtube: isYouTube ? cleanShortTitle : undefined,
-        nombre_archivo: finalFileName,
-        descripcion_aprobada_ia: data.descripcion || '',
+        nombre_archivo: isYouTube ? finalFileName : undefined,
+        descripcion_aprobada_ia: isYouTube ? (data.descripcion || '') : cleanDesc,
         thumbnail_color: isYouTube ? '#ef4444' : '#10b981',
         thumbnail_url: undefined,
         drive_file_url: initialDriveUrl,

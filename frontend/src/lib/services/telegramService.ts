@@ -288,7 +288,12 @@ export async function sendPublicationAlert(
   const safeUsername = escapeHtml(data.accountUsername);
   const safePlatform = escapeHtml(data.platform.toUpperCase());
   const safeTitle = escapeHtml(data.videoTitle);
-  const safeDesc = escapeHtml(data.descripcion || '');
+  const cleanDescription = (data.descripcion || '')
+    .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+    .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+    .replace(/<!--.*?-->\s*/g, '')
+    .trim();
+  const safeDesc = escapeHtml(cleanDescription);
   const hasDescription = safeDesc.trim().length > 0;
 
   const descNotice = hasDescription

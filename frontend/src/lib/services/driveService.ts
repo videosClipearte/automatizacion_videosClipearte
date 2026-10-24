@@ -359,14 +359,110 @@ export interface StartBackgroundUploadParams {
   folderId: string;
   token: string;
   cuentaId?: string;
+  oldDriveUrl?: string;
+}
+
+/**
+ * Extrae el identificador único (File ID) de un archivo en Google Drive
+ * a partir de su URL (/file/d/..., ?id=...) o directamente el ID.
+ */
+export function extractDriveFileId(urlOrId: string): string | null {
+  if (!urlOrId || typeof urlOrId !== 'string') return null;
+  const trimmed = urlOrId.trim();
+  if (trimmed === '#' || trimmed.length < 5) return null;
+
+  // Formato /file/d/ID/view o /file/d/ID
+  const matchView = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchView && matchView[1]) {
+    return matchView[1];
+  }
+
+  // Formato /open?id=ID o ?id=ID o &id=ID
+  const matchId = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1]) {
+    return matchId[1];
+  }
+
+  // Si ya es un ID alfanumérico directo
+  if (!trimmed.includes('/') && !trimmed.includes('?') && /^[a-zA-Z0-9_-]{15,60}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+/**
+ * Elimina un archivo de Google Drive dado su URL o File ID.
+ * Se apoya primero en /api/drive/delete para evitar problemas de CORS del navegador,
+ * con fallback a llamada REST directa a Google Drive API v3.
+ */
+export async function deleteGoogleDriveFile(
+  fileUrlOrId: string,
+  accessToken?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const fileId = extractDriveFileId(fileUrlOrId);
+    if (!fileId) {
+      return { success: false, error: 'URL o ID de Google Drive inválido' };
+    }
+
+    const token = accessToken || getGoogleDriveToken();
+    if (!token) {
+      return { success: false, error: 'No hay token de autenticación de Google Drive para eliminar el archivo' };
+    }
+
+    console.log(`[driveService] Eliminando archivo anterior en Google Drive (ID: ${fileId})...`);
+
+    // 1. Intentar a través del endpoint API interno (seguro sin CORS)
+    try {
+      const apiRes = await fetch('/api/drive/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId, accessToken: token }),
+      });
+      const data = await apiRes.json().catch(() => ({}));
+      if (apiRes.ok && data.success) {
+        console.log(`[driveService] ✅ Archivo anterior en Google Drive (${fileId}) eliminado con éxito vía API.`);
+        return { success: true };
+      }
+      if (apiRes.status === 404) {
+        console.log(`[driveService] Archivo en Google Drive (${fileId}) no encontrado o ya eliminado.`);
+        return { success: true };
+      }
+    } catch (apiErr) {
+      console.warn('[driveService] Error llamando a /api/drive/delete, intentando llamada directa:', apiErr);
+    }
+
+    // 2. Fallback: Llamada directa a REST API v3
+    const directRes = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token.trim()}`,
+      },
+    });
+
+    if (directRes.status === 204 || directRes.status === 200 || directRes.ok || directRes.status === 404) {
+      console.log(`[driveService] ✅ Archivo anterior (${fileId}) eliminado directamente en Google Drive.`);
+      return { success: true };
+    }
+
+    const errJson = await directRes.json().catch(() => ({}));
+    const errMsg = errJson.error?.message || `HTTP ${directRes.status} al eliminar en Google Drive`;
+    console.warn(`[driveService] No se pudo eliminar archivo (${fileId}) en Drive:`, errMsg);
+    return { success: false, error: errMsg };
+  } catch (err: any) {
+    console.error('[driveService] Excepción al eliminar archivo en Google Drive:', err);
+    return { success: false, error: err?.message || 'Error al eliminar archivo en Google Drive' };
+  }
 }
 
 /**
  * Ejecuta la subida de un video (y miniatura) a Google Drive en segundo plano,
  * totalmente fuera de los componentes React para liberar memoria y evitar retención por closures.
+ * Si se especifica `oldDriveUrl`, tras la subida exitosa elimina el archivo anterior en Drive.
  */
 export async function startBackgroundDriveUpload(params: StartBackgroundUploadParams): Promise<void> {
-  const { videoId, videoTitle, customFileName, file, thumbFile, folderId, token, cuentaId } = params;
+  const { videoId, videoTitle, customFileName, file, thumbFile, folderId, token, cuentaId, oldDriveUrl } = params;
 
   // Registrar para posibles reintentos en PublicationScheduler
   registerPendingDriveUpload(videoId, {
@@ -414,6 +510,16 @@ export async function startBackgroundDriveUpload(params: StartBackgroundUploadPa
         ...(finalThumbnailUrl ? { thumbnail_url: finalThumbnailUrl } : {}),
       });
       useAppStore.getState().setDriveUploadComplete(videoId);
+
+      // Si había un video previo en Drive y es diferente al nuevo, eliminar el anterior
+      if (oldDriveUrl && oldDriveUrl !== '#' && oldDriveUrl !== uploadRes.fileUrl) {
+        try {
+          await deleteGoogleDriveFile(oldDriveUrl, token);
+        } catch (delErr) {
+          console.warn('[driveService] No se pudo eliminar video anterior tras subida en background:', delErr);
+        }
+      }
+
       createNotification({
         tipo: 'success',
         titulo: 'Video subido a Google Drive',
@@ -443,4 +549,5 @@ export async function startBackgroundDriveUpload(params: StartBackgroundUploadPa
     });
   }
 }
+
 

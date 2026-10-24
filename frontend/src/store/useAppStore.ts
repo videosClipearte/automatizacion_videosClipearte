@@ -48,8 +48,8 @@ export interface Video {
   thumbnail_url?: string;
   drive_file_url: string;
   programado_para: Date;
-  enviado_en?: Date;
-  publicado_en?: Date;
+  enviado_en?: Date | null;
+  publicado_en?: Date | null;
   estado: VideoStatus;
   vistas_obtenidas: number;
   ganancias_estimadas: number;
@@ -82,17 +82,20 @@ export function buildDescriptionWithTags(
   let clean = (desc || '')
     .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
     .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+    .replace(/<!--.*?-->\s*/g, '')
     .trim();
+
+  // Las etiquetas FILE_NAME y YT_TITLE solo deben existir para videos programados para YouTube
+  if (!ytTitle || !ytTitle.trim()) {
+    return clean;
+  }
 
   const tags: string[] = [];
   if (fileName && fileName.trim()) {
     tags.push(`<!--FILE_NAME:${fileName.trim()}-->`);
   }
-  if (ytTitle && ytTitle.trim()) {
-    tags.push(`<!--YT_TITLE:${ytTitle.trim()}-->`);
-  }
+  tags.push(`<!--YT_TITLE:${ytTitle.trim()}-->`);
 
-  if (tags.length === 0) return clean;
   return `${tags.join('\n')}\n${clean}`.trim();
 }
 
@@ -532,6 +535,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
       if (!error && data) {
         const rawVideos = data.map(mapVideo);
+        const accounts = get().accounts;
         const seenVideoKeys = new Set<string>();
         const videos: Video[] = [];
         for (const v of rawVideos) {
@@ -540,6 +544,21 @@ const useAppStoreBase = create<AppState>((set, get) => ({
           if (seenVideoKeys.has(cloneKey)) continue;
           seenVideoKeys.add(v.id);
           seenVideoKeys.add(cloneKey);
+
+          // Si el video pertenece a una cuenta que NO es de YouTube, asegurar que no tenga tags de YouTube
+          const acct = accounts.find((a) => a.id === v.cuenta_id);
+          if (acct && acct.plataforma !== 'youtube') {
+            v.titulo_youtube = undefined;
+            v.nombre_archivo = undefined;
+            const origRow = data.find((r: any) => r.id === v.id);
+            if (origRow && (origRow.descripcion_aprobada_ia?.includes('<!--FILE_NAME:') || origRow.descripcion_aprobada_ia?.includes('<!--YT_TITLE:'))) {
+              db.from('publicaciones')
+                .update({ descripcion_aprobada_ia: v.descripcion_aprobada_ia })
+                .eq('id', v.id)
+                .then(() => {});
+            }
+          }
+
           videos.push(v);
         }
         set({
@@ -568,11 +587,20 @@ const useAppStoreBase = create<AppState>((set, get) => ({
   // ── Videos ────────────────────────────────────────────────────────────────
   addVideo: async (video) => {
     const db = getSupabase();
-    const finalDesc = buildDescriptionWithTags(
-      video.descripcion_aprobada_ia,
-      video.nombre_archivo,
-      video.titulo_youtube || video.titulo
-    );
+    const account = get().accounts.find((a) => a.id === video.cuenta_id);
+    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube' || Boolean(video.titulo_youtube);
+
+    const finalDesc = isYouTube
+      ? buildDescriptionWithTags(
+          video.descripcion_aprobada_ia,
+          video.nombre_archivo,
+          video.titulo_youtube || video.titulo
+        )
+      : (video.descripcion_aprobada_ia || '')
+          .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+          .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+          .replace(/<!--.*?-->\s*/g, '')
+          .trim();
 
     const row: any = {
       id: video.id,
@@ -589,10 +617,10 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       auto_reprogramacion: video.auto_reprogramacion,
       reintentos_alerta: video.reintentos_alerta,
     };
-    if (video.nombre_archivo) {
+    if (isYouTube && video.nombre_archivo) {
       row.nombre_archivo = video.nombre_archivo;
     }
-    if (video.titulo_youtube) {
+    if (isYouTube && video.titulo_youtube) {
       row.titulo_youtube = video.titulo_youtube;
     }
     // Optimización CPU/Red: no guardar Base64 enorme en Supabase publicaciones
@@ -670,16 +698,26 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     }
 
     const currentVideo = get().videos.find((v) => v.id === id);
-    const targetDesc = finalUpdates.descripcion_aprobada_ia !== undefined ? finalUpdates.descripcion_aprobada_ia : currentVideo?.descripcion_aprobada_ia;
-    const targetFileName = finalUpdates.nombre_archivo !== undefined ? finalUpdates.nombre_archivo : currentVideo?.nombre_archivo;
-    const targetYtTitle = finalUpdates.titulo_youtube !== undefined ? finalUpdates.titulo_youtube : (finalUpdates.titulo || currentVideo?.titulo_youtube || currentVideo?.titulo);
+    const targetCuentaId = finalUpdates.cuenta_id || currentVideo?.cuenta_id;
+    const account = get().accounts.find((a) => a.id === targetCuentaId);
+    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube' || Boolean(finalUpdates.titulo_youtube ?? currentVideo?.titulo_youtube);
 
-    const descWithTags = buildDescriptionWithTags(targetDesc, targetFileName, targetYtTitle);
+    const targetDesc = finalUpdates.descripcion_aprobada_ia !== undefined ? finalUpdates.descripcion_aprobada_ia : currentVideo?.descripcion_aprobada_ia;
+    const targetFileName = isYouTube ? (finalUpdates.nombre_archivo !== undefined ? finalUpdates.nombre_archivo : currentVideo?.nombre_archivo) : undefined;
+    const targetYtTitle = isYouTube ? (finalUpdates.titulo_youtube !== undefined ? finalUpdates.titulo_youtube : (currentVideo?.titulo_youtube || finalUpdates.titulo || currentVideo?.titulo)) : undefined;
+
+    const descWithTags = isYouTube
+      ? buildDescriptionWithTags(targetDesc, targetFileName, targetYtTitle)
+      : (targetDesc || '')
+          .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
+          .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
+          .replace(/<!--.*?-->\s*/g, '')
+          .trim();
 
     const dbUpdates: any = {};
     if (finalUpdates.titulo !== undefined) dbUpdates.titulo = finalUpdates.titulo;
-    if (finalUpdates.nombre_archivo !== undefined) dbUpdates.nombre_archivo = finalUpdates.nombre_archivo;
-    if (finalUpdates.titulo_youtube !== undefined) dbUpdates.titulo_youtube = finalUpdates.titulo_youtube;
+    if (isYouTube && finalUpdates.nombre_archivo !== undefined) dbUpdates.nombre_archivo = finalUpdates.nombre_archivo;
+    if (isYouTube && finalUpdates.titulo_youtube !== undefined) dbUpdates.titulo_youtube = finalUpdates.titulo_youtube;
     dbUpdates.descripcion_aprobada_ia = descWithTags;
     if (finalUpdates.estado !== undefined) dbUpdates.estado = finalUpdates.estado;
     if (finalUpdates.programado_para !== undefined) dbUpdates.programado_para = (finalUpdates.programado_para as Date).toISOString();
@@ -746,8 +784,10 @@ const useAppStoreBase = create<AppState>((set, get) => ({
           if (updated.thumbnail_url && updated.thumbnail_url.startsWith('data:')) {
             updated.thumbnail_url = undefined;
           }
-          if (isRescheduledToFuture) {
+          if (isRescheduledToFuture || ('enviado_en' in finalUpdates && !finalUpdates.enviado_en)) {
             delete (updated as any).enviado_en;
+          }
+          if (isRescheduledToFuture || ('publicado_en' in finalUpdates && !finalUpdates.publicado_en)) {
             delete (updated as any).publicado_en;
           }
           return updated;
