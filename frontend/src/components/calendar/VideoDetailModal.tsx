@@ -36,6 +36,7 @@ import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService'
 import { sendPublicationAlert } from '@/lib/services/telegramService';
 import {
   getGoogleDriveToken,
+  getStoredDriveConfig,
   uploadVideoToGoogleDrive,
   deleteGoogleDriveFile,
   requestGoogleDriveOAuthToken,
@@ -106,6 +107,62 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
   const [editFeedback, setEditFeedback] = useState<{ success: boolean; msg: string } | null>(null);
   const driveFileInputRef = useRef<HTMLInputElement>(null);
   const [retryingDrive, setRetryingDrive] = useState(false);
+
+  // Estado y conexión de Google Drive
+  const [driveToken, setDriveToken] = useState<string | null>(() => getGoogleDriveToken());
+  const [connectingDrive, setConnectingDrive] = useState(false);
+
+  useEffect(() => {
+    if (isEditing) {
+      setDriveToken(getGoogleDriveToken());
+    }
+  }, [isEditing]);
+
+  const handleConnectDrive = async () => {
+    setConnectingDrive(true);
+    setEditFeedback(null);
+    let cfg = getCachedConfig();
+    const storedDrive = getStoredDriveConfig();
+    const clientId = (
+      cfg.drive_client_id ||
+      cfg.youtube_client_id ||
+      storedDrive.clientId ||
+      (typeof window !== 'undefined' ? localStorage.getItem('autopublish_drive_client_id') || localStorage.getItem('autopublish_yt_client_id') : '') ||
+      ''
+    ).trim();
+
+    if (!clientId) {
+      setConnectingDrive(false);
+      setEditFeedback({
+        success: false,
+        msg: '⚠️ Debes configurar el Client ID de Google en Configuración → Integraciones para autorizar Google Drive.',
+      });
+      return;
+    }
+
+    try {
+      const res = await requestGoogleDriveOAuthToken(clientId);
+      if (res.success && res.token) {
+        setDriveToken(res.token);
+        setEditFeedback({
+          success: true,
+          msg: '✅ Google Drive conectado exitosamente. Ya puedes subir tu nuevo video.',
+        });
+      } else {
+        setEditFeedback({
+          success: false,
+          msg: res.error || 'Error al conectar con Google Drive. Verifica permitir las ventanas emergentes en tu navegador.',
+        });
+      }
+    } catch (e: any) {
+      setEditFeedback({
+        success: false,
+        msg: `Error al abrir ventana de Google: ${e?.message || 'Error inesperado'}`,
+      });
+    } finally {
+      setConnectingDrive(false);
+    }
+  };
 
   const account = accounts.find(a => a.id === (isEditing ? editCuentaId : video?.cuenta_id));
   const campaign = campaigns.find(c => c.id === (isEditing ? editCampanaId : video?.campana_id));
@@ -450,46 +507,63 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     const finalFileName = editFileName.trim() || video.nombre_archivo || video.titulo;
     const finalYtTitle = editShortTitle.trim() || (video.titulo_youtube || video.titulo);
 
-    // Si se cargó un archivo de reemplazo y hay Drive configurado, subirlo y eliminar el anterior
+    // Si se cargó un archivo de reemplazo, subirlo a Google Drive y eliminar el anterior
     if (replacementFile) {
       let cfg = getCachedConfig();
-      if (!cfg.drive_folder_id || !cfg.drive_client_id) {
-        cfg = await loadAppConfig();
+      if (!cfg.drive_folder_id && !cfg.drive_client_id) {
+        try {
+          cfg = await loadAppConfig();
+        } catch {}
       }
 
-      const folderId = cfg.drive_folder_id;
-      let token = getGoogleDriveToken();
+      const storedDrive = getStoredDriveConfig();
+      const folderId = (
+        cfg.drive_folder_id ||
+        storedDrive.folderId ||
+        (typeof window !== 'undefined' ? localStorage.getItem('autopublish_drive_folder_id') : '') ||
+        ''
+      ).trim();
 
-      if (!token && cfg.drive_client_id) {
-        const authRes = await requestGoogleDriveOAuthToken(cfg.drive_client_id);
-        if (authRes.success && authRes.token) {
-          token = authRes.token;
-        }
+      const clientId = (
+        cfg.drive_client_id ||
+        cfg.youtube_client_id ||
+        storedDrive.clientId ||
+        (typeof window !== 'undefined' ? localStorage.getItem('autopublish_drive_client_id') || localStorage.getItem('autopublish_yt_client_id') : '') ||
+        ''
+      ).trim();
+
+      let token = driveToken || getGoogleDriveToken();
+
+      if (!token && clientId) {
+        try {
+          const authRes = await requestGoogleDriveOAuthToken(clientId);
+          if (authRes.success && authRes.token) {
+            token = authRes.token;
+            setDriveToken(token);
+          }
+        } catch {}
       }
 
       if (!token) {
         setSavingEdit(false);
         setEditFeedback({
           success: false,
-          msg: '⚠️ Se seleccionó un nuevo video pero Google Drive no está conectado o la sesión expiró. Conecta Google Drive en Configuración.',
+          msg: '⚠️ Google Drive no está conectado. Haz clic en el botón "Conectar Google Drive" arriba para autorizar la subida del nuevo video.',
         });
         return;
       }
 
-      if (!folderId) {
-        setSavingEdit(false);
-        setEditFeedback({
-          success: false,
-          msg: '⚠️ Falta configurar el ID de la carpeta de Google Drive en Configuración → Integraciones.',
-        });
-        return;
-      }
+      useAppStore.getState().setDriveUploadProgress(video.id, 1);
+      setUploadProgress(1);
 
       const uploadRes = await uploadVideoToGoogleDrive(
         replacementFile,
         folderId,
         token,
-        (pct) => setUploadProgress(pct),
+        (pct) => {
+          setUploadProgress(pct);
+          useAppStore.getState().setDriveUploadProgress(video.id, pct);
+        },
         3,
         finalFileName
       );
@@ -507,7 +581,11 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         }
       } else {
         setSavingEdit(false);
-        setEditFeedback({ success: false, msg: `❌ Error al subir el nuevo video a Drive: ${uploadRes.error}` });
+        useAppStore.getState().setDriveUploadError(video.id, uploadRes.error || 'Error de subida');
+        setEditFeedback({
+          success: false,
+          msg: `❌ Error al subir el nuevo video a Drive: ${uploadRes.error || 'Error de conexión'}.`,
+        });
         createNotification({
           tipo: 'error',
           titulo: 'Fallo al actualizar video en Drive',
@@ -1536,9 +1614,26 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                 <div className="space-y-4">
                   {/* Reemplazo de Video */}
                   <div>
-                    <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
-                      Reemplazar Video (.mp4)
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                        Reemplazar Video (.mp4)
+                      </label>
+                      {driveToken ? (
+                        <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-md">
+                          <CheckCircle2 size={10} /> Drive Conectado
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleConnectDrive}
+                          disabled={connectingDrive}
+                          className="flex items-center gap-1 text-[10px] font-bold text-cyan-300 hover:text-white bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 px-2 py-0.5 rounded-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                          {connectingDrive ? <Loader2 size={10} className="animate-spin" /> : <HardDrive size={10} />}
+                          <span>Conectar Google Drive</span>
+                        </button>
+                      )}
+                    </div>
                     <div
                       {...getRootProps()}
                       className={cn(
@@ -1590,6 +1685,23 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         </div>
                       )}
                     </div>
+
+                    {replacementFile && !driveToken && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <AlertTriangle size={14} className="shrink-0 text-amber-400" />
+                          <span className="text-[11px]">Google Drive no está conectado. Haz clic en "Conectar Google Drive" para autorizar la subida.</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleConnectDrive}
+                          disabled={connectingDrive}
+                          className="shrink-0 px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-[11px] font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+                        >
+                          {connectingDrive ? 'Conectando...' : 'Conectar Ahora'}
+                        </button>
+                      </div>
+                    )}
 
                     {uploadProgress > 0 && uploadProgress < 100 && (
                       <div className="mt-2 space-y-1">
@@ -1886,6 +1998,25 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       </div>
                     )}
                   </div>
+
+                  {/* Feedback visible de Guardado / Errores */}
+                  {editFeedback && (
+                    <div
+                      className={cn(
+                        'p-3 rounded-xl border text-xs flex items-start gap-2 animate-in fade-in duration-200',
+                        editFeedback.success
+                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                          : 'bg-red-950/40 border-red-500/40 text-red-300'
+                      )}
+                    >
+                      {editFeedback.success ? (
+                        <CheckCircle2 size={15} className="shrink-0 text-emerald-400 mt-0.5" />
+                      ) : (
+                        <AlertCircle size={15} className="shrink-0 text-red-400 mt-0.5" />
+                      )}
+                      <p className="font-semibold leading-relaxed flex-1">{editFeedback.msg}</p>
+                    </div>
+                  )}
 
                   {/* Action buttons de Edición */}
                   <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
