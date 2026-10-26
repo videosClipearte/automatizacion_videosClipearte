@@ -6,6 +6,7 @@ import {
   sendTelegramMessage,
   editTelegramMessage,
   answerCallbackQuery,
+  stripDescriptionTags,
 } from '@/lib/services/telegramService';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 import { createNotification } from '@/lib/services/notificationService';
@@ -816,8 +817,17 @@ ${driveUrlText}
 `.trim();
 
     // Mensaje 2: Descripción / Copy 100% limpio para copiar y pegar directamente sin cabeceras
-    const cleanDescription = (video.descripcion_aprobada_ia || '').trim() || 'Sin descripción asignada aún.';
-    const msg2 = escapeHtml(cleanDescription);
+    const rawClean = stripDescriptionTags(video.descripcion_aprobada_ia);
+    const cleanDescription = rawClean.trim() || 'Sin descripción asignada aún.';
+    const msg2 = stripDescriptionTags(escapeHtml(cleanDescription)).trim();
+
+    // Si la descripción en la BD contenía etiquetas para una cuenta que no es YouTube, limpiarla en Supabase
+    if (rawClean !== (video.descripcion_aprobada_ia || '').trim() && account?.plataforma?.toLowerCase() !== 'youtube') {
+      db.from('publicaciones')
+        .update({ descripcion_aprobada_ia: rawClean, nombre_archivo: null, titulo_youtube: null })
+        .eq('id', video.id)
+        .then(() => {});
+    }
 
     // Enviar Mensaje 1
     const res1 = await sendTelegramMessage(botToken, chatId, msg1, 'HTML', {

@@ -4,7 +4,7 @@
 // Este cron actúa como respaldo para cuando la app no está abierta en el navegador.
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
-import { sendPublicationAlert, sendConfirmationPoll, isWithinSilenceHours } from '@/lib/services/telegramService';
+import { sendPublicationAlert, sendConfirmationPoll, isWithinSilenceHours, stripDescriptionTags } from '@/lib/services/telegramService';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 
 export const dynamic = 'force-dynamic';
@@ -104,14 +104,10 @@ export async function GET(request: Request) {
 
       // ── Para plataformas manuales (Instagram, TikTok): Despachar a Telegram y enviar encuesta ──
       if (!isYoutube && botToken && targetChat) {
-        const cleanDesc = (video.descripcion_aprobada_ia || '')
-          .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-          .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-          .replace(/<!--.*?-->\s*/g, '')
-          .trim();
+        const cleanDesc = stripDescriptionTags(video.descripcion_aprobada_ia);
 
         // Si la descripción en la BD contenía etiquetas para una cuenta no-YouTube, limpiarla en Supabase
-        if (cleanDesc !== video.descripcion_aprobada_ia) {
+        if (cleanDesc !== (video.descripcion_aprobada_ia || '').trim()) {
           db.from('publicaciones')
             .update({ descripcion_aprobada_ia: cleanDesc, nombre_archivo: null, titulo_youtube: null })
             .eq('id', video.id)

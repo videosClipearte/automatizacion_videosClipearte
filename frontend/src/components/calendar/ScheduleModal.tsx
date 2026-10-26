@@ -32,6 +32,7 @@ import { z } from 'zod';
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useAppStore, type Video } from '@/store/useAppStore';
+import { stripDescriptionTags } from '@/lib/services/telegramService';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -670,11 +671,7 @@ function ScheduleModalDialog() {
         }
       }
 
-      const cleanDesc = (data.descripcion || '')
-        .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-        .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-        .replace(/<!--.*?-->\s*/g, '')
-        .trim();
+      const cleanDesc = stripDescriptionTags(data.descripcion);
 
       // ── 1. Crear el video con el nombre de archivo para la app y el título para YouTube ──
       const newVideo: Video = {
@@ -684,7 +681,7 @@ function ScheduleModalDialog() {
         titulo: officialTitle,
         titulo_youtube: isYouTube ? cleanShortTitle : undefined,
         nombre_archivo: isYouTube ? finalFileName : undefined,
-        descripcion_aprobada_ia: isYouTube ? (data.descripcion || '') : cleanDesc,
+        descripcion_aprobada_ia: cleanDesc,
         thumbnail_color: isYouTube ? '#ef4444' : '#10b981',
         thumbnail_url: undefined,
         drive_file_url: initialDriveUrl,

@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { stripDescriptionTags } from '@/lib/services/telegramService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -628,10 +629,7 @@ export async function POST(req: NextRequest) {
       shortTitle = shortTitle.slice(0, 92).trim() + ' #Shorts';
     }
 
-    let shortDesc = (descripcion || '')
-      .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-      .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-      .trim();
+    let shortDesc = stripDescriptionTags(descripcion);
     if (!/#shorts\b/i.test(shortDesc)) {
       shortDesc = shortDesc ? `${shortDesc}\n\n#Shorts` : '#Shorts';
     }

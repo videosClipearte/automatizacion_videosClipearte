@@ -32,7 +32,24 @@ export function saveStoredTelegramConfig(config: TelegramConfig): void {
   }
 }
 
-function escapeHtml(text: string): string {
+/**
+ * Remueve de forma definitiva cualquier etiqueta técnica interna (como <!--FILE_NAME:...-->
+ * y <!--YT_TITLE:...--> tanto en formato plano como entidades HTML escapadas &lt;!--...--&gt;)
+ * garantizando que las descripciones que llegan a Telegram queden 100% limpias.
+ */
+export function stripDescriptionTags(desc: string | undefined | null): string {
+  if (!desc) return '';
+  return desc
+    .replace(/<!--\s*FILE_NAME:[\s\S]*?-->\s*/gi, '')
+    .replace(/<!--\s*YT_TITLE:[\s\S]*?-->\s*/gi, '')
+    .replace(/<!--[\s\S]*?-->\s*/gi, '')
+    .replace(/&lt;!--\s*FILE_NAME:[\s\S]*?--&gt;\s*/gi, '')
+    .replace(/&lt;!--\s*YT_TITLE:[\s\S]*?--&gt;\s*/gi, '')
+    .replace(/&lt;!--[\s\S]*?--&gt;\s*/gi, '')
+    .trim();
+}
+
+export function escapeHtml(text: string): string {
   if (!text) return '';
   return text
     .replace(/&/g, '&amp;')
@@ -288,12 +305,8 @@ export async function sendPublicationAlert(
   const safeUsername = escapeHtml(data.accountUsername);
   const safePlatform = escapeHtml(data.platform.toUpperCase());
   const safeTitle = escapeHtml(data.videoTitle);
-  const cleanDescription = (data.descripcion || '')
-    .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-    .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-    .replace(/<!--.*?-->\s*/g, '')
-    .trim();
-  const safeDesc = escapeHtml(cleanDescription);
+  const cleanDescription = stripDescriptionTags(data.descripcion);
+  const safeDesc = stripDescriptionTags(escapeHtml(cleanDescription));
   const hasDescription = safeDesc.trim().length > 0;
 
   const descNotice = hasDescription

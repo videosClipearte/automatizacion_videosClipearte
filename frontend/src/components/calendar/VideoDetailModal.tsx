@@ -33,7 +33,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import { formatDateTime, formatViews, calcGanancias, getPlatformColor, cn } from '@/lib/utils';
 import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
-import { sendPublicationAlert } from '@/lib/services/telegramService';
+import { sendPublicationAlert, stripDescriptionTags } from '@/lib/services/telegramService';
 import {
   getGoogleDriveToken,
   getStoredDriveConfig,
@@ -617,11 +617,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     const isFuture = !isNaN(newProgDate.getTime()) && newProgDate.getTime() > Date.now();
 
     const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
-    const cleanDesc = (editDescripcion || '')
-      .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-      .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-      .replace(/<!--.*?-->\s*/g, '')
-      .trim();
+    const cleanDesc = stripDescriptionTags(editDescripcion);
 
     const updates: any = {
       nombre_archivo: isYouTube ? finalFileName : undefined,
@@ -630,7 +626,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       cuenta_id: editCuentaId,
       campana_id: editCampanaId,
       programado_para: newProgDate,
-      descripcion_aprobada_ia: isYouTube ? editDescripcion : cleanDesc,
+      descripcion_aprobada_ia: cleanDesc,
       drive_file_url: finalDriveUrl,
       post_url_publica: editReelUrl.trim() || video.post_url_publica || undefined,
     };
@@ -704,11 +700,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       const finalYtTitle = editShortTitle.trim() || (video.titulo_youtube || video.titulo);
 
       const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
-      const cleanDesc = (editDescripcion || '')
-        .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-        .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-        .replace(/<!--.*?-->\s*/g, '')
-        .trim();
+      const cleanDesc = stripDescriptionTags(editDescripcion);
 
       const baseUpdates: any = {
         nombre_archivo: isYouTube ? finalFileName : undefined,
@@ -717,7 +709,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         cuenta_id: editCuentaId,
         campana_id: editCampanaId,
         programado_para: !isNaN(newProgDate.getTime()) ? newProgDate : video.programado_para,
-        descripcion_aprobada_ia: isYouTube ? editDescripcion : cleanDesc,
+        descripcion_aprobada_ia: cleanDesc,
         drive_file_url: editDriveUrl.trim(),
         post_url_publica: finalReelUrl,
       };
@@ -807,11 +799,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         return;
       }
 
-      const cleanDesc = (video.descripcion_aprobada_ia || '')
-        .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-        .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-        .replace(/<!--.*?-->\s*/g, '')
-        .trim();
+      const cleanDesc = stripDescriptionTags(video.descripcion_aprobada_ia);
 
       const res = await sendPublicationAlert(botToken, targetChat, {
         videoTitle: video.titulo,

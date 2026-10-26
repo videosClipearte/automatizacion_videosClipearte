@@ -12,6 +12,7 @@ import {
   sendTelegramMessage,
   sendConfirmationPoll,
   isWithinSilenceHours,
+  stripDescriptionTags,
 } from '@/lib/services/telegramService';
 import { getStoredSupabaseConfig, getSupabase } from '@/lib/supabase';
 import { createNotification } from '@/lib/services/notificationService';
@@ -221,14 +222,10 @@ export function PublicationScheduler() {
           if (!isYoutube) {
             // ── Plataformas manuales (Instagram, TikTok): Despachar a Telegram y crear encuesta ──
             if (botToken && targetChat) {
-              const cleanDesc = (video.descripcion_aprobada_ia || '')
-                .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-                .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-                .replace(/<!--.*?-->\s*/g, '')
-                .trim();
+              const cleanDesc = stripDescriptionTags(video.descripcion_aprobada_ia);
 
               // Si la descripción en la BD contenía etiquetas para una cuenta no-YouTube, limpiarla en Supabase
-              if (cleanDesc !== video.descripcion_aprobada_ia) {
+              if (cleanDesc !== (video.descripcion_aprobada_ia || '').trim()) {
                 db.from('publicaciones')
                   .update({ descripcion_aprobada_ia: cleanDesc, nombre_archivo: null, titulo_youtube: null })
                   .eq('id', video.id)

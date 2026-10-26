@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { getSupabase } from '@/lib/supabase';
+import { stripDescriptionTags } from '@/lib/services/telegramService';
 
 // ─── Tipos de dominio ────────────────────────────────────────────────────────
 export type VideoStatus =
@@ -79,11 +80,7 @@ export function buildDescriptionWithTags(
   fileName?: string | null,
   ytTitle?: string | null
 ): string {
-  let clean = (desc || '')
-    .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-    .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-    .replace(/<!--.*?-->\s*/g, '')
-    .trim();
+  let clean = stripDescriptionTags(desc);
 
   // Las etiquetas FILE_NAME y YT_TITLE solo deben existir para videos programados para YouTube
   if (!ytTitle || !ytTitle.trim()) {
@@ -153,9 +150,7 @@ function mapVideo(row: any): Video {
     canonicalTitle = ytTitle;
   }
 
-  const cleanDesc = rawDesc
-    ? rawDesc.replace(/<!--FILE_NAME:.*?-->\s*/g, '').replace(/<!--YT_TITLE:.*?-->\s*/g, '').trim()
-    : '';
+  const cleanDesc = stripDescriptionTags(rawDesc);
 
   return {
     id: row.id,
@@ -547,13 +542,13 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
           // Si el video pertenece a una cuenta que NO es de YouTube, asegurar que no tenga tags de YouTube
           const acct = accounts.find((a) => a.id === v.cuenta_id);
-          if (acct && acct.plataforma !== 'youtube') {
+          if (acct && acct.plataforma?.toLowerCase() !== 'youtube') {
             v.titulo_youtube = undefined;
             v.nombre_archivo = undefined;
             const origRow = data.find((r: any) => r.id === v.id);
-            if (origRow && (origRow.descripcion_aprobada_ia?.includes('<!--FILE_NAME:') || origRow.descripcion_aprobada_ia?.includes('<!--YT_TITLE:'))) {
+            if (origRow && (origRow.descripcion_aprobada_ia?.includes('<!--') || origRow.descripcion_aprobada_ia?.includes('&lt;!--'))) {
               db.from('publicaciones')
-                .update({ descripcion_aprobada_ia: v.descripcion_aprobada_ia })
+                .update({ descripcion_aprobada_ia: v.descripcion_aprobada_ia, nombre_archivo: null, titulo_youtube: null })
                 .eq('id', v.id)
                 .then(() => {});
             }
@@ -588,7 +583,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
   addVideo: async (video) => {
     const db = getSupabase();
     const account = get().accounts.find((a) => a.id === video.cuenta_id);
-    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube' || Boolean(video.titulo_youtube);
+    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
 
     const finalDesc = isYouTube
       ? buildDescriptionWithTags(
@@ -596,11 +591,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
           video.nombre_archivo,
           video.titulo_youtube || video.titulo
         )
-      : (video.descripcion_aprobada_ia || '')
-          .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-          .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-          .replace(/<!--.*?-->\s*/g, '')
-          .trim();
+      : stripDescriptionTags(video.descripcion_aprobada_ia);
 
     const row: any = {
       id: video.id,
@@ -700,7 +691,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     const currentVideo = get().videos.find((v) => v.id === id);
     const targetCuentaId = finalUpdates.cuenta_id || currentVideo?.cuenta_id;
     const account = get().accounts.find((a) => a.id === targetCuentaId);
-    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube' || Boolean(finalUpdates.titulo_youtube ?? currentVideo?.titulo_youtube);
+    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
 
     const targetDesc = finalUpdates.descripcion_aprobada_ia !== undefined ? finalUpdates.descripcion_aprobada_ia : currentVideo?.descripcion_aprobada_ia;
     const targetFileName = isYouTube ? (finalUpdates.nombre_archivo !== undefined ? finalUpdates.nombre_archivo : currentVideo?.nombre_archivo) : undefined;
@@ -708,11 +699,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
     const descWithTags = isYouTube
       ? buildDescriptionWithTags(targetDesc, targetFileName, targetYtTitle)
-      : (targetDesc || '')
-          .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-          .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-          .replace(/<!--.*?-->\s*/g, '')
-          .trim();
+      : stripDescriptionTags(targetDesc);
 
     const dbUpdates: any = {};
     if (finalUpdates.titulo !== undefined) dbUpdates.titulo = finalUpdates.titulo;
@@ -768,10 +755,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     }
 
     set((s) => {
-      const cleanDesc = (targetDesc || '')
-        .replace(/<!--FILE_NAME:.*?-->\s*/g, '')
-        .replace(/<!--YT_TITLE:.*?-->\s*/g, '')
-        .trim();
+      const cleanDesc = stripDescriptionTags(targetDesc);
 
       const videos = s.videos.map((v) => {
         if (v.id === id) {
