@@ -817,14 +817,14 @@ ${driveUrlText}
 `.trim();
 
     // Mensaje 2: Descripción / Copy 100% limpio para copiar y pegar directamente sin cabeceras
-    const rawClean = stripDescriptionTags(video.descripcion_aprobada_ia);
+    const rawClean = stripDescriptionTags(video.descripcion_aprobada_ia, video.nombre_archivo || video.titulo);
     const cleanDescription = rawClean.trim() || 'Sin descripción asignada aún.';
-    const msg2 = stripDescriptionTags(escapeHtml(cleanDescription)).trim();
+    const msg2 = stripDescriptionTags(escapeHtml(cleanDescription), video.nombre_archivo || video.titulo).trim();
 
-    // Si la descripción en la BD contenía etiquetas para una cuenta que no es YouTube, limpiarla en Supabase
-    if (rawClean !== (video.descripcion_aprobada_ia || '').trim() && account?.plataforma?.toLowerCase() !== 'youtube') {
+    // Si la descripción en la BD contenía etiquetas o prefijos técnicos, limpiarla en Supabase
+    if (rawClean !== (video.descripcion_aprobada_ia || '').trim()) {
       db.from('publicaciones')
-        .update({ descripcion_aprobada_ia: rawClean, nombre_archivo: null, titulo_youtube: null })
+        .update({ descripcion_aprobada_ia: rawClean })
         .eq('id', video.id)
         .then(() => {});
     }

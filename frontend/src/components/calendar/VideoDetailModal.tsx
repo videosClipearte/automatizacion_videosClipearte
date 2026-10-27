@@ -617,7 +617,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     const isFuture = !isNaN(newProgDate.getTime()) && newProgDate.getTime() > Date.now();
 
     const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
-    const cleanDesc = stripDescriptionTags(editDescripcion);
+    const cleanDesc = stripDescriptionTags(editDescripcion, finalFileName || editTitle);
 
     const updates: any = {
       nombre_archivo: isYouTube ? finalFileName : undefined,
@@ -700,7 +700,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       const finalYtTitle = editShortTitle.trim() || (video.titulo_youtube || video.titulo);
 
       const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
-      const cleanDesc = stripDescriptionTags(editDescripcion);
+      const cleanDesc = stripDescriptionTags(editDescripcion, finalFileName || editTitle);
 
       const baseUpdates: any = {
         nombre_archivo: isYouTube ? finalFileName : undefined,
@@ -799,7 +799,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         return;
       }
 
-      const cleanDesc = stripDescriptionTags(video.descripcion_aprobada_ia);
+      const cleanDesc = stripDescriptionTags(video.descripcion_aprobada_ia, video.nombre_archivo || video.titulo);
 
       const res = await sendPublicationAlert(botToken, targetChat, {
         videoTitle: video.titulo,

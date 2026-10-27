@@ -222,12 +222,12 @@ export function PublicationScheduler() {
           if (!isYoutube) {
             // ── Plataformas manuales (Instagram, TikTok): Despachar a Telegram y crear encuesta ──
             if (botToken && targetChat) {
-              const cleanDesc = stripDescriptionTags(video.descripcion_aprobada_ia);
+              const cleanDesc = stripDescriptionTags(video.descripcion_aprobada_ia, video.nombre_archivo || video.titulo);
 
-              // Si la descripción en la BD contenía etiquetas para una cuenta no-YouTube, limpiarla en Supabase
+              // Si la descripción en la BD contenía etiquetas o prefijo de archivo, limpiarla en Supabase
               if (cleanDesc !== (video.descripcion_aprobada_ia || '').trim()) {
                 db.from('publicaciones')
-                  .update({ descripcion_aprobada_ia: cleanDesc, nombre_archivo: null, titulo_youtube: null })
+                  .update({ descripcion_aprobada_ia: cleanDesc })
                   .eq('id', video.id)
                   .then(() => {});
               }

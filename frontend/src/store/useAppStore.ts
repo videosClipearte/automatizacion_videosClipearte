@@ -80,20 +80,7 @@ export function buildDescriptionWithTags(
   fileName?: string | null,
   ytTitle?: string | null
 ): string {
-  let clean = stripDescriptionTags(desc);
-
-  // Las etiquetas FILE_NAME y YT_TITLE solo deben existir para videos programados para YouTube
-  if (!ytTitle || !ytTitle.trim()) {
-    return clean;
-  }
-
-  const tags: string[] = [];
-  if (fileName && fileName.trim()) {
-    tags.push(`<!--FILE_NAME:${fileName.trim()}-->`);
-  }
-  tags.push(`<!--YT_TITLE:${ytTitle.trim()}-->`);
-
-  return `${tags.join('\n')}\n${clean}`.trim();
+  return stripDescriptionTags(desc, fileName || ytTitle);
 }
 
 // ─── Mappers Supabase → dominio ───────────────────────────────────────────────
@@ -150,7 +137,7 @@ function mapVideo(row: any): Video {
     canonicalTitle = ytTitle;
   }
 
-  const cleanDesc = stripDescriptionTags(rawDesc);
+  const cleanDesc = stripDescriptionTags(rawDesc, fileName || canonicalTitle);
 
   return {
     id: row.id,
@@ -540,18 +527,17 @@ const useAppStoreBase = create<AppState>((set, get) => ({
           seenVideoKeys.add(v.id);
           seenVideoKeys.add(cloneKey);
 
-          // Si el video pertenece a una cuenta que NO es de YouTube, asegurar que no tenga tags de YouTube
-          const acct = accounts.find((a) => a.id === v.cuenta_id);
-          if (acct && acct.plataforma?.toLowerCase() !== 'youtube') {
-            v.titulo_youtube = undefined;
-            v.nombre_archivo = undefined;
-            const origRow = data.find((r: any) => r.id === v.id);
-            if (origRow && (origRow.descripcion_aprobada_ia?.includes('<!--') || origRow.descripcion_aprobada_ia?.includes('&lt;!--'))) {
-              db.from('publicaciones')
-                .update({ descripcion_aprobada_ia: v.descripcion_aprobada_ia, nombre_archivo: null, titulo_youtube: null })
-                .eq('id', v.id)
-                .then(() => {});
-            }
+          // Asegurar que la descripción esté 100% limpia de tags y prefijos técnicos en Supabase
+          const origRow = data.find((r: any) => r.id === v.id);
+          const rawDbDesc = origRow?.descripcion_aprobada_ia || '';
+          const cleanedDesc = stripDescriptionTags(rawDbDesc, v.nombre_archivo || v.titulo);
+          v.descripcion_aprobada_ia = cleanedDesc;
+
+          if (origRow && cleanedDesc !== rawDbDesc.trim()) {
+            db.from('publicaciones')
+              .update({ descripcion_aprobada_ia: cleanedDesc })
+              .eq('id', v.id)
+              .then(() => {});
           }
 
           videos.push(v);
@@ -585,13 +571,10 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     const account = get().accounts.find((a) => a.id === video.cuenta_id);
     const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
 
-    const finalDesc = isYouTube
-      ? buildDescriptionWithTags(
-          video.descripcion_aprobada_ia,
-          video.nombre_archivo,
-          video.titulo_youtube || video.titulo
-        )
-      : stripDescriptionTags(video.descripcion_aprobada_ia);
+    const finalDesc = stripDescriptionTags(
+      video.descripcion_aprobada_ia,
+      video.nombre_archivo || video.titulo_youtube || video.titulo
+    );
 
     const row: any = {
       id: video.id,
@@ -697,9 +680,10 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     const targetFileName = isYouTube ? (finalUpdates.nombre_archivo !== undefined ? finalUpdates.nombre_archivo : currentVideo?.nombre_archivo) : undefined;
     const targetYtTitle = isYouTube ? (finalUpdates.titulo_youtube !== undefined ? finalUpdates.titulo_youtube : (currentVideo?.titulo_youtube || finalUpdates.titulo || currentVideo?.titulo)) : undefined;
 
-    const descWithTags = isYouTube
-      ? buildDescriptionWithTags(targetDesc, targetFileName, targetYtTitle)
-      : stripDescriptionTags(targetDesc);
+    const descWithTags = stripDescriptionTags(
+      targetDesc,
+      targetFileName || targetYtTitle || currentVideo?.titulo
+    );
 
     const dbUpdates: any = {};
     if (finalUpdates.titulo !== undefined) dbUpdates.titulo = finalUpdates.titulo;
@@ -755,7 +739,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     }
 
     set((s) => {
-      const cleanDesc = stripDescriptionTags(targetDesc);
+      const cleanDesc = stripDescriptionTags(targetDesc, targetFileName || currentVideo?.titulo);
 
       const videos = s.videos.map((v) => {
         if (v.id === id) {

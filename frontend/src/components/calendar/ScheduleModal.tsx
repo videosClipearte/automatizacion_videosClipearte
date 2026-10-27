@@ -347,7 +347,7 @@ function ScheduleModalDialog() {
       setDebouncedShortTitle(cleanName);
       setValue(
         'descripcion',
-        `🎬 ${cleanName} - Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
+        `Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
       );
     } else {
       setVideoFile(null);
@@ -378,7 +378,7 @@ function ScheduleModalDialog() {
         setShortTitle((prev) => (prev && prev.trim() ? prev : cleanName));
         setValue(
           'descripcion',
-          `🎬 ${cleanName} - ¡Nuevo video listo para romperla en redes! 🚀 #tendencia #viral #creadores`
+          `¡Nuevo video listo para romperla en redes! 🚀 #tendencia #viral #creadores`
         );
       }
     },
@@ -496,6 +496,7 @@ function ScheduleModalDialog() {
       `FORMATO DE SALIDA:`,
       `- Genera ÚNICAMENTE el texto final listo para copiar y publicar.`,
       `- No agregues introducciones, comentarios, comillas ni encabezados como "Copy:".`,
+      `- NUNCA agregues el nombre del archivo ni el título técnico del archivo como encabezado ni en la primera línea.`,
       `- Incluye emojis adecuados y los hashtags requeridos al final.`,
     ].join('\n');
 
@@ -504,13 +505,13 @@ function ScheduleModalDialog() {
       setAiFeedback('⚠️ Configura tu Gemini API Key en Settings → Integraciones para redacción con IA.');
       let fallbackCopy = '';
       if (platform === 'tiktok') {
-        fallbackCopy = `🔥 POV: No te esperabas esto de "${effectiveTitle}". ${campaignRules.slice(0, 80)} ¿Qué opinas? 👇 ${hashtags} #fyp`;
+        fallbackCopy = `🔥 Descubre este contenido imperdible. ${campaignRules.slice(0, 80)} ¿Qué opinas? 👇 ${hashtags} #fyp`;
       } else if (platform === 'youtube') {
-        fallbackCopy = `⚡ ${effectiveTitle} en 60 segundos. ${campaignRules.slice(0, 80)} ¡Suscríbete al canal! ${hashtags} #shorts`;
+        fallbackCopy = `⚡ Contenido exclusivo en formato corto. ${campaignRules.slice(0, 80)} ¡Suscríbete al canal! ${hashtags} #shorts`;
       } else if (platform === 'facebook') {
-        fallbackCopy = `📢 ¡Hola a todos! Les presentamos nuestro nuevo video: "${effectiveTitle}". ${campaignRules.slice(0, 90)} Déjanos tu opinión 👇 ${hashtags}`;
+        fallbackCopy = `📢 ¡Hola a todos! Les compartimos nuestro nuevo video. ${campaignRules.slice(0, 90)} Déjanos tu opinión 👇 ${hashtags}`;
       } else {
-        fallbackCopy = `✨ ${effectiveTitle} ✨\n\n${campaignRules.slice(0, 90)}\n\nGuarda este Reel y compártelo 📌🔥\n\n${hashtags}`;
+        fallbackCopy = `✨ Nuevo contenido para nuestra comunidad ✨\n\n${campaignRules.slice(0, 90)}\n\nGuarda este Reel y compártelo 📌🔥\n\n${hashtags}`;
       }
       setValue('descripcion', fallbackCopy);
       setGeneratingAI(false);

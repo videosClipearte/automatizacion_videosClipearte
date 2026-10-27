@@ -34,12 +34,16 @@ export function saveStoredTelegramConfig(config: TelegramConfig): void {
 
 /**
  * Remueve de forma definitiva cualquier etiqueta técnica interna (como <!--FILE_NAME:...-->
- * y <!--YT_TITLE:...--> tanto en formato plano como entidades HTML escapadas &lt;!--...--&gt;)
- * garantizando que las descripciones que llegan a Telegram queden 100% limpias.
+ * y <!--YT_TITLE:...--> tanto en formato plano como entidades HTML escapadas &lt;!--...--&gt;),
+ * y elimina nombres de archivos o títulos pegados al inicio del copy, garantizando que
+ * las descripciones que llegan a Telegram queden 100% limpias.
  */
-export function stripDescriptionTags(desc: string | undefined | null): string {
+export function stripDescriptionTags(
+  desc: string | undefined | null,
+  videoTitleOrFileName?: string | null
+): string {
   if (!desc) return '';
-  return desc
+  let cleaned = desc
     .replace(/<!--\s*FILE_NAME:[\s\S]*?-->\s*/gi, '')
     .replace(/<!--\s*YT_TITLE:[\s\S]*?-->\s*/gi, '')
     .replace(/<!--[\s\S]*?-->\s*/gi, '')
@@ -47,6 +51,17 @@ export function stripDescriptionTags(desc: string | undefined | null): string {
     .replace(/&lt;!--\s*YT_TITLE:[\s\S]*?--&gt;\s*/gi, '')
     .replace(/&lt;!--[\s\S]*?--&gt;\s*/gi, '')
     .trim();
+
+  // Si se pasa el título o nombre de archivo del video, eliminar si fue insertado como prefijo
+  if (videoTitleOrFileName && videoTitleOrFileName.trim()) {
+    const raw = videoTitleOrFileName.trim();
+    const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    cleaned = cleaned
+      .replace(new RegExp(`^(?:🎬\\s*)?${escaped}(?:\\s*[-:—]\\s*|\\r?\\n+)`, 'i'), '')
+      .trim();
+  }
+
+  return cleaned;
 }
 
 export function escapeHtml(text: string): string {
@@ -305,8 +320,8 @@ export async function sendPublicationAlert(
   const safeUsername = escapeHtml(data.accountUsername);
   const safePlatform = escapeHtml(data.platform.toUpperCase());
   const safeTitle = escapeHtml(data.videoTitle);
-  const cleanDescription = stripDescriptionTags(data.descripcion);
-  const safeDesc = stripDescriptionTags(escapeHtml(cleanDescription));
+  const cleanDescription = stripDescriptionTags(data.descripcion, data.videoTitle);
+  const safeDesc = stripDescriptionTags(escapeHtml(cleanDescription), data.videoTitle);
   const hasDescription = safeDesc.trim().length > 0;
 
   const descNotice = hasDescription
