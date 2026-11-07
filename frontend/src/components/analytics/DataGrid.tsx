@@ -131,13 +131,15 @@ export function DataGrid() {
                     </td>
 
                     {/* Views */}
-                    <td className="px-3 py-3 text-white font-semibold">
-                      {video.vistas_obtenidas > 0 ? formatViews(video.vistas_obtenidas) : '—'}
+                    <td className="px-3 py-3 text-white font-semibold font-mono">
+                      {video.vistas_obtenidas > 0 || video.estado === 'PUBLICADO'
+                        ? formatViews(video.vistas_obtenidas || 0)
+                        : '—'}
                     </td>
 
                     {/* Earnings */}
-                    <td className="px-3 py-3">
-                      {parseFloat(earnings) > 0 ? (
+                    <td className="px-3 py-3 font-mono">
+                      {parseFloat(earnings) > 0 || video.estado === 'PUBLICADO' ? (
                         <span className="text-emerald-400 font-bold">${earnings}</span>
                       ) : (
                         <span className="text-[var(--text-muted)]">—</span>

@@ -163,10 +163,31 @@ export async function verifyScraperPost(
   );
 
   if (isConfirmed) {
-    // 5. Actualizar Supabase → PUBLICADO
+    // 5. Actualizar Supabase → PUBLICADO y extraer vistas reales
     const db = getSupabase();
     const confirmedPostUrl = targetUrl;
     const nowIso = new Date().toISOString();
+    let extractedViews = video.vistas_obtenidas || 0;
+    let extractedLikes = 0;
+    let extractedComments = 0;
+
+    try {
+      const viewsRes = await fetch('/api/scraper/extract-views', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: video.id, targetUrl: confirmedPostUrl }),
+      });
+      if (viewsRes.ok) {
+        const viewsData = await viewsRes.json();
+        if (typeof viewsData.bestView === 'number' && viewsData.bestView > extractedViews) {
+          extractedViews = viewsData.bestView;
+        }
+        if (viewsData.metrics) {
+          extractedLikes = viewsData.metrics.likes || 0;
+          extractedComments = viewsData.metrics.comentarios || 0;
+        }
+      }
+    } catch {}
 
     try {
       await db
@@ -175,6 +196,7 @@ export async function verifyScraperPost(
           estado: 'PUBLICADO',
           publicado_en: nowIso,
           post_url_publica: confirmedPostUrl,
+          vistas_obtenidas: extractedViews,
         })
         .eq('id', video.id);
     } catch (dbErr: any) {
@@ -185,7 +207,7 @@ export async function verifyScraperPost(
     await createNotification({
       tipo: 'success',
       titulo: 'Publicación confirmada en redes (Scraper)',
-      mensaje: `Scraper verificó "${video.titulo}" en @${username} (${platform.toUpperCase()}). ${matchCount}/${keywords.length} tokens encontrados en el HTML (${matchPct}%). Estado actualizado a PUBLICADO.`,
+      mensaje: `Scraper verificó "${video.titulo}" en @${username} (${platform.toUpperCase()}). ${matchCount}/${keywords.length} tokens encontrados (${matchPct}%). ${extractedViews.toLocaleString()} vistas registradas.`,
       video_id: video.id,
       cuenta_id: video.cuenta_id,
       origen: 'scraper',
@@ -199,7 +221,10 @@ export async function verifyScraperPost(
       match_count: matchCount,
       total_keywords: keywords.length,
       post_url: confirmedPostUrl,
-      message: `✅ Publicación confirmada (${matchCount}/${keywords.length} tokens verificados en ${platform.toUpperCase()}). Estado → PUBLICADO.`,
+      vistas: extractedViews,
+      likes: extractedLikes,
+      comentarios: extractedComments,
+      message: `✅ Publicación confirmada (${matchCount}/${keywords.length} tokens verificados en ${platform.toUpperCase()}, ${extractedViews.toLocaleString()} vistas). Estado → PUBLICADO.`,
     };
   }
 

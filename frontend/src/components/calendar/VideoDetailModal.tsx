@@ -394,12 +394,17 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         `HASHTAGS OBLIGATORIOS: ${hashtags}`,
       ].join('\n');
 
+      const isYtPlatform = platform.toLowerCase() === 'youtube';
       const userPrompt = [
-        `Escribe la descripcion para publicar en ${platform.toUpperCase()} sobre el video titulado "${editTitle}".`,
+        isYtPlatform
+          ? `Crea un TITULO VIRAL para YouTube Shorts y la DESCRIPCION para publicar en YOUTUBE sobre el video "${editFileName || editTitle}".`
+          : `Escribe la descripcion para publicar en ${platform.toUpperCase()} sobre el video titulado "${editTitle}".`,
         `CUMPLE ESTRICTAMENTE ESTAS REGLAS DE CAMPANA:`,
         campaignRules,
         `HASHTAGS QUE DEBES INCLUIR SIN EXCEPCION: ${hashtags}`,
-        `INSTRUCCIONES: Devuelve UNICAMENTE el texto final listo para publicar. Sin encabezados, sin JSON, sin comillas al inicio.`,
+        isYtPlatform
+          ? `INSTRUCCIONES DE FORMATO OBLIGATORIO:\n1. En la primera linea escribe exactamente: TITULO_SHORT: <Un titulo atractivo, curioso, directo y optimizado para YouTube Shorts de maximo 75 caracteres relacionado al video, sin comillas>\n2. En la segunda linea escribe exactamente: ---DESCRIPCION---\n3. A partir de la tercera linea escribe UNICAMENTE la descripcion final lista para publicar.`
+          : `INSTRUCCIONES: Devuelve UNICAMENTE el texto final listo para publicar. Sin encabezados, sin JSON, sin comillas al inicio.`,
       ].join('\n');
 
       // ── Optimización CPU (Punto 3): Extraer audio bajo demanda solo al pulsar el botón de IA ──
@@ -474,14 +479,17 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
       if (res?.success && res?.text) {
         setEditDescripcion(res.text);
+        if (isYtPlatform && res.youtubeTitle) {
+          setEditShortTitle(res.youtubeTitle);
+        }
         if (res.subtitlesJson) {
           setExtractedSubtitles(res.subtitlesJson);
         }
         setEditFeedback({
           success: true,
           msg: audioPayload
-            ? `Subtitulos extraidos y descripcion generada usando ${res.usedModel || targetModel}.`
-            : `Copy generado con exito usando ${res.usedModel || targetModel}.`,
+            ? `${isYtPlatform && res.youtubeTitle ? 'Título de Short, subtítulos' : 'Subtítulos'} extraídos y descripción generada usando ${res.usedModel || targetModel}.`
+            : `${isYtPlatform && res.youtubeTitle ? 'Título de Short y copy generados' : 'Copy generado'} con éxito usando ${res.usedModel || targetModel}.`,
         });
       } else {
         setEditFeedback({ success: false, msg: `Aviso: ${res?.error || 'No se pudo generar con Gemini tras reintentos automáticos'}` });
@@ -998,15 +1006,22 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        const extractedOrManualViews =
+          typeof data.metrics?.vistas === 'number' && data.metrics.vistas > 0
+            ? data.metrics.vistas
+            : vistasNum !== undefined && !isNaN(vistasNum)
+            ? vistasNum
+            : undefined;
+
         await updateVideo(video.id, {
           estado: 'PUBLICADO',
           publicado_en: new Date(),
           ...(confirmPostUrl.trim() ? { post_url_publica: confirmPostUrl.trim() } : {}),
-          ...(vistasNum !== undefined && !isNaN(vistasNum) ? { vistas_obtenidas: vistasNum } : {}),
+          ...(extractedOrManualViews !== undefined ? { vistas_obtenidas: extractedOrManualViews } : {}),
         });
         setConfirmFeedback({
           success: true,
-          msg: '✅ ¡Publicación confirmada! El estado se actualizó a PUBLICADO y se notificó a Telegram.',
+          msg: `✅ ¡Publicación confirmada! ${extractedOrManualViews ? `(${extractedOrManualViews.toLocaleString()} vistas detectadas)` : ''} El estado se actualizó a PUBLICADO.`,
         });
         setConfirmPostUrl('');
         setConfirmVistas('');
@@ -1033,6 +1048,66 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       setConfirmando(false);
     }
   };
+
+  // Actualizar vistas en vivo de un video PUBLICADO (YouTube, TikTok, Instagram, Facebook)
+  const handleRefreshPublishedViews = async (silent = false) => {
+    if (!video) return;
+    if (!silent) {
+      setVerifyingScraper(true);
+      setScraperFeedback(null);
+    }
+    try {
+      const res = await fetch('/api/scraper/extract-views', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: video.id,
+          targetUrl: video.post_url_publica && video.post_url_publica !== '#' ? video.post_url_publica : undefined,
+          forceAll: true,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const detectedViews =
+          typeof data.bestView === 'number' && data.bestView > 0
+            ? data.bestView
+            : data.details?.[0]?.newViews ?? video.vistas_obtenidas ?? 0;
+
+        if (detectedViews > (video.vistas_obtenidas || 0)) {
+          await updateVideo(video.id, { vistas_obtenidas: detectedViews });
+        } else {
+          await useAppStore.getState().refreshData();
+        }
+        if (!silent) {
+          setScraperFeedback({
+            success: true,
+            msg: `✅ Vistas sincronizadas: ${detectedViews.toLocaleString()} reproducciones registradas.`,
+          });
+        }
+      } else if (!silent) {
+        setScraperFeedback({
+          success: false,
+          msg: data.error || data.message || 'No se pudieron extraer nuevas vistas en este momento.',
+        });
+      }
+    } catch (err: any) {
+      if (!silent) {
+        setScraperFeedback({
+          success: false,
+          msg: `Error al actualizar vistas: ${err?.message || 'Fallo de red'}`,
+        });
+      }
+    } finally {
+      if (!silent) setVerifyingScraper(false);
+    }
+  };
+
+  // Si se abre el modal de un video PUBLICADO que aún tiene 0 vistas, consultar en segundo plano
+  useEffect(() => {
+    if (video && video.estado === 'PUBLICADO' && (!video.vistas_obtenidas || video.vistas_obtenidas === 0)) {
+      handleRefreshPublishedViews(true);
+    }
+  }, [videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!video) return null;
 
@@ -1427,21 +1502,46 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
                   {/* Metrics (if published) */}
                   {video.estado === 'PUBLICADO' && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-                        <div className="flex items-center justify-center gap-1 text-emerald-400 mb-0.5">
-                          <Eye size={13} />
-                          <span className="text-base font-bold">{formatViews(video.vistas_obtenidas)}</span>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center relative group">
+                          <div className="flex items-center justify-center gap-1 text-emerald-400 mb-0.5">
+                            <Eye size={13} />
+                            <span className="text-base font-bold font-mono">{formatViews(video.vistas_obtenidas || 0)}</span>
+                          </div>
+                          <p className="text-[10px] text-[var(--text-muted)]">Vistas Verificadas</p>
+                          <button
+                            type="button"
+                            onClick={() => handleRefreshPublishedViews(false)}
+                            disabled={verifyingScraper}
+                            title="Actualizar vistas ahora"
+                            className="absolute top-2 right-2 p-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 transition-all disabled:opacity-50 cursor-pointer"
+                          >
+                            <RefreshCw size={10} className={verifyingScraper ? 'animate-spin' : ''} />
+                          </button>
                         </div>
-                        <p className="text-[10px] text-[var(--text-muted)]">Vistas Verificadas</p>
-                      </div>
-                      <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-center">
-                        <div className="flex items-center justify-center gap-1 text-cyan-400 mb-0.5">
-                          <DollarSign size={13} />
-                          <span className="text-base font-bold">${earnings}</span>
+                        <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-center">
+                          <div className="flex items-center justify-center gap-1 text-cyan-400 mb-0.5">
+                            <DollarSign size={13} />
+                            <span className="text-base font-bold font-mono">${earnings}</span>
+                          </div>
+                          <p className="text-[10px] text-[var(--text-muted)]">Ganancia Est.</p>
                         </div>
-                        <p className="text-[10px] text-[var(--text-muted)]">Ganancia Est.</p>
                       </div>
+                      {video.post_url_publica && video.post_url_publica !== '#' && account?.plataforma !== 'youtube' && (
+                        <a
+                          href={video.post_url_publica}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-semibold hover:bg-emerald-500/20 transition-all"
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <ExternalLink size={12} className="shrink-0" />
+                            <span className="truncate">Post publicado: {video.post_url_publica}</span>
+                          </div>
+                          <span className="text-[10px] opacity-75 shrink-0 ml-2">Abrir →</span>
+                        </a>
+                      )}
                     </div>
                   )}
 

@@ -1,20 +1,23 @@
 // src/app/api/scraper/rescan-account/route.ts
 // Endpoint ejecutado al hacer clic en "Re-escanear perfil en vivo":
-// 1. Extrae datos frescos del perfil público de la red social (Instagram, TikTok).
-// 2. Re-escanea en vivo todas las URLs de reels registrados y confirmados por Telegram.
-// 3. Actualiza las reproducciones, likes y comentarios en 'reels_rastreados', 'publicaciones'
+// 1. Extrae datos frescos del perfil público de la red social (YouTube, TikTok, Instagram, Facebook).
+// 2. Re-escanea en vivo todas las URLs de reels/shorts registrados y confirmados por Telegram o YouTube.
+// 3. Actualiza las reproducciones, ganancias estimadas, likes y comentarios en 'reels_rastreados', 'publicaciones'
 //    y 'metricas_extraidas_scraper' para alimentar inmediatamente las gráficas de Analíticas.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
-import { scrapePostUrl } from '@/lib/services/publicationConfirmationService';
+import {
+  scrapePostUrl,
+  syncPublishedVideosViews,
+} from '@/lib/services/publicationConfirmationService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 45;
 
 const BROWSER_HEADERS = {
   'User-Agent':
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
   'Accept-Language': 'es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7',
   'Cache-Control': 'no-cache',
@@ -54,10 +57,14 @@ export async function POST(req: NextRequest) {
     const cleanUser = (cuenta.username || '').replace(/^@/, '').trim();
     const platform = (cuenta.plataforma || 'tiktok').toLowerCase();
 
-    // 2. Extraer datos reales del perfil oficial (TikTok / Instagram)
+    // 2. Extraer datos reales del perfil oficial (YouTube / TikTok / Instagram / Facebook)
     const profileUrl =
-      platform === 'tiktok'
+      platform === 'youtube'
+        ? `https://www.youtube.com/@${cleanUser}`
+        : platform === 'tiktok'
         ? `https://www.tiktok.com/@${cleanUser}`
+        : platform === 'facebook'
+        ? `https://www.facebook.com/${cleanUser}`
         : `https://www.instagram.com/${cleanUser}/`;
 
     const profileData = {
@@ -117,7 +124,7 @@ export async function POST(req: NextRequest) {
 
           if (ogImg) profileData.avatarUrl = ogImg[1];
 
-          const fullDesc = ogDesc ? ogDesc[1] : (metaDesc ? metaDesc[1] : '');
+          const fullDesc = ogDesc ? ogDesc[1] : metaDesc ? metaDesc[1] : '';
           if (fullDesc) {
             profileData.bio = fullDesc;
             const folMatch = fullDesc.match(/([\d,.]+[kKmM]?)\s*(?:followers|seguidores)/i);
@@ -125,165 +132,68 @@ export async function POST(req: NextRequest) {
             if (folMatch) profileData.followerCount = parseViewsFromText(folMatch[1]);
             if (postMatch) profileData.videoCount = parseViewsFromText(postMatch[1]);
           }
+        } else if (platform === 'youtube') {
+          const ogTitle = pHtml.match(/<meta property="og:title" content="([^"]+)"/i);
+          const ogDesc = pHtml.match(/<meta property="og:description" content="([^"]+)"/i);
+          const ogImg = pHtml.match(/<meta property="og:image" content="([^"]+)"/i);
+          if (ogTitle) profileData.nickname = ogTitle[1].trim();
+          if (ogDesc) profileData.bio = ogDesc[1].trim();
+          if (ogImg) profileData.avatarUrl = ogImg[1];
         }
       }
     } catch (e: any) {
       console.warn('[rescan-account] Error inspeccionando perfil:', e?.message);
     }
 
-    // 3. Cargar todas las publicaciones de la cuenta
-    const { data: publicaciones } = await db
-      .from('publicaciones')
-      .select('*')
-      .eq('cuenta_id', cuenta_id);
+    // 3. Sincronizar todas las publicaciones de la cuenta (YouTube Batch API + TikTok/Instagram Multi-Estrategia)
+    const syncRes = await syncPublishedVideosViews({
+      forceAll: true,
+      cuentaId: cuenta_id,
+      maxSocialBatch: 10,
+    });
 
-    // 4. Cargar todos los reels rastreados de la cuenta
-    const { data: trackedReels } = await db
+    let reelsActualizados = syncRes.updated;
+    let totalVistas = syncRes.details.reduce((sum, d) => sum + (d.newViews || 0), 0);
+
+    // 4. Actualizar también reels_rastreados independientes (que no tengan publicacion_id asociado)
+    const { data: standaloneReels } = await db
       .from('reels_rastreados')
       .select('*')
-      .eq('cuenta_id', cuenta_id);
+      .eq('cuenta_id', cuenta_id)
+      .is('publicacion_id', null)
+      .limit(6);
 
-    // 5. Cargar confirmaciones de Telegram para recuperar links confirmados
-    const pubIds = (publicaciones || []).map((p: any) => p.id);
-    const confirmedLinksMap: Record<string, string> = {};
-    if (pubIds.length > 0) {
-      const { data: confs } = await db
-        .from('confirmaciones_telegram')
-        .select('*')
-        .in('publicacion_id', pubIds);
-
-      (confs || []).forEach((c: any) => {
-        if (c.post_url && c.post_url.startsWith('http') && !c.post_url.includes('#pub_')) {
-          confirmedLinksMap[c.publicacion_id] = c.post_url.trim();
-        }
-      });
-    }
-
-    // 6. Recopilar todas las URLs de reels asociadas a esta cuenta
-    interface ReelTarget {
-      url: string;
-      publicacionId?: string;
-      trackedId?: string;
-      currentViews: number;
-    }
-
-    const targetsMap = new Map<string, ReelTarget>();
-
-    // De publicaciones
-    (publicaciones || []).forEach((p: any) => {
-      const rawUrl = p.post_url_publica || confirmedLinksMap[p.id];
-      if (rawUrl && rawUrl.startsWith('http') && !rawUrl.includes('#pub_')) {
-        const cleanUrl = rawUrl.trim();
-        targetsMap.set(cleanUrl, {
-          url: cleanUrl,
-          publicacionId: p.id,
-          currentViews: p.vistas_obtenidas || 0,
-        });
-      }
-    });
-
-    // De reels_rastreados
-    (trackedReels || []).forEach((tr: any) => {
-      if (tr.url && tr.url.startsWith('http') && !tr.url.includes('#pub_')) {
-        const cleanUrl = tr.url.trim();
-        const existing = targetsMap.get(cleanUrl);
-        if (existing) {
-          existing.trackedId = tr.id;
-          if (tr.publicacion_id && !existing.publicacionId) {
-            existing.publicacionId = tr.publicacion_id;
-          }
-          existing.currentViews = Math.max(existing.currentViews, tr.vistas || 0);
-        } else {
-          targetsMap.set(cleanUrl, {
-            url: cleanUrl,
-            publicacionId: tr.publicacion_id || undefined,
-            trackedId: tr.id,
-            currentViews: tr.vistas || 0,
-          });
-        }
-      }
-    });
-
-    const targetList = Array.from(targetsMap.values()).slice(0, 15); // límite para no exceder timeout
-    let reelsActualizados = 0;
-    let totalVistas = 0;
-
-    // 7. Re-escanear en paralelo las URLs de los reels para obtener estadísticas en vivo
-    const scrapeResults = await Promise.allSettled(
-      targetList.map(async (target) => {
-        const scrapeRes = await scrapePostUrl(target.url);
-        const metrics = scrapeRes.metrics;
-        const newViews = Math.max(target.currentViews, metrics.vistas);
-
-        // Actualizar en publicaciones si tiene vínculo
-        if (target.publicacionId) {
-          const pubUpdate: Record<string, any> = {
-            estado: 'PUBLICADO',
-            post_url_publica: target.url,
-            updated_at: now,
-          };
-          if (newViews > 0) pubUpdate.vistas_obtenidas = newViews;
-
-          await db.from('publicaciones').update(pubUpdate).eq('id', target.publicacionId);
-
-          // Actualizar métricas del scraper
-          await db.from('metricas_extraidas_scraper').upsert(
-            {
-              publicacion_id: target.publicacionId,
-              cuenta_id,
-              vistas: newViews,
-              likes: metrics.likes || 0,
-              comentarios: metrics.comentarios || 0,
-              post_url: target.url,
-              fuente: 'scraper',
-              estado_confirmado: true,
-              fecha_extraccion: now,
-            },
-            { onConflict: 'publicacion_id' }
-          );
-        }
-
-        // Actualizar en reels_rastreados
-        await db.from('reels_rastreados').upsert(
-          {
-            cuenta_id,
-            url: target.url,
-            titulo: metrics.titulo || '',
-            descripcion: metrics.descripcion || '',
+    if (standaloneReels && standaloneReels.length > 0) {
+      for (const tr of standaloneReels) {
+        if (!tr.url || !tr.url.startsWith('http') || tr.url.includes('#pub_')) continue;
+        const scrapeRes = await scrapePostUrl(tr.url, { bypassCache: true });
+        const newViews = Math.max(Number(tr.vistas) || 0, scrapeRes.metrics.vistas || 0);
+        await db
+          .from('reels_rastreados')
+          .update({
             vistas: newViews,
-            likes: metrics.likes || 0,
-            comentarios: metrics.comentarios || 0,
-            plataforma: platform,
-            fecha_publicacion: metrics.fecha_publicacion || now,
-            fecha_registro: now,
+            likes: Math.max(Number(tr.likes) || 0, scrapeRes.metrics.likes || 0),
+            comentarios: Math.max(Number(tr.comentarios) || 0, scrapeRes.metrics.comentarios || 0),
+            titulo: scrapeRes.metrics.titulo || tr.titulo || '',
+            descripcion: scrapeRes.metrics.descripcion || tr.descripcion || '',
             fecha_actualizacion: now,
-            publicacion_id: target.publicacionId || null,
-          },
-          { onConflict: 'cuenta_id,url', ignoreDuplicates: false }
-        );
-
-        return {
-          url: target.url,
-          vistas: newViews,
-          likes: metrics.likes,
-          scraped: scrapeRes.scraped,
-        };
-      })
-    );
-
-    scrapeResults.forEach((r) => {
-      if (r.status === 'fulfilled') {
+          })
+          .eq('id', tr.id);
         reelsActualizados++;
-        totalVistas += r.value.vistas || 0;
+        totalVistas += newViews;
       }
-    });
+    }
 
-    // 8. Cargar lista actualizada de reels rastreados
+    // 5. Cargar lista actualizada de reels rastreados
     const { data: updatedTracked } = await db
       .from('reels_rastreados')
       .select('*')
       .eq('cuenta_id', cuenta_id)
       .order('fecha_registro', { ascending: false });
+
+    if (profileData.videoCount === 0 && updatedTracked) {
+      profileData.videoCount = updatedTracked.length;
+    }
 
     return NextResponse.json({
       success: true,
@@ -291,7 +201,7 @@ export async function POST(req: NextRequest) {
       reelsActualizados,
       totalVistas,
       trackedReels: updatedTracked || [],
-      message: `✅ Perfil y ${reelsActualizados} reels re-escaneados en vivo exitosamente.`,
+      message: `✅ Perfil y ${reelsActualizados} publicación(es) actualizadas en vivo exitosamente (${totalVistas.toLocaleString()} vistas totales).`,
     });
   } catch (error: any) {
     console.error('[rescan-account] Error:', error);

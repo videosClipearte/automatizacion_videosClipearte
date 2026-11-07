@@ -92,8 +92,8 @@ export function TitleDuplicateChecker() {
     const normQuery = normalizeText(trimmed);
     const queryTokens = getTokens(trimmed);
 
-    // 1. Exact match check
-    const exact = poolVideos.find(v => normalizeText(v.titulo) === normQuery);
+    // 1. Exact match check (comprueba contra el nombre del archivo)
+    const exact = poolVideos.find(v => normalizeText(v.nombre_archivo || v.titulo) === normQuery);
     if (exact) {
       return {
         status: 'exact_duplicate',
@@ -108,8 +108,9 @@ export function TitleDuplicateChecker() {
     }
 
     const scored = poolVideos.map(v => {
-      const vTokens = getTokens(v.titulo);
-      const vNorm = normalizeText(v.titulo);
+      const fileTarget = v.nombre_archivo || v.titulo;
+      const vTokens = getTokens(fileTarget);
+      const vNorm = normalizeText(fileTarget);
 
       // Check substring containment
       if (normQuery.length > 8 && (vNorm.includes(normQuery) || normQuery.includes(vNorm))) {

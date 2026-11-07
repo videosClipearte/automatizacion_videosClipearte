@@ -363,10 +363,13 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     set({ isLoading: true, loadError: null });
     try {
       const db = getSupabase();
-      const [accRes, campRes, vidRes] = await Promise.all([
+      const [accRes, campRes, vidRes, metRes, trackedRes, confRes] = await Promise.all([
         db.from('cuentas').select('*').order('created_at', { ascending: true }),
         db.from('campanas').select('*').order('created_at', { ascending: true }),
         db.from('publicaciones').select('*').order('programado_para', { ascending: true }),
+        db.from('metricas_extraidas_scraper').select('*'),
+        db.from('reels_rastreados').select('*'),
+        db.from('confirmaciones_telegram').select('*').eq('estado', 'CONFIRMADO'),
       ]);
 
       // ❗ Verificar errores de Supabase (antes se ignoraban silenciosamente)
@@ -473,6 +476,42 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       const accounts = (accRes.data ?? []).map(mapAccount);
       const campaigns = (campRes.data ?? []).map(mapCampaign);
       const rawVideos = (vidRes.data ?? []).map(mapVideo);
+
+      // Mapas de métricas y reels rastreados para unificar vistas de Telegram y YouTube
+      const metricViewsByPub = new Map<string, number>();
+      const metricUrlByPub = new Map<string, string>();
+      (metRes.data ?? []).forEach((m: any) => {
+        if (m.publicacion_id) {
+          metricViewsByPub.set(m.publicacion_id, Math.max(metricViewsByPub.get(m.publicacion_id) || 0, Number(m.vistas) || 0));
+          if (m.post_url && m.post_url.startsWith('http') && !m.post_url.includes('#pub_')) {
+            metricUrlByPub.set(m.publicacion_id, m.post_url.trim());
+          }
+        }
+      });
+
+      const trackedViewsByPub = new Map<string, number>();
+      const trackedViewsByUrl = new Map<string, number>();
+      const trackedUrlByPub = new Map<string, string>();
+      (trackedRes.data ?? []).forEach((tr: any) => {
+        const vCount = Number(tr.vistas) || 0;
+        if (tr.publicacion_id) {
+          trackedViewsByPub.set(tr.publicacion_id, Math.max(trackedViewsByPub.get(tr.publicacion_id) || 0, vCount));
+          if (tr.url && tr.url.startsWith('http') && !tr.url.includes('#pub_')) {
+            trackedUrlByPub.set(tr.publicacion_id, tr.url.trim());
+          }
+        }
+        if (tr.url && tr.url.startsWith('http') && !tr.url.includes('#pub_')) {
+          trackedViewsByUrl.set(tr.url.trim(), Math.max(trackedViewsByUrl.get(tr.url.trim()) || 0, vCount));
+        }
+      });
+
+      const confirmedUrlByPub = new Map<string, string>();
+      (confRes.data ?? []).forEach((c: any) => {
+        if (c.publicacion_id && c.post_url && c.post_url.startsWith('http') && !c.post_url.includes('#pub_')) {
+          confirmedUrlByPub.set(c.publicacion_id, c.post_url.trim());
+        }
+      });
+
       const seenVideoKeys = new Set<string>();
       const videos: Video[] = [];
       for (const v of rawVideos) {
@@ -484,6 +523,46 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         }
         seenVideoKeys.add(v.id);
         seenVideoKeys.add(cloneKey);
+
+        // Consolidar post_url_publica y vistas_obtenidas desde todas las fuentes (Telegram, YouTube, Scraper)
+        const effectiveUrl =
+          (v.post_url_publica && v.post_url_publica !== '#' ? v.post_url_publica.trim() : '') ||
+          confirmedUrlByPub.get(v.id) ||
+          trackedUrlByPub.get(v.id) ||
+          metricUrlByPub.get(v.id) ||
+          undefined;
+
+        if (effectiveUrl && !v.post_url_publica) {
+          v.post_url_publica = effectiveUrl;
+        }
+        if (confirmedUrlByPub.has(v.id) && v.estado === 'ENVIADO') {
+          v.estado = 'PUBLICADO';
+        }
+
+        const effectiveViews = Math.max(
+          v.vistas_obtenidas || 0,
+          metricViewsByPub.get(v.id) || 0,
+          trackedViewsByPub.get(v.id) || 0,
+          effectiveUrl ? trackedViewsByUrl.get(effectiveUrl) || 0 : 0
+        );
+
+        if (effectiveViews > (v.vistas_obtenidas || 0)) {
+          v.vistas_obtenidas = effectiveViews;
+          db.from('publicaciones')
+            .update({ vistas_obtenidas: effectiveViews, ...(effectiveUrl ? { post_url_publica: effectiveUrl } : {}) })
+            .eq('id', v.id)
+            .then(() => {});
+        }
+
+        if (v.vistas_obtenidas > 0) {
+          const camp =
+            campaigns.find((c) => c.id === v.campana_id) ||
+            campaigns.find((c) => c.cuentas_ids?.includes(v.cuenta_id));
+          if (camp && camp.tasa_pago_por_mil_vistas > 0) {
+            v.ganancias_estimadas = Number(((v.vistas_obtenidas / 1000) * camp.tasa_pago_por_mil_vistas).toFixed(2));
+          }
+        }
+
         videos.push(v);
       }
 
@@ -510,14 +589,51 @@ const useAppStoreBase = create<AppState>((set, get) => ({
   refreshData: async () => {
     try {
       const db = getSupabase();
-      const { data, error } = await db
-        .from('publicaciones')
-        .select('*')
-        .order('programado_para', { ascending: true });
+      const [{ data, error }, { data: metData }, { data: trackedData }, { data: confData }] = await Promise.all([
+        db.from('publicaciones').select('*').order('programado_para', { ascending: true }),
+        db.from('metricas_extraidas_scraper').select('*'),
+        db.from('reels_rastreados').select('*'),
+        db.from('confirmaciones_telegram').select('*').eq('estado', 'CONFIRMADO'),
+      ]);
 
       if (!error && data) {
         const rawVideos = data.map(mapVideo);
-        const accounts = get().accounts;
+        const campaigns = get().campaigns;
+
+        const metricViewsByPub = new Map<string, number>();
+        const metricUrlByPub = new Map<string, string>();
+        (metData ?? []).forEach((m: any) => {
+          if (m.publicacion_id) {
+            metricViewsByPub.set(m.publicacion_id, Math.max(metricViewsByPub.get(m.publicacion_id) || 0, Number(m.vistas) || 0));
+            if (m.post_url && m.post_url.startsWith('http') && !m.post_url.includes('#pub_')) {
+              metricUrlByPub.set(m.publicacion_id, m.post_url.trim());
+            }
+          }
+        });
+
+        const trackedViewsByPub = new Map<string, number>();
+        const trackedViewsByUrl = new Map<string, number>();
+        const trackedUrlByPub = new Map<string, string>();
+        (trackedData ?? []).forEach((tr: any) => {
+          const vCount = Number(tr.vistas) || 0;
+          if (tr.publicacion_id) {
+            trackedViewsByPub.set(tr.publicacion_id, Math.max(trackedViewsByPub.get(tr.publicacion_id) || 0, vCount));
+            if (tr.url && tr.url.startsWith('http') && !tr.url.includes('#pub_')) {
+              trackedUrlByPub.set(tr.publicacion_id, tr.url.trim());
+            }
+          }
+          if (tr.url && tr.url.startsWith('http') && !tr.url.includes('#pub_')) {
+            trackedViewsByUrl.set(tr.url.trim(), Math.max(trackedViewsByUrl.get(tr.url.trim()) || 0, vCount));
+          }
+        });
+
+        const confirmedUrlByPub = new Map<string, string>();
+        (confData ?? []).forEach((c: any) => {
+          if (c.publicacion_id && c.post_url && c.post_url.startsWith('http') && !c.post_url.includes('#pub_')) {
+            confirmedUrlByPub.set(c.publicacion_id, c.post_url.trim());
+          }
+        });
+
         const seenVideoKeys = new Set<string>();
         const videos: Video[] = [];
         for (const v of rawVideos) {
@@ -538,6 +654,40 @@ const useAppStoreBase = create<AppState>((set, get) => ({
               .update({ descripcion_aprobada_ia: cleanedDesc })
               .eq('id', v.id)
               .then(() => {});
+          }
+
+          const effectiveUrl =
+            (v.post_url_publica && v.post_url_publica !== '#' ? v.post_url_publica.trim() : '') ||
+            confirmedUrlByPub.get(v.id) ||
+            trackedUrlByPub.get(v.id) ||
+            metricUrlByPub.get(v.id) ||
+            undefined;
+
+          if (effectiveUrl && !v.post_url_publica) {
+            v.post_url_publica = effectiveUrl;
+          }
+          if (confirmedUrlByPub.has(v.id) && v.estado === 'ENVIADO') {
+            v.estado = 'PUBLICADO';
+          }
+
+          const effectiveViews = Math.max(
+            v.vistas_obtenidas || 0,
+            metricViewsByPub.get(v.id) || 0,
+            trackedViewsByPub.get(v.id) || 0,
+            effectiveUrl ? trackedViewsByUrl.get(effectiveUrl) || 0 : 0
+          );
+
+          if (effectiveViews > (v.vistas_obtenidas || 0)) {
+            v.vistas_obtenidas = effectiveViews;
+          }
+
+          if (v.vistas_obtenidas > 0) {
+            const camp =
+              campaigns.find((c) => c.id === v.campana_id) ||
+              campaigns.find((c) => c.cuentas_ids?.includes(v.cuenta_id));
+            if (camp && camp.tasa_pago_por_mil_vistas > 0) {
+              v.ganancias_estimadas = Number(((v.vistas_obtenidas / 1000) * camp.tasa_pago_por_mil_vistas).toFixed(2));
+            }
           }
 
           videos.push(v);
@@ -580,7 +730,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       id: video.id,
       cuenta_id: video.cuenta_id,
       campana_id: video.campana_id || null,
-      titulo: video.titulo,
+      titulo: isYouTube ? (video.nombre_archivo || video.titulo) : video.titulo,
       descripcion_aprobada_ia: finalDesc,
       thumbnail_color: video.thumbnail_color,
       drive_file_url: video.drive_file_url,
@@ -604,9 +754,14 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     let { error: insErr } = await db.from('publicaciones').insert(row);
     if (insErr) {
       console.warn('[addVideo] Error inicial insertando en publicaciones:', insErr.message);
-      // Reintento 0: Si falló por columnas adicionales inexistentes (nombre_archivo, titulo_youtube)
-      if (row.nombre_archivo || row.titulo_youtube) {
+      // Reintento 0a: Si falló por columna nombre_archivo inexistente, conservar titulo_youtube
+      if (row.nombre_archivo) {
         delete row.nombre_archivo;
+        const resColFile = await db.from('publicaciones').insert(row);
+        insErr = resColFile.error;
+      }
+      // Reintento 0b: Si falló por columna titulo_youtube inexistente
+      if (insErr && row.titulo_youtube) {
         delete row.titulo_youtube;
         const resCols = await db.from('publicaciones').insert(row);
         insErr = resCols.error;
@@ -718,8 +873,12 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     }
 
     let { error: updErr } = await db.from('publicaciones').update(dbUpdates).eq('id', id);
-    if (updErr && (dbUpdates.nombre_archivo || dbUpdates.titulo_youtube)) {
+    if (updErr && dbUpdates.nombre_archivo) {
       delete dbUpdates.nombre_archivo;
+      const resColFile = await db.from('publicaciones').update(dbUpdates).eq('id', id);
+      updErr = resColFile.error;
+    }
+    if (updErr && dbUpdates.titulo_youtube) {
       delete dbUpdates.titulo_youtube;
       const resCols = await db.from('publicaciones').update(dbUpdates).eq('id', id);
       updErr = resCols.error;

@@ -1,135 +1,114 @@
 // src/app/api/scraper/extract-views/route.ts
-// Extrae vistas reales de publicaciones o perfiles de redes sociales
-// buscando en el HTML, JSON-LD, metadatos y scripts SSR (TikTok, Instagram, YouTube, Facebook).
+// Extrae y sincroniza vistas reales de publicaciones (YouTube Shorts, TikTok, Instagram, Facebook)
+// usando YouTube Data API v3 / Innertube y extracción multi-estrategia con control anti-penalización.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
+import {
+  scrapePostUrl,
+  syncPublishedVideosViews,
+} from '@/lib/services/publicationConfirmationService';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 45;
 
-function parseNumberWithSuffix(str: string): number {
-  if (!str) return 0;
-  const clean = str.trim().toLowerCase().replace(/,/g, '');
-  const mult = clean.endsWith('m') ? 1000000
-    : clean.endsWith('k') ? 1000
-    : 1;
-  const numStr = clean.replace(/[km]/g, '');
-  const val = parseFloat(numStr);
-  return isNaN(val) ? 0 : Math.round(val * mult);
-}
+export async function GET(req: NextRequest) {
+  try {
+    const cuentaId = req.nextUrl.searchParams.get('cuenta_id') || undefined;
+    const forceAll = req.nextUrl.searchParams.get('force') === 'true';
 
-function extractViewsFromHtml(html: string): number[] {
-  const views: number[] = [];
+    const syncRes = await syncPublishedVideosViews({
+      forceAll,
+      cuentaId,
+    });
 
-  // 1. TikTok JSON: "playCount":12345 o "playCount&quot;:12345
-  const tiktokMatches = html.matchAll(/(?:playCount|viewCount|videoViewCount)(?:&quot;|")?\s*:\s*(?:&quot;|")?(\d+)/gi);
-  for (const m of tiktokMatches) {
-    const val = parseInt(m[1], 10);
-    if (val > 0 && val < 500000000) {
-      views.push(val);
-    }
+    return NextResponse.json({
+      ...syncRes,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || 'Error sincronizando vistas' },
+      { status: 500 }
+    );
   }
-
-  // 2. Instagram: "video_view_count":12345 o "play_count":12345
-  const igMatches = html.matchAll(/(?:video_view_count|play_count|video_play_count)(?:&quot;|")?\s*:\s*(\d+)/gi);
-  for (const m of igMatches) {
-    const val = parseInt(m[1], 10);
-    if (val > 0 && val < 500000000) {
-      views.push(val);
-    }
-  }
-
-  // 3. YouTube: "viewCount":"12345" o "simpleText":"12.345 vistas"
-  const ytMatches = html.matchAll(/(?:viewCount|view_count)(?:&quot;|")?\s*:\s*(?:&quot;|")?(\d+)/gi);
-  for (const m of ytMatches) {
-    const val = parseInt(m[1], 10);
-    if (val > 0 && val < 500000000) {
-      views.push(val);
-    }
-  }
-
-  // 4. Regex textual en español / inglés: "15.4K reproducciones", "1.2M vistas", "3400 views"
-  const textMatches = html.matchAll(/(\d+[\d,.]*[kKmM]?)\s*(?:reproducciones|vistas|views|plays)/gi);
-  for (const m of textMatches) {
-    const parsed = parseNumberWithSuffix(m[1]);
-    if (parsed > 0 && parsed < 500000000) {
-      views.push(parsed);
-    }
-  }
-
-  // Deduplicar manteniendo orden de aparición
-  const seen = new Set<number>();
-  const uniqueViews: number[] = [];
-  for (const v of views) {
-    if (!seen.has(v)) {
-      seen.add(v);
-      uniqueViews.push(v);
-    }
-  }
-
-  return uniqueViews;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { videoId, targetUrl, profileUrl, accountId } = body;
+    const {
+      mode,
+      videoId,
+      targetUrl,
+      profileUrl,
+      accountId,
+      cuentaId,
+      forceAll = false,
+      maxSocialBatch,
+    } = body;
 
-    const urlsToTry: string[] = [];
-    if (targetUrl && targetUrl !== '#' && targetUrl.startsWith('http')) {
-      urlsToTry.push(targetUrl);
-    }
-    if (profileUrl && profileUrl.startsWith('http')) {
-      urlsToTry.push(profileUrl);
-    }
+    // 1. Modo de sincronización periódica inteligente (lote seguro anti-penalización)
+    if (mode === 'sync_batch' || (!targetUrl && !profileUrl)) {
+      const syncRes = await syncPublishedVideosViews({
+        forceAll: Boolean(forceAll),
+        cuentaId: cuentaId || accountId || undefined,
+        publicacionId: videoId || undefined,
+        maxSocialBatch: typeof maxSocialBatch === 'number' ? maxSocialBatch : undefined,
+      });
 
-    if (urlsToTry.length === 0) {
+      const bestDetail = videoId
+        ? syncRes.details.find((d) => d.publicacionId === videoId)
+        : syncRes.details[0];
+
       return NextResponse.json({
-        success: false,
-        error: 'Se requiere una URL válida de post o de perfil para extraer vistas.',
-      }, { status: 400 });
+        ...syncRes,
+        bestView: bestDetail ? bestDetail.newViews : null,
+        updatedInDb: syncRes.updated > 0,
+        message:
+          syncRes.updated > 0
+            ? `✅ Vistas actualizadas para ${syncRes.updated} publicación(es).`
+            : 'Las vistas están al día dentro del intervalo seguro anti-penalización.',
+      });
     }
 
-    const headers = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    };
+    // 2. Extracción directa de una URL o videoId específico
+    const urlToScrape =
+      targetUrl && targetUrl !== '#' && targetUrl.startsWith('http')
+        ? targetUrl.trim()
+        : profileUrl && profileUrl.startsWith('http')
+        ? profileUrl.trim()
+        : '';
 
-    let extractedViews: number[] = [];
-    let usedUrl = '';
-    let httpStatus = 0;
-    let htmlLength = 0;
-
-    for (const url of urlsToTry) {
-      try {
-        const res = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
-        httpStatus = res.status;
-        if (res.ok) {
-          usedUrl = url;
-          const html = await res.text();
-          htmlLength = html.length;
-          extractedViews = extractViewsFromHtml(html);
-          if (extractedViews.length > 0) break;
-        }
-      } catch (err: any) {
-        console.warn(`[extract-views] Fallo al consultar ${url}:`, err?.message);
-      }
+    if (!urlToScrape) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Se requiere una URL válida de post o de perfil para extraer vistas.',
+        },
+        { status: 400 }
+      );
     }
 
-    // Si se encontró al menos una vista y se proporcionó videoId, actualizar en Supabase
+    const scrapeRes = await scrapePostUrl(urlToScrape, { bypassCache: true });
+    const bestView = scrapeRes.metrics.vistas > 0 ? scrapeRes.metrics.vistas : null;
     let updatedInDb = false;
-    const bestView = extractedViews[0] ?? null;
 
-    if (bestView !== null && bestView > 0 && videoId) {
+    if (videoId) {
       try {
-        const db = getSupabase();
-        const { error } = await db
-          .from('publicaciones')
-          .update({ vistas_obtenidas: bestView })
-          .eq('id', videoId);
-        if (!error) updatedInDb = true;
+        const syncRes = await syncPublishedVideosViews({
+          forceAll: true,
+          publicacionId: videoId,
+        });
+        updatedInDb = syncRes.updated > 0;
+
+        if (bestView !== null && bestView > 0) {
+          const db = getSupabase();
+          await db
+            .from('publicaciones')
+            .update({ vistas_obtenidas: bestView, updated_at: new Date().toISOString() })
+            .eq('id', videoId);
+          updatedInDb = true;
+        }
       } catch (dbErr: any) {
         console.warn('[extract-views] Error guardando vista en Supabase:', dbErr?.message);
       }
@@ -137,15 +116,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      usedUrl,
-      httpStatus,
-      htmlLength,
-      extractedViews,
+      usedUrl: scrapeRes.metrics.resolvedUrl || urlToScrape,
+      httpStatus: scrapeRes.httpStatus,
+      extractedViews: bestView !== null ? [bestView] : [],
       bestView,
+      metrics: scrapeRes.metrics,
       updatedInDb,
-      message: bestView !== null
-        ? `Se extrajeron ${bestView} vistas exitosamente.`
-        : `No se encontraron contadores públicos en el HTML (HTTP ${httpStatus}). Puedes registrar las vistas manualmente.`,
+      message:
+        bestView !== null
+          ? `✅ Se extrajeron ${bestView.toLocaleString()} vistas exitosamente.`
+          : `No se detectaron vistas públicas adicionales en la URL (HTTP ${scrapeRes.httpStatus}).`,
     });
   } catch (error: any) {
     return NextResponse.json(

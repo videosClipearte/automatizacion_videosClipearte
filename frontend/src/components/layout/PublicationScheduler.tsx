@@ -47,6 +47,7 @@ export function PublicationScheduler() {
   const lastTelegramUpdateIdRef = useRef<number>(0);
   const webhookActiveRef = useRef<boolean>(false);
   const isPollingCommandsRef = useRef<boolean>(false);
+  const isSyncingViewsRef = useRef<boolean>(false);
   const alertedDelaysRef = useRef<Set<string>>(new Set());
 
   // Refs mutables para acceder siempre a los datos frescos sin provocar re-montajes continuos del efecto
@@ -70,6 +71,7 @@ export function PublicationScheduler() {
   // Detección de trabajo pendiente
   const hasScheduledVideos = videos.some((v) => v.estado === 'PROGRAMADO');
   const hasSentVideos = videos.some((v) => v.estado === 'ENVIADO');
+  const hasPublishedVideos = videos.some((v) => v.estado === 'PUBLICADO');
   const hasPendingWork = hasScheduledVideos || hasSentVideos;
 
   const checkScheduledPublications = async () => {
@@ -628,7 +630,8 @@ export function PublicationScheduler() {
         const data = await res.json();
 
         if (data.ok && data.processed > 0) {
-          console.log(`[PublicationScheduler] ✅ ${data.processed} comando(s) de Telegram procesado(s).`);
+          console.log(`[PublicationScheduler] ✅ ${data.processed} comando(s) de Telegram procesado(s). Sincronizando datos de la app...`);
+          await useAppStore.getState().refreshData();
         } else if (data.error_code === 409) {
           // Webhook activo en producción
           webhookActiveRef.current = true;
@@ -672,6 +675,44 @@ export function PublicationScheduler() {
       }
     };
 
+    // Sincronizador periódico seguro de vistas (anti-penalización) para videos confirmados por Telegram y YouTube
+    const syncPublishedViewsSafely = async () => {
+      if (typeof window === 'undefined' || isSyncingViewsRef.current) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+
+      const currentVideos = videosRef.current;
+      const hasPublishedOrSentWithUrl = currentVideos.some(
+        (v) => v.estado === 'PUBLICADO' || (v.estado === 'ENVIADO' && Boolean(v.post_url_publica))
+      );
+      if (!hasPublishedOrSentWithUrl) return;
+
+      isSyncingViewsRef.current = true;
+      try {
+        const res = await fetch('/api/scraper/extract-views', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'sync_batch',
+            forceAll: false,
+            maxSocialBatch: 4,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.updated && data.updated > 0) {
+            console.log(
+              `[PublicationScheduler] 👁️ Vistas sincronizadas de forma segura para ${data.updated} publicación(es) (YouTube: ${data.youtubeBatchCount || 0}, Redes: ${data.socialScrapedCount || 0}).`
+            );
+            await useAppStore.getState().refreshData();
+          }
+        }
+      } catch {
+        // Ignorar errores transitorios de red
+      } finally {
+        isSyncingViewsRef.current = false;
+      }
+    };
+
     // ── 1. Intervalo de Publicaciones (60s) — Se pausa completamente si no hay trabajo ──
     useEffect(() => {
       if (isBackendSchedulerEnabled) {
@@ -709,9 +750,14 @@ export function PublicationScheduler() {
       };
     }, [hasPendingWork, isBackendSchedulerEnabled]);
 
-    // ── 2. Intervalo de Comandos de Telegram (60s) ──
+    // ── 2. Intervalo de Comandos de Telegram (60s) y Sincronización Segura de Vistas (cada 10 min) ──
     useEffect(() => {
       checkTelegramCommands();
+
+      // Sincronización inicial diferida (6s tras cargar) para actualizar vistas de videos recién publicados o en 0
+      const initialViewsTimeout = setTimeout(() => {
+        syncPublishedViewsSafely();
+      }, 6000);
 
       // Escuchar comandos de Telegram cada 60 segundos (optimizado de 12s a 60s)
       const commandInterval = setInterval(() => {
@@ -719,10 +765,19 @@ export function PublicationScheduler() {
         checkTelegramCommands();
       }, 60000);
 
+      // Actualizar vistas cada 10 minutos respetando el enfriamiento anti-penalización por antigüedad
+      const TEN_MINUTES_MS = 10 * 60 * 1000;
+      const viewsSyncInterval = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        syncPublishedViewsSafely();
+      }, TEN_MINUTES_MS);
+
       return () => {
+        clearTimeout(initialViewsTimeout);
         clearInterval(commandInterval);
+        clearInterval(viewsSyncInterval);
       };
-    }, []);
+    }, [hasPublishedVideos]);
 
     // ── 3. Listener para reanudar de inmediato cuando el usuario regresa a la pestaña ──
     useEffect(() => {

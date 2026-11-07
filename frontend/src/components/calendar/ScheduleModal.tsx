@@ -117,12 +117,9 @@ function ScheduleModalDialog() {
   const [videoTitle, setVideoTitle] = useState<string>(
     scheduleModalFile ? scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim() : ''
   );
-  const [shortTitle, setShortTitle] = useState<string>(
-    scheduleModalFile ? scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim() : ''
-  );
-  // Optimización CPU (Problema 2): Debounce de 400ms sobre el título para no recalcular similitud con cada tecla
+  const [shortTitle, setShortTitle] = useState<string>('');
+  // Optimización CPU (Problema 2): Debounce de 400ms sobre el nombre del archivo para no recalcular similitud con cada tecla
   const [debouncedVideoTitle, setDebouncedVideoTitle] = useState<string>(videoTitle);
-  const [debouncedShortTitle, setDebouncedShortTitle] = useState<string>(shortTitle);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -130,13 +127,6 @@ function ScheduleModalDialog() {
     }, 400);
     return () => clearTimeout(handler);
   }, [videoTitle]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedShortTitle(shortTitle);
-    }, 400);
-    return () => clearTimeout(handler);
-  }, [shortTitle]);
   const [generatingAI, setGeneratingAI] = useState(false);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
   const [extractedAudio, setExtractedAudio] = useState<VideoAudioPayload | null>(null);
@@ -175,7 +165,6 @@ function ScheduleModalDialog() {
     setVideoTitle('');
     setShortTitle('');
     setDebouncedVideoTitle('');
-    setDebouncedShortTitle('');
     setManualDriveUrl('');
     setDriveSuccessUrl(null);
     setDriveError(null);
@@ -342,9 +331,8 @@ function ScheduleModalDialog() {
       setVideoFile(scheduleModalFile);
       const cleanName = scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
       setVideoTitle(cleanName);
-      setShortTitle(cleanName);
+      setShortTitle('');
       setDebouncedVideoTitle(cleanName);
-      setDebouncedShortTitle(cleanName);
       setValue(
         'descripcion',
         `Descubre esta nueva publicación creada para nuestra comunidad. ¡Comenta y comparte! 🔥 #viral #contenido #trending`
@@ -354,7 +342,6 @@ function ScheduleModalDialog() {
       setVideoTitle('');
       setShortTitle('');
       setDebouncedVideoTitle('');
-      setDebouncedShortTitle('');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -373,9 +360,10 @@ function ScheduleModalDialog() {
         setDriveSuccessUrl(null);
         setDriveError(null);
         const cleanName = accepted[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
-        // Preservar el título si el usuario ya escribió uno personalizado
-        setVideoTitle((prev) => (prev && prev.trim() ? prev : cleanName));
-        setShortTitle((prev) => (prev && prev.trim() ? prev : cleanName));
+        // El nombre del archivo solo se pega en el input de Nombre del archivo del video, dejando vacío el Título del Short de YouTube
+        setVideoTitle(cleanName);
+        setDebouncedVideoTitle(cleanName);
+        setShortTitle('');
         setValue(
           'descripcion',
           `¡Nuevo video listo para romperla en redes! 🚀 #tendencia #viral #creadores`
@@ -439,9 +427,7 @@ function ScheduleModalDialog() {
     }
 
     const platform = selectedAccount.plataforma || 'instagram';
-    const effectiveTitle = isYouTube && shortTitle.trim()
-      ? shortTitle.trim()
-      : (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || 'Nuevo video');
+    const effectiveTitle = (videoTitle.trim() || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || shortTitle.trim() || 'Nuevo video').trim();
 
     const platformInstructions: Record<string, string> = {
       tiktok:
@@ -485,20 +471,37 @@ function ScheduleModalDialog() {
       `HASHTAGS OBLIGATORIOS AL FINAL: ${hashtags}`,
     ].join('\n');
 
-    const userPrompt = [
-      `Crea la descripción para publicar en ${platform.toUpperCase()} del video: "${effectiveTitle}".`,
-      ``,
-      `🚨 OBLIGATORIO: Debes aplicar estrictamente cada una de estas reglas de campaña:`,
-      campaignRules,
-      ``,
-      `Hashtags requeridos al final: ${hashtags}`,
-      ``,
-      `FORMATO DE SALIDA:`,
-      `- Genera ÚNICAMENTE el texto final listo para copiar y publicar.`,
-      `- No agregues introducciones, comentarios, comillas ni encabezados como "Copy:".`,
-      `- NUNCA agregues el nombre del archivo ni el título técnico del archivo como encabezado ni en la primera línea.`,
-      `- Incluye emojis adecuados y los hashtags requeridos al final.`,
-    ].join('\n');
+    const userPrompt = isYouTube
+      ? [
+          `Vas a programar un video Short en YOUTUBE (referencia del video: "${effectiveTitle}").`,
+          ``,
+          `1. Crea un TÍTULO PARA EL SHORT DE YOUTUBE (TITULO_SHORT) con las características de un título exitoso de YouTube Shorts (gancho de curiosidad o impacto en las primeras palabras, directo, llamativo, optimizado para CTR y retención, máximo 80 caracteres) y directamente relacionado con la temática del video ("${effectiveTitle}") y la campaña.`,
+          `2. Crea la DESCRIPCIÓN para publicar en YOUTUBE SHORTS cumpliendo estrictamente las reglas de la campaña.`,
+          ``,
+          `🚨 OBLIGATORIO: Debes aplicar estrictamente cada una de estas reglas de campaña:`,
+          campaignRules,
+          ``,
+          `Hashtags requeridos al final de la descripción: ${hashtags}`,
+          ``,
+          `FORMATO DE SALIDA OBLIGATORIO (respeta exactamente estas dos secciones):`,
+          `TITULO_SHORT: [Escribe aquí únicamente el título para el Short de YouTube, sin comillas]`,
+          `---DESCRIPCION---`,
+          `[Escribe aquí únicamente el texto final de la descripción listo para copiar y publicar, sin encabezados, con emojis y los hashtags al final]`,
+        ].join('\n')
+      : [
+          `Crea la descripción para publicar en ${platform.toUpperCase()} del video: "${effectiveTitle}".`,
+          ``,
+          `🚨 OBLIGATORIO: Debes aplicar estrictamente cada una de estas reglas de campaña:`,
+          campaignRules,
+          ``,
+          `Hashtags requeridos al final: ${hashtags}`,
+          ``,
+          `FORMATO DE SALIDA:`,
+          `- Genera ÚNICAMENTE el texto final listo para copiar y publicar.`,
+          `- No agregues introducciones, comentarios, comillas ni encabezados como "Copy:".`,
+          `- NUNCA agregues el nombre del archivo ni el título técnico del archivo como encabezado ni en la primera línea.`,
+          `- Incluye emojis adecuados y los hashtags requeridos al final.`,
+        ].join('\n');
 
     if (!apiKey) {
       // Fallback si no hay clave API configurada
@@ -508,6 +511,8 @@ function ScheduleModalDialog() {
         fallbackCopy = `🔥 Descubre este contenido imperdible. ${campaignRules.slice(0, 80)} ¿Qué opinas? 👇 ${hashtags} #fyp`;
       } else if (platform === 'youtube') {
         fallbackCopy = `⚡ Contenido exclusivo en formato corto. ${campaignRules.slice(0, 80)} ¡Suscríbete al canal! ${hashtags} #shorts`;
+        const fallbackYtTitle = `¡No creerás esto sobre ${effectiveTitle}! 🔥`.slice(0, 85);
+        setShortTitle(fallbackYtTitle);
       } else if (platform === 'facebook') {
         fallbackCopy = `📢 ¡Hola a todos! Les compartimos nuestro nuevo video. ${campaignRules.slice(0, 90)} Déjanos tu opinión 👇 ${hashtags}`;
       } else {
@@ -549,6 +554,8 @@ function ScheduleModalDialog() {
           if (audioPayload) {
             setAiFeedback(attempt > 1
               ? `🔄 Reintentando audio y descripción con ${model} (${attempt}/${maxAttempts})...`
+              : isYouTube
+              ? `🎙️ Analizando video y creando título de Short + descripción con ${model}...`
               : `🎙️ Extrayendo subtítulos y generando descripción con ${model}...`);
             res = await generateDescriptionFromAudio(
               apiKey,
@@ -565,6 +572,8 @@ function ScheduleModalDialog() {
           } else {
             setAiFeedback(attempt > 1
               ? `🔄 Reintentando generación de copy con ${model} (${attempt}/${maxAttempts})...`
+              : isYouTube
+              ? `🤖 Creando título para el Short de YouTube y descripción con ${model}...`
               : `🤖 Generando copy con ${model}...`);
             res = await generateWithGemini(
               apiKey,
@@ -590,11 +599,27 @@ function ScheduleModalDialog() {
 
       if (res?.success && res?.text) {
         setValue('descripcion', res.text);
+        if (isYouTube) {
+          if (res.youtubeTitle) {
+            setShortTitle(res.youtubeTitle.slice(0, 100));
+          } else {
+            // Fallback por si el modelo omitió el encabezado: extraer gancho inicial limpio de la descripción
+            const firstLine = res.text
+              .split('\n')
+              .map((l: string) => l.replace(/#\S+/g, '').trim())
+              .find((l: string) => l.length > 5);
+            if (firstLine) {
+              setShortTitle(firstLine.slice(0, 85).trim());
+            }
+          }
+        }
         if (res.subtitlesJson) {
           setExtractedSubtitles(res.subtitlesJson);
         }
         const usedName = res.usedModel || model;
-        if (audioPayload) {
+        if (isYouTube) {
+          setAiFeedback(`✨ Título del Short de YouTube y descripción generados con ${usedName}.`);
+        } else if (audioPayload) {
           setAiFeedback(`✨ Subtítulos extraídos y descripción generada con ${usedName}.`);
         } else {
           setAiFeedback(`✨ Descripción generada con éxito usando ${usedName}.`);
@@ -720,7 +745,6 @@ function ScheduleModalDialog() {
       setVideoTitle('');
       setShortTitle('');
       setDebouncedVideoTitle('');
-      setDebouncedShortTitle('');
       setManualDriveUrl('');
       setDriveSuccessUrl(null);
       setDriveError(null);
@@ -813,34 +837,39 @@ function ScheduleModalDialog() {
   const selectedAccountStat = accountQuotaStats.find(s => s.id === selectedCuentaId);
 
   // Pre-tokenizar videos existentes una sola vez (memoizado) para no saturar la CPU al escribir
+  // Comprueba únicamente el nombre del archivo de los videos anteriores programados, nunca el título del Short de YouTube
   const preparedVideoTokens = useMemo(() => {
     return videos
       .filter((v) => v.estado !== 'CANCELADO')
-      .map((v) => ({
-        video: v,
-        cleanFile: cleanTitleForComparison(v.nombre_archivo || v.titulo),
-        cleanTitle: cleanTitleForComparison(v.titulo),
-        cleanYtTitle: v.titulo_youtube ? cleanTitleForComparison(v.titulo_youtube) : cleanTitleForComparison(v.titulo),
-        tokens: getTokens(`${v.nombre_archivo || ''} ${v.titulo} ${v.titulo_youtube || ''}`),
-        account: accounts.find((a) => a.id === v.cuenta_id),
-      }));
+      .map((v) => {
+        const fileName = v.nombre_archivo || v.titulo;
+        return {
+          video: v,
+          fileName,
+          cleanFile: cleanTitleForComparison(fileName),
+          tokens: getTokens(fileName),
+          account: accounts.find((a) => a.id === v.cuenta_id),
+        };
+      });
   }, [videos, accounts]);
 
-  // Análisis anti-duplicados optimizado (Problema 2: utiliza debounced titles para no recalcular con cada tecla)
+  // Análisis anti-duplicados optimizado: comprueba ÚNICAMENTE el input "Nombre del archivo del video"
   const duplicateAnalysis = useMemo(() => {
-    const fileQuery = (debouncedVideoTitle || videoFile?.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || '').trim();
-    const shortQuery = (isYouTube && debouncedShortTitle) ? debouncedShortTitle.trim() : '';
+    const fileQuery = debouncedVideoTitle.trim();
 
-    if (!fileQuery && !shortQuery) {
+    if (!fileQuery) {
       return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
     const normFileQuery = cleanTitleForComparison(fileQuery);
     const queryTokens = getTokens(fileQuery);
-    const normShortQuery = (isYouTube && debouncedShortTitle) ? cleanTitleForComparison(debouncedShortTitle) : '';
 
-    // 1. Coincidencia exacta con el archivo de video (nombre de archivo)
-    const exactFileItem = preparedVideoTokens.find(item => item.cleanFile === normFileQuery || item.cleanTitle === normFileQuery);
+    if (!normFileQuery) {
+      return { status: 'idle', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
+    }
+
+    // 1. Coincidencia exacta con el nombre de archivo de videos anteriores programados
+    const exactFileItem = preparedVideoTokens.find(item => item.cleanFile === normFileQuery);
     if (exactFileItem) {
       return {
         status: 'exact_duplicate',
@@ -852,33 +881,14 @@ function ScheduleModalDialog() {
       };
     }
 
-    // 1b. Si es YouTube y hay título de Short aparte, verificar si coincide exactamente
-    if (normShortQuery && normShortQuery !== normFileQuery) {
-      const exactShortItem = preparedVideoTokens.find(item => item.cleanYtTitle === normShortQuery || item.cleanTitle === normShortQuery);
-      if (exactShortItem) {
-        return {
-          status: 'exact_duplicate',
-          exactMatch: exactShortItem.video,
-          matchAccount: exactShortItem.account,
-          matchSource: 'short',
-          similarMatches: [{ video: exactShortItem.video, score: 100, account: exactShortItem.account }],
-          topScore: 100,
-        };
-      }
-    }
-
-    // 2. Coincidencia por subcadena o tokens
+    // 2. Coincidencia por subcadena o tokens del nombre del archivo
     if (queryTokens.length === 0) {
       return { status: 'available', exactMatch: null, matchAccount: null, matchSource: 'archivo', similarMatches: [], topScore: 0 };
     }
 
     const scored = preparedVideoTokens
-      .map(({ video, cleanTitle: vClean, tokens: vTokens, account }) => {
-        if (normFileQuery.length > 5 && (vClean.includes(normFileQuery) || normFileQuery.includes(vClean))) {
-          return { video, score: 90, account };
-        }
-
-        if (normShortQuery && normShortQuery.length > 5 && (vClean.includes(normShortQuery) || normShortQuery.includes(vClean))) {
+      .map(({ video, cleanFile: vClean, tokens: vTokens, account }) => {
+        if (normFileQuery.length > 5 && vClean.length > 5 && (vClean.includes(normFileQuery) || normFileQuery.includes(vClean))) {
           return { video, score: 90, account };
         }
 
@@ -909,7 +919,7 @@ function ScheduleModalDialog() {
       similarMatches: [],
       topScore: 0,
     };
-  }, [debouncedVideoTitle, debouncedShortTitle, isYouTube, videoFile, preparedVideoTokens]);
+  }, [debouncedVideoTitle, preparedVideoTokens]);
 
   const cfg = getCachedConfig();
   const folderIdConfigured = cfg.drive_folder_id;
@@ -1014,7 +1024,7 @@ function ScheduleModalDialog() {
                     {/* Botón X para eliminar video */}
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); setVideoFile(null); setVideoTitle(''); setExtractedAudio(null); setDriveSuccessUrl(null); setDriveError(null); }}
+                      onClick={(e) => { e.stopPropagation(); setVideoFile(null); setVideoTitle(''); setDebouncedVideoTitle(''); setExtractedAudio(null); setDriveSuccessUrl(null); setDriveError(null); }}
                       className="w-6 h-6 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 hover:bg-red-500/30 hover:text-red-300 transition-all"
                       title="Eliminar video"
                     >
@@ -1092,22 +1102,22 @@ function ScheduleModalDialog() {
                   </div>
 
                   {/* Estado del Verificador Anti-Duplicados para el archivo */}
-                  {videoTitle && (
+                  {videoTitle.trim() && (
                     <div className="space-y-2 pt-1">
                       {duplicateAnalysis.status === 'exact_duplicate' && duplicateAnalysis.exactMatch && (
                         <div className="p-3.5 rounded-2xl bg-gradient-to-r from-red-950/70 via-rose-950/50 to-red-950/70 border border-red-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(239,68,68,0.18)]">
                           <div className="flex items-center gap-2 text-red-300 font-bold">
                             <ShieldAlert size={16} className="text-red-400 shrink-0 animate-pulse" />
                             <span>
-                              🚨 ALERTA: {duplicateAnalysis.matchSource === 'short' ? 'El título del Short' : 'Este archivo de video'} ya existe y fue publicado antes
+                              🚨 ALERTA: Este nombre de archivo de video ya existe en videos anteriores
                             </span>
                           </div>
                           <p className="text-[11px] text-red-200/90 leading-relaxed">
-                            El Verificador Anti-Duplicados detectó que ya existe una publicación previa registrada con este video/título:
+                            El Verificador Anti-Duplicados detectó que ya existe un video programado o publicado con este nombre de archivo:
                           </p>
                           <div className="p-2.5 rounded-xl bg-black/50 border border-red-500/30 text-[11px] space-y-1">
                             <div className="flex items-center justify-between text-white font-semibold">
-                              <span className="truncate">"{duplicateAnalysis.exactMatch.titulo}"</span>
+                              <span className="truncate">"{duplicateAnalysis.exactMatch.nombre_archivo || duplicateAnalysis.exactMatch.titulo}"</span>
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-mono uppercase">
                                 {duplicateAnalysis.exactMatch.estado}
                               </span>
@@ -1133,16 +1143,16 @@ function ScheduleModalDialog() {
                         <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-orange-950/40 to-amber-950/60 border border-amber-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
                           <div className="flex items-center gap-2 text-amber-300 font-bold">
                             <AlertTriangle size={16} className="text-amber-400 shrink-0" />
-                            <span>⚠️ Posible video duplicado ({duplicateAnalysis.topScore}% de similitud detectada)</span>
+                            <span>⚠️ Posible archivo duplicado ({duplicateAnalysis.topScore}% de similitud detectada)</span>
                           </div>
                           <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                            Se encontraron publicaciones anteriores con títulos muy parecidos. Verifica si no se trata del mismo video:
+                            Se encontraron videos anteriores con nombres de archivo muy parecidos. Verifica si no se trata del mismo video:
                           </p>
                           <div className="space-y-1.5">
                             {duplicateAnalysis.similarMatches.map(({ video, score, account }) => (
                               <div key={video.id} className="p-2 rounded-xl bg-black/40 border border-amber-500/25 text-[10px] flex items-center justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className="font-semibold text-white truncate">"{video.titulo}"</p>
+                                  <p className="font-semibold text-white truncate">"{video.nombre_archivo || video.titulo}"</p>
                                   <p className="text-[9px] text-slate-400">
                                     @{account?.username} • {(() => {
                                       try {
@@ -1166,7 +1176,7 @@ function ScheduleModalDialog() {
                           <div className="flex items-center gap-2 text-[11px]">
                             <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
                             <span className="font-medium">
-                              <b>Verificador Anti-Duplicados:</b> Archivo no publicado anteriormente. Título disponible.
+                              <b>Verificador Anti-Duplicados:</b> Nombre de archivo no registrado anteriormente. Disponible.
                             </span>
                           </div>
                           <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
@@ -1194,7 +1204,7 @@ function ScheduleModalDialog() {
                   </div>
 
                   <p className="text-[11px] text-slate-300 leading-relaxed">
-                    Este video se publicará en YouTube como un <b>Short / Reel vertical</b>. Aquí puedes ingresar de forma independiente el <b>nombre del archivo de video</b> y el <b>título visible del Short en YouTube</b>.
+                    Este video se publicará en YouTube como un <b>Short / Reel vertical</b>. Al subir el video, el nombre del archivo solo se coloca en <b>Nombre del archivo del video</b> (que verifica duplicados), y al pulsar <b>Generar con IA</b> se creará tanto el título del Short como su descripción.
                   </p>
 
                   {/* 1. Input: Nombre del archivo del video */}
@@ -1204,7 +1214,7 @@ function ScheduleModalDialog() {
                         <FileVideo size={13} className="text-cyan-400" />
                         <span>Nombre del archivo del video</span>
                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono">
-                          Archivo / Drive
+                          Archivo / Anti-Duplicados
                         </span>
                       </label>
                       {videoFile && (
@@ -1221,48 +1231,17 @@ function ScheduleModalDialog() {
                       className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-cyan-500/40 focus:border-cyan-400 outline-none bg-black/50 transition-colors hover:border-cyan-400/70"
                     />
                     <p className="text-[10px] text-[var(--text-muted)]">
-                      Nombre del archivo del video. Este nombre se utiliza exclusivamente para identificar la publicación en el calendario y tarjetas de nuestro proyecto app (no se subirá como título a YouTube).
+                      Único campo que comprueba si ya existe un nombre de archivo igual en los videos programados anteriormente (no se subirá como título a YouTube).
                     </p>
                   </div>
 
-                  {/* 2. Input: Título del Short en YouTube (Aparte) */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                        <Play size={13} className="text-red-400 fill-red-400" />
-                        <span>Título del Video en YouTube (Short)</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-mono">
-                          Para YouTube
-                        </span>
-                      </label>
-                      <span className="text-[10px] text-red-300 font-mono">
-                        {shortTitle.length}/100 caracteres
-                      </span>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={shortTitle}
-                        onChange={(e) => setShortTitle(e.target.value.slice(0, 100))}
-                        placeholder="Escribe el título específico para este video Short en YouTube..."
-                        className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-red-500/40 focus:border-red-400 outline-none bg-black/50 transition-colors pr-20"
-                      />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-semibold">
-                        #Shorts
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-[var(--text-muted)]">
-                      Título real que se subirá a YouTube para este Short. Este será el título visible del video en YouTube.
-                    </p>
-                  </div>
-
-                  {/* Estado del Verificador Anti-Duplicados para el archivo / short */}
-                  {(videoTitle || shortTitle) && (
-                    <div className="space-y-2 pt-1 border-t border-red-500/20">
+                  {/* Estado del Verificador Anti-Duplicados (comprueba SOLO el input Nombre del archivo del video) */}
+                  {videoTitle.trim() && (
+                    <div className="space-y-2 pt-1">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-cyan-400 font-mono flex items-center gap-1">
                           <ShieldCheck size={11} />
-                          Verificador Anti-Duplicados (Archivo y Título)
+                          Verificador Anti-Duplicados (Solo Nombre del Archivo)
                         </span>
                       </div>
                       {duplicateAnalysis.status === 'exact_duplicate' && duplicateAnalysis.exactMatch && (
@@ -1270,15 +1249,15 @@ function ScheduleModalDialog() {
                           <div className="flex items-center gap-2 text-red-300 font-bold">
                             <ShieldAlert size={16} className="text-red-400 shrink-0 animate-pulse" />
                             <span>
-                              🚨 ALERTA: {duplicateAnalysis.matchSource === 'short' ? 'El título del Short' : 'Este archivo de video'} ya existe y fue publicado antes
+                              🚨 ALERTA: Este nombre de archivo de video ya existe en videos anteriores
                             </span>
                           </div>
                           <p className="text-[11px] text-red-200/90 leading-relaxed">
-                            El Verificador Anti-Duplicados detectó que ya existe una publicación previa registrada con este video/título:
+                            El Verificador Anti-Duplicados detectó que ya existe una publicación previa registrada con este nombre de archivo:
                           </p>
                           <div className="p-2.5 rounded-xl bg-black/50 border border-red-500/30 text-[11px] space-y-1">
                             <div className="flex items-center justify-between text-white font-semibold">
-                              <span className="truncate">"{duplicateAnalysis.exactMatch.titulo}"</span>
+                              <span className="truncate">"{duplicateAnalysis.exactMatch.nombre_archivo || duplicateAnalysis.exactMatch.titulo}"</span>
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-mono uppercase">
                                 {duplicateAnalysis.exactMatch.estado}
                               </span>
@@ -1304,16 +1283,16 @@ function ScheduleModalDialog() {
                         <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-orange-950/40 to-amber-950/60 border border-amber-500/40 text-xs space-y-2 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
                           <div className="flex items-center gap-2 text-amber-300 font-bold">
                             <AlertTriangle size={16} className="text-amber-400 shrink-0" />
-                            <span>⚠️ Posible video duplicado ({duplicateAnalysis.topScore}% de similitud detectada)</span>
+                            <span>⚠️ Posible nombre de archivo duplicado ({duplicateAnalysis.topScore}% de similitud detectada)</span>
                           </div>
                           <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                            Se encontraron publicaciones anteriores con títulos muy parecidos. Verifica si no se trata del mismo video:
+                            Se encontraron videos programados anteriormente con nombres de archivo muy parecidos:
                           </p>
                           <div className="space-y-1.5">
                             {duplicateAnalysis.similarMatches.map(({ video, score, account }) => (
                               <div key={video.id} className="p-2 rounded-xl bg-black/40 border border-amber-500/25 text-[10px] flex items-center justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className="font-semibold text-white truncate">"{video.titulo}"</p>
+                                  <p className="font-semibold text-white truncate">"{video.nombre_archivo || video.titulo}"</p>
                                   <p className="text-[9px] text-slate-400">
                                     @{account?.username} • {(() => {
                                       try {
@@ -1337,7 +1316,7 @@ function ScheduleModalDialog() {
                           <div className="flex items-center gap-2 text-[11px]">
                             <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
                             <span className="font-medium">
-                              <b>Verificador Anti-Duplicados:</b> Archivo no publicado anteriormente. Título disponible.
+                              <b>Verificador Anti-Duplicados:</b> Nombre de archivo disponible (no existe en videos anteriores).
                             </span>
                           </div>
                           <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
@@ -1347,6 +1326,37 @@ function ScheduleModalDialog() {
                       )}
                     </div>
                   )}
+
+                  {/* 2. Input: Título del Short en YouTube (Aparte, no valida duplicados, se autogenera al pulsar Generar con IA) */}
+                  <div className="space-y-1 pt-1 border-t border-red-500/20">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <Play size={13} className="text-red-400 fill-red-400" />
+                        <span>Título del Video en YouTube (Short)</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-mono">
+                          Para YouTube • IA
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-red-300 font-mono">
+                        {shortTitle.length}/100 caracteres
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={shortTitle}
+                        onChange={(e) => setShortTitle(e.target.value.slice(0, 100))}
+                        placeholder="Vacío al subir • Escríbelo o pulsa 'Generar con IA ✨' abajo para crearlo..."
+                        className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-red-500/40 focus:border-red-400 outline-none bg-black/50 transition-colors pr-20"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-semibold">
+                        #Shorts
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[var(--text-muted)]">
+                      Título visible en YouTube para este Short. Al hacer clic en <b>Generar con IA ✨</b>, se creará automáticamente un título atractivo relacionado al video junto con su descripción.
+                    </p>
+                  </div>
 
                   {/* Subir Miniatura para YouTube */}
                   <div className="space-y-1.5 pt-2 border-t border-red-500/20">

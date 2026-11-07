@@ -5,7 +5,7 @@ import { Clock, ChevronLeft, ChevronRight, Eye, Send, Play, Globe } from 'lucide
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { formatRelative, getPlatformColor } from '@/lib/utils';
+import { formatRelative, formatViews, getPlatformColor } from '@/lib/utils';
 
 export function RecentCarousel() {
   const { videos, accounts, setSelectedVideoId } = useAppStore();
@@ -109,9 +109,9 @@ export function RecentCarousel() {
               {/* Status and Views */}
               <div className="flex items-center justify-between mb-1">
                 <StatusBadge status={video.estado} className="text-[9px] py-0.5 px-1.5" />
-                {video.vistas_obtenidas > 0 && (
+                {(video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
                   <span className="text-[9px] font-mono text-emerald-400 font-bold flex items-center gap-0.5">
-                    <Eye size={10} /> {(video.vistas_obtenidas / 1000).toFixed(0)}k
+                    <Eye size={10} /> {formatViews(video.vistas_obtenidas || 0)}
                   </span>
                 )}
               </div>

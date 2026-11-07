@@ -19,6 +19,7 @@ export interface ExtractedSubtitlesJson {
 export interface GeminiAnalysisResult {
   success: boolean;
   text: string;
+  youtubeTitle?: string;
   subtitlesJson?: ExtractedSubtitlesJson | null;
   usedModel?: string;
   error?: string;
@@ -72,10 +73,62 @@ function cleanCopyText(raw: string): string {
     .replace(/```[\s\S]*?```/g, '')
     .replace(/^\s*\{[\s\S]*?\}\s*\n?/gm, '')
     .replace(/^---COPY---\s*/gm, '')
+    .replace(/^---+\s*DESCRIPCI[OÓ]N\s*---+\s*/gim, '')
+    .replace(/^\s*\*{0,2}(?:T[IÍ]TULO[_\s]*SHORT|T[IÍ]TULO\s+DE\s+YOUTUBE)\*{0,2}\s*:\s*[^\n]+\n*/gim, '')
     .replace(/^\s*"?(gancho_inicial|subtitulos_detectados|tema_principal|llamado_a_la_accion)"?\s*[:\[{].*/gim, '')
-    .replace(/^\s*(Descripci[oo]n|Copy|Resultado|Respuesta)\s*:\s*/gim, '')
+    .replace(/^\s*\*{0,2}(Descripci[oó]n|Copy|Resultado|Respuesta)\*{0,2}\s*:\s*/gim, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * Limpia el título generado para un Short de YouTube.
+ */
+function cleanYouTubeTitle(rawTitle: string): string {
+  return rawTitle
+    .replace(/^["'«“]+|["'»”]+$/g, '')
+    .replace(/^\*+|\*+$/g, '')
+    .replace(/\s*#shorts\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 90)
+    .trim();
+}
+
+/**
+ * Extrae el título para YouTube Short (si fue solicitado) y el texto limpio de la descripción.
+ */
+function parseGeminiResponse(raw: string): { text: string; youtubeTitle?: string } {
+  let working = raw
+    .replace(/```json[\s\S]*?```/gi, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .trim();
+
+  let youtubeTitle: string | undefined;
+
+  // Caso 1: Formato con TITULO_SHORT y delimitador ---DESCRIPCION--- o DESCRIPCION:
+  const delimiterMatch = working.match(
+    /(?:^|\n)\s*\*{0,2}(?:T[IÍ]TULO[_\s]*SHORT|T[IÍ]TULO\s+DE\s+YOUTUBE|T[IÍ]TULO\s+PARA\s+YOUTUBE|T[IÍ]TULO)\*{0,2}\s*:\s*([^\n]+)\s*\n+\s*(?:---+\s*DESCRIPCI[OÓ]N\s*---+|\*{0,2}DESCRIPCI[OÓ]N\*{0,2}\s*:?)\s*\n*([\s\S]*)/i
+  );
+
+  if (delimiterMatch) {
+    youtubeTitle = cleanYouTubeTitle(delimiterMatch[1]);
+    working = delimiterMatch[2];
+  } else {
+    // Caso 2: Primera línea con TITULO_SHORT: seguida de la descripción
+    const titleLineMatch = working.match(
+      /^\s*\*{0,2}(?:T[IÍ]TULO[_\s]*SHORT|T[IÍ]TULO\s+DE\s+YOUTUBE|T[IÍ]TULO\s+PARA\s+YOUTUBE)\*{0,2}\s*:\s*([^\n]+)\n+([\s\S]*)/i
+    );
+    if (titleLineMatch) {
+      youtubeTitle = cleanYouTubeTitle(titleLineMatch[1]);
+      working = titleLineMatch[2].replace(/^\s*(?:---+\s*DESCRIPCI[OÓ]N\s*---+|\*{0,2}DESCRIPCI[OÓ]N\*{0,2}\s*:?)\s*\n*/i, '');
+    }
+  }
+
+  return {
+    text: cleanCopyText(working),
+    ...(youtubeTitle ? { youtubeTitle } : {}),
+  };
 }
 
 /**
@@ -167,9 +220,11 @@ async function callGoogleGeminiDirect(
           if (response.ok) {
             const candidateText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
             if (candidateText) {
+              const parsed = parseGeminiResponse(candidateText);
               return {
                 success: true,
-                text: cleanCopyText(candidateText),
+                text: parsed.text,
+                youtubeTitle: parsed.youtubeTitle,
                 usedModel: currentModel,
               };
             }
@@ -233,7 +288,13 @@ async function callGoogleGeminiDirect(
           if (response.ok) {
             const candidateText = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
             if (candidateText) {
-              return { success: true, text: cleanCopyText(candidateText), usedModel: currentModel };
+              const parsed = parseGeminiResponse(candidateText);
+              return {
+                success: true,
+                text: parsed.text,
+                youtubeTitle: parsed.youtubeTitle,
+                usedModel: currentModel,
+              };
             }
           }
           const errMsg = responseJson?.error?.message || `Error HTTP ${response.status}`;
@@ -316,7 +377,25 @@ export async function generateDescriptionFromAudio(
   maxRetries: number = 2
 ): Promise<GeminiAnalysisResult> {
   const targetModel = model && model.trim() ? model : 'gemini-flash-lite-latest';
-  const userPrompt = `Escucha el audio de este video titulado "${videoTitle}".
+  const isYouTube = platform.toLowerCase() === 'youtube';
+
+  const userPrompt = isYouTube
+    ? `Escucha el audio de este video (referencia de archivo: "${videoTitle}").
+
+1. Identifica el diálogo, tema central o lo que ocurre en el video.
+2. Crea un TÍTULO PARA EL SHORT DE YOUTUBE (TITULO_SHORT) directamente relacionado con el video y con las características de un título exitoso de YouTube Shorts (gancho atractivo o curiosidad inmediata, claro, impactante, natural, optimizado para retención y CTR, de entre 35 y 80 caracteres). No uses el nombre técnico del archivo.
+3. Usando el contenido del video como contexto, redacta la DESCRIPCIÓN final para publicar en YOUTUBE SHORTS.
+
+REGLAS OBLIGATORIAS DE CAMPAÑA:
+${campaignRules}
+
+Hashtags OBLIGATORIOS al final de la descripción: ${hashtags}
+
+FORMATO DE RESPUESTA OBLIGATORIO (respeta exactamente estas dos secciones):
+TITULO_SHORT: [Escribe aquí únicamente el título para el Short de YouTube, sin comillas]
+---DESCRIPCION---
+[Escribe aquí únicamente el texto de la descripción lista para publicar con emojis y los hashtags al final]`.trim()
+    : `Escucha el audio de este video titulado "${videoTitle}".
 
 1. Identifica el dialogo o subtitulos hablados (maximo 3 lineas de contexto).
 2. Usando esa transcripcion como contexto, redacta la descripcion final para publicar en ${platform.toUpperCase()}.
@@ -366,11 +445,14 @@ NO pongas comillas al inicio o al final.`.trim();
   // Si falló con el audio (por formato o timeout), intentar generación directa de texto con las reglas de campaña
   if (!result.success) {
     console.warn('[Gemini Audio] Análisis de audio falló, generando copy directamente con título y reglas de campaña...');
+    const fallbackPrompt = isYouTube
+      ? `Vas a programar un video Short en YOUTUBE (referencia del video: "${videoTitle}").\n\n1. Crea un TÍTULO PARA EL SHORT DE YOUTUBE (TITULO_SHORT) atractivo, con gancho de curiosidad, conciso (máximo 80 caracteres) y relacionado con el video.\n2. Escribe la DESCRIPCIÓN optimizada para publicar en YOUTUBE.\n\nREGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}\n\nHashtags obligatorios al final de la descripción: ${hashtags}\n\nFORMATO DE RESPUESTA OBLIGATORIO:\nTITULO_SHORT: [Aquí únicamente el título para el Short de YouTube, sin comillas]\n---DESCRIPCION---\n[Aquí únicamente la descripción lista para publicar con emojis y los hashtags al final]`
+      : `Escribe una descripción optimizada para publicar en ${platform.toUpperCase()} sobre el video titulado "${videoTitle}".\n\nREGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}\n\nHashtags obligatorios: ${hashtags}\n\nDevuelve ÚNICAMENTE el texto final listo para publicar con emojis y los hashtags al final.`;
     const fallbackTextBody: any = {
       contents: [{
         role: 'user',
         parts: [{
-          text: `Escribe una descripción optimizada para publicar en ${platform.toUpperCase()} sobre el video titulado "${videoTitle}".\n\nREGLAS OBLIGATORIAS DE CAMPAÑA:\n${campaignRules}\n\nHashtags obligatorios: ${hashtags}\n\nDevuelve ÚNICAMENTE el texto final listo para publicar con emojis y los hashtags al final.`
+          text: fallbackPrompt
         }]
       }],
       generationConfig: { temperature, maxOutputTokens: 500 },

@@ -15,6 +15,7 @@ import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase';
 import { loadAppConfig } from '@/lib/services/appConfigService';
 import { sendTelegramMessage, isWithinSilenceHours } from '@/lib/services/telegramService';
+import { syncPublishedVideosViews } from '@/lib/services/publicationConfirmationService';
 import { differenceInMinutes, parseISO, format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
@@ -44,6 +45,12 @@ export async function GET(request: Request) {
     const now = new Date();
     const nowIso = now.toISOString();
 
+    // 0. Sincronizar periódicamente las vistas de publicaciones PUBLICADAS (con control anti-penalización)
+    const viewsSyncResult = await syncPublishedVideosViews({
+      forceAll: false,
+      maxSocialBatch: 4,
+    }).catch(() => ({ updated: 0, checked: 0, details: [] }));
+
     // 1. Obtener videos en estado ENVIADO — esperando confirmación manual del equipo
     const { data: sentVideos, error: fetchErr } = await db
       .from('publicaciones')
@@ -58,7 +65,8 @@ export async function GET(request: Request) {
       return NextResponse.json({
         success: true,
         monitored: 0,
-        message: 'No hay videos en espera de confirmación.',
+        viewsSynced: viewsSyncResult.updated,
+        message: 'No hay videos en espera de confirmación. Vistas de videos publicados sincronizadas.',
       });
     }
 
@@ -216,6 +224,7 @@ export async function GET(request: Request) {
       success: true,
       monitored: sentVideos.length,
       acted: results.filter((r) => r.action.includes('sent')).length,
+      viewsSynced: viewsSyncResult.updated,
       timestamp: nowIso,
       results,
     });

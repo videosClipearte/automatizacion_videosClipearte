@@ -218,24 +218,48 @@ export function ScraperMonitor() {
 
   const selectedAccId = selectedAccount?.id;
 
-  // Cargar reels rastreados desde Supabase solo al cambiar de cuenta
+  // Cargar reels rastreados desde Supabase y sincronizar vistas de forma segura al cambiar de cuenta
   useEffect(() => {
     if (!selectedAccId) return;
     fetch(`/api/reels-rastreados?cuenta_id=${selectedAccId}`)
       .then((r) => r.json())
       .then((d) => setTrackedReels(d.reels || []))
       .catch(() => {});
-  }, [selectedAccId]);
 
-  // Refrescar automáticamente cada 5 minutos (300,000 ms) en segundo plano
+    fetch('/api/scraper/extract-views', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'sync_batch', cuentaId: selectedAccId, forceAll: false, maxSocialBatch: 4 }),
+    })
+      .then((r) => r.json())
+      .then((syncData) => {
+        if (syncData?.updated > 0) {
+          refreshData();
+          fetch(`/api/reels-rastreados?cuenta_id=${selectedAccId}`)
+            .then((r) => r.json())
+            .then((d) => setTrackedReels(d.reels || []))
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [selectedAccId, refreshData]);
+
+  // Refrescar automáticamente cada 5 minutos (300,000 ms) en segundo plano respetando el enfriamiento anti-penalización
   useEffect(() => {
     if (!selectedAccId) return;
     const FIVE_MINUTES_MS = 5 * 60 * 1000;
     const interval = setInterval(() => {
       // Optimización CPU: Si la pestaña no está visible, pausar peticiones de fondo
       if (typeof document !== 'undefined' && document.hidden) return;
-      refreshData();
-      fetch(`/api/reels-rastreados?cuenta_id=${selectedAccId}`)
+      fetch('/api/scraper/extract-views', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'sync_batch', cuentaId: selectedAccId, forceAll: false, maxSocialBatch: 4 }),
+      })
+        .then(() => {
+          refreshData();
+          return fetch(`/api/reels-rastreados?cuenta_id=${selectedAccId}`);
+        })
         .then((r) => r.json())
         .then((d) => setTrackedReels(d.reels || []))
         .catch(() => {});

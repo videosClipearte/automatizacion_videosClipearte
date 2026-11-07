@@ -873,9 +873,10 @@ export async function POST(req: NextRequest) {
       await writeLog(pid, 'INFO', 'THUMBNAIL', 'No se proporcionó miniatura personalizada; YouTube seleccionó automáticamente un fotograma del video.');
     }
 
-    // ── Paso 6: Actualizar estado en Supabase ────────────────────────────
+    // ── Paso 6: Actualizar estado en Supabase y vincular con Analíticas / Monitor de Vistas ──
     try {
       const { getSupabase } = await import('@/lib/supabase');
+      const { confirmPublicationAndProcessMetrics } = await import('@/lib/services/publicationConfirmationService');
       const supabase = getSupabase();
       await supabase
         .from('publicaciones')
@@ -892,7 +893,14 @@ export async function POST(req: NextRequest) {
         .delete()
         .eq('publicacion_id', pid);
 
-      await writeLog(pid, 'SUCCESS', 'BD_UPDATE', 'Publicación marcada como PUBLICADO en la base de datos.');
+      // Vincular en metricas_extraidas_scraper y reels_rastreados y extraer métricas iniciales
+      await confirmPublicationAndProcessMetrics({
+        publicacionId: pid,
+        postUrl: videoUrl,
+        fuente: 'scraper',
+      }).catch(() => {});
+
+      await writeLog(pid, 'SUCCESS', 'BD_UPDATE', 'Publicación marcada como PUBLICADO y vinculada a Analíticas en la base de datos.');
     } catch (dbErr: any) {
       await writeLog(pid, 'WARN', 'BD_UPDATE', 'No se pudo actualizar el estado en la BD', dbErr.message);
     }

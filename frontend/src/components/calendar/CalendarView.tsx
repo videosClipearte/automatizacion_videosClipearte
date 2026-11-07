@@ -16,7 +16,7 @@ import {
 import { es } from 'date-fns/locale';
 import { useAppStore, type Video } from '@/store/useAppStore';
 import { MetricPill } from '@/components/ui/MetricPill';
-import { cn, getStatusClass } from '@/lib/utils';
+import { cn, formatViews, getStatusClass } from '@/lib/utils';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -590,7 +590,7 @@ export function CalendarView() {
                                   : "bg-white/[0.04] hover:bg-white/[0.08] border-[var(--border)] hover:border-emerald-500/40 text-white"
                               )}
                               title={`${video.nombre_archivo || video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${
-                                isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado
+                                isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado === 'PUBLICADO' ? `PUBLICADO (${formatViews(video.vistas_obtenidas || 0)} vistas)` : video.estado
                               }`}
                             >
                               <span className={cn(
@@ -625,6 +625,12 @@ export function CalendarView() {
                               {isYtUploading && !isDriveUploading && (
                                 <span className="text-[8px] px-1 py-0 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-bold shrink-0">
                                   Subiendo
+                                </span>
+                              )}
+                              {!isDriveUploading && !isYtUploading && (video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
+                                <span className="text-[8px] font-mono text-emerald-400 font-bold shrink-0 flex items-center gap-0.5">
+                                  <Eye size={8} />
+                                  {formatViews(video.vistas_obtenidas || 0)}
                                 </span>
                               )}
                               {/* Mini barra de progreso en el borde inferior del chip */}
@@ -827,9 +833,9 @@ export function CalendarView() {
                                     {video.estado}
                                   </span>
                                 )}
-                                {video.vistas_obtenidas > 0 && (
-                                  <span className="text-[9px] text-[var(--text-muted)] flex items-center gap-0.5">
-                                    <Eye size={9} /> {(video.vistas_obtenidas / 1000).toFixed(1)}k
+                                {(video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
+                                  <span className="text-[9px] font-mono text-emerald-400 font-semibold flex items-center gap-0.5">
+                                    <Eye size={9} /> {formatViews(video.vistas_obtenidas || 0)}
                                   </span>
                                 )}
                               </div>
@@ -994,9 +1000,9 @@ export function CalendarView() {
                                       {video.estado}
                                     </span>
                                   )}
-                                  {video.vistas_obtenidas > 0 && (
-                                    <span className="text-xs font-mono text-emerald-400 font-bold">
-                                      {(video.vistas_obtenidas / 1000).toFixed(1)}k
+                                  {(video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
+                                    <span className="text-xs font-mono text-emerald-400 font-bold flex items-center gap-1">
+                                      <Eye size={12} /> {formatViews(video.vistas_obtenidas || 0)}
                                     </span>
                                   )}
                                 </div>
