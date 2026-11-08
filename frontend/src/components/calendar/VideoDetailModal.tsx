@@ -1545,7 +1545,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         {/* Header */}
         <div
           className="p-5 border-b border-white/[0.08]"
-          style={{ background: `linear-gradient(135deg, ${platformColor}25, transparent)` }}
+          style={{ background: `linear-gradient(135deg, ${platformColor === '#000000' ? '#06b6d4' : platformColor}25, transparent)` }}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
@@ -1561,12 +1561,79 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                 {isEditing ? editFileName : (video.nombre_archivo || video.titulo)}
               </h3>
             </div>
-            <button
-              onClick={() => { setSelectedVideoId(null); setTelegramFeedback(null); setIsEditing(false); }}
-              className="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-white/10 border border-white/10 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0 cursor-pointer"
-            >
-              <X size={13} />
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {!isEditing && (
+                <>
+                  {/* Enviar a Telegram Ahora */}
+                  <div className="relative group">
+                    <button
+                      type="button"
+                      onClick={handleSendTelegramNow}
+                      disabled={sendingTelegram}
+                      title={
+                        video.estado === 'ERROR_DE_RED'
+                          ? 'Reintentar Enviar a Telegram Ahora (Resolver Error)'
+                          : video.estado === 'ENVIADO'
+                          ? 'Re-enviar a Telegram Ahora'
+                          : 'Enviar a Telegram Ahora (Marcar ENVIADO)'
+                      }
+                      className="w-7 h-7 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 flex items-center justify-center text-blue-400 hover:text-blue-300 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {sendingTelegram ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Send size={13} />
+                      )}
+                    </button>
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#0d1422] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                      {video.estado === 'ERROR_DE_RED'
+                        ? 'Reintentar Enviar a Telegram Ahora (Resolver Error)'
+                        : video.estado === 'ENVIADO'
+                        ? 'Re-enviar a Telegram Ahora'
+                        : 'Enviar a Telegram Ahora (Marcar ENVIADO)'}
+                    </span>
+                  </div>
+
+                  {/* Editar */}
+                  <div className="relative group">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditing(true)}
+                      title="Editar"
+                      className="w-7 h-7 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+                    >
+                      <Edit3 size={13} />
+                    </button>
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#0d1422] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                      Editar
+                    </span>
+                  </div>
+
+                  {/* Borrar publicación */}
+                  <div className="relative group">
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      title="Borrar publicación"
+                      className="w-7 h-7 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 flex items-center justify-center text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#0d1422] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                      Borrar publicación
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {/* Cerrar (X) */}
+              <button
+                onClick={() => { setSelectedVideoId(null); setTelegramFeedback(null); setIsEditing(false); }}
+                className="w-7 h-7 rounded-lg bg-white/[0.05] hover:bg-white/10 border border-white/10 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors shrink-0 cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1593,8 +1660,8 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                   <div className="space-y-2">
                     {account && (
                       <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-[var(--border)]">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${platformColor}25` }}>
-                          <Send size={12} style={{ color: platformColor }} />
+                        <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center shrink-0">
+                          <Send size={12} className="text-cyan-400" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">Cuenta Destino</p>
@@ -2021,21 +2088,6 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
                   {/* ── SECCIÓN MONETIZAR CLIP (CLIPEARTE.COM) ── */}
                   {(() => {
-                    const isYt = account?.plataforma?.toLowerCase() === 'youtube';
-                    const targetViews = isYt
-                      ? Number(clipearteCfg.clipearte_vistas_min_youtube || 1000)
-                      : Number(clipearteCfg.clipearte_vistas_min_otras_redes || 700);
-                    const maxHours = Number(clipearteCfg.clipearte_horas_limite_auto || 48);
-                    const currentViews = Number(video.vistas_obtenidas || 0);
-                    const pubDateMs = video.publicado_en ? new Date(video.publicado_en).getTime() : 0;
-                    const elapsedHours = pubDateMs > 0 ? (Date.now() - pubDateMs) / (1000 * 3600) : 0;
-                    const timeExpiredWithoutViews =
-                      video.estado === 'PUBLICADO' &&
-                      pubDateMs > 0 &&
-                      elapsedHours >= maxHours &&
-                      currentViews < targetViews &&
-                      !video.monetizado_en;
-
                     const selectedMonetizarCamp = campaigns.find((c) => c.id === monetizarCampanaId);
                     const selectedMonetizarAcc = accounts.find((a) => a.id === monetizarCuentaId);
                     const campaignMatchesApp = Boolean(
@@ -2046,30 +2098,11 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     );
 
                     return (
-                      <div className="p-3.5 rounded-xl bg-gradient-to-br from-rose-950/30 via-amber-950/20 to-[#0d1422] border border-rose-500/30 space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-7 h-7 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center shrink-0 text-rose-400">
-                              <Coins size={14} />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <p className="text-xs font-bold text-white">Monetizar Clip (Clipearte)</p>
-                                <span
-                                  className={cn(
-                                    'text-[9px] px-1.5 py-0.5 rounded-full font-bold border',
-                                    clipearteCfg.clipearte_auto_monetizar_activo
-                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                                      : 'bg-slate-500/20 text-slate-300 border-slate-500/30'
-                                  )}
-                                >
-                                  Auto: {clipearteCfg.clipearte_auto_monetizar_activo ? 'ACTIVO' : 'APAGADO'}
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-[var(--text-muted)] truncate">
-                                Meta auto: {targetViews.toLocaleString()} vistas ({isYt ? 'YouTube' : 'Otra red'}) en &lt; {maxHours}h
-                              </p>
-                            </div>
+                      <div className="p-3.5 rounded-xl bg-gradient-to-br from-rose-950/30 via-amber-950/20 to-[#0d1422] border border-rose-500/30 space-y-2.5">
+                        <p className="text-xs font-bold text-white">Monetizar Clip (Clipearte)</p>
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center shrink-0 text-rose-400">
+                            <Coins size={14} />
                           </div>
 
                           {video.monetizado_en ? (
@@ -2080,16 +2113,14 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                             <button
                               type="button"
                               onClick={() => setShowMonetizarForm((v) => !v)}
-                              className="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold shadow-md shadow-rose-500/20 transition-all active:scale-95 shrink-0 cursor-pointer flex items-center gap-1.5"
+                              className="px-3.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold shadow-md shadow-rose-500/20 transition-all active:scale-95 shrink-0 cursor-pointer"
                             >
-                              <Coins size={12} />
-                              <span>Monetizar Clip</span>
+                              Monetizar clip
                             </button>
                           )}
                         </div>
 
-                        {/* Estado de vistas / tiempo para auto-monetización */}
-                        {video.monetizado_en ? (
+                        {video.monetizado_en && (
                           <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-300 flex items-center justify-between">
                             <span>✅ Este clip ya fue enviado a Clipearte para revisión/monetización.</span>
                             <button
@@ -2099,24 +2130,6 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                             >
                               {showMonetizarForm ? 'Ocultar' : 'Ver datos'}
                             </button>
-                          </div>
-                        ) : timeExpiredWithoutViews ? (
-                          <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-200 flex items-start gap-1.5">
-                            <Clock size={13} className="shrink-0 text-amber-400 mt-0.5" />
-                            <span>
-                              Pasaron más de <b>{maxHours}h</b> y el clip tiene <b>{currentViews.toLocaleString()}</b> de{' '}
-                              <b>{targetViews.toLocaleString()}</b> vistas. Usa el botón <b>"Monetizar Clip"</b> para subirlo manualmente.
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] px-1">
-                            <span>
-                              Progreso: <b className="text-white">{currentViews.toLocaleString()}</b> /{' '}
-                              <b className="text-rose-300">{targetViews.toLocaleString()} vistas</b>
-                            </span>
-                            {pubDateMs > 0 && (
-                              <span>Tiempo transcurrido: {Math.floor(elapsedHours)}h / {maxHours}h</span>
-                            )}
                           </div>
                         )}
 
@@ -2335,9 +2348,6 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         <CheckCircle2 size={13} />
                         <span>Confirmar publicación manual</span>
                       </div>
-                      <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                        Cuando el equipo suba el video a la red social, haz clic aquí para registrarlo como <b>PUBLICADO</b> y notificar al grupo de Telegram.
-                      </p>
 
                       {/* Inputs opcionales: URL y Vistas */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -2388,51 +2398,6 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       </button>
                     </div>
                   )}
-
-                  {/* Botón de Publicar en Telegram Ahora */}
-                  <button
-                    type="button"
-                    onClick={handleSendTelegramNow}
-                    disabled={sendingTelegram}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-blue-600/30 to-emerald-600/30 border border-blue-500/40 text-white text-xs font-bold hover:from-blue-600/40 hover:to-emerald-600/40 transition-all shadow-md active:scale-98 disabled:opacity-50"
-                  >
-                    {sendingTelegram ? (
-                      <>
-                        <Loader2 size={13} className="animate-spin" />
-                        <span>Enviando a Telegram...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send size={13} className="text-blue-400" />
-                        <span>
-                          {video.estado === 'ERROR_DE_RED'
-                            ? 'Reintentar Enviar a Telegram Ahora (Resolver Error)'
-                            : video.estado === 'ENVIADO'
-                            ? 'Re-enviar a Telegram Ahora'
-                            : 'Enviar a Telegram Ahora (Marcar ENVIADO)'}
-                        </span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* Bottom Actions */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-white/[0.08]">
-                    <button
-                      type="button"
-                      onClick={handleDelete}
-                      className="w-9 h-9 rounded-xl bg-white/[0.04] hover:bg-red-500/15 border border-red-500/20 text-red-400 flex items-center justify-center transition-colors shrink-0 cursor-pointer"
-                      title="Eliminar publicación"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditing(true)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-[var(--text-secondary)] hover:text-white hover:border-emerald-500/40 transition-all cursor-pointer"
-                    >
-                      <Edit3 size={12} className="text-emerald-400" /> Modificar Publicación o Reemplazar Video
-                    </button>
-                  </div>
                 </>
               ) : (
                 /* ─────────────────── MODO EDICIÓN COMPLETO ─────────────────── */
