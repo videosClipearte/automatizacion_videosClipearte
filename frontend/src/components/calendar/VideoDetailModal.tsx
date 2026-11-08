@@ -25,14 +25,16 @@ import {
   RotateCcw,
   FileText,
   Link2,
-  Play
+  Play,
+  Image as ImageIcon,
+  Coins
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useAppStore } from '@/store/useAppStore';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
 import { formatDateTime, formatViews, calcGanancias, getPlatformColor, cn } from '@/lib/utils';
-import { getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
+import { AppConfig, getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import { sendPublicationAlert, stripDescriptionTags } from '@/lib/services/telegramService';
 import {
   getGoogleDriveToken,
@@ -42,14 +44,26 @@ import {
   requestGoogleDriveOAuthToken,
   getPendingDriveUpload,
   unregisterPendingDriveUpload,
+  extractDriveFileId,
 } from '@/lib/services/driveService';
 import { generateWithGemini, generateDescriptionFromAudio, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
 import { extractAudioFromVideo, VideoAudioPayload } from '@/lib/services/videoAudioExtractorService';
 import { format } from 'date-fns';
 import { createNotification } from '@/lib/services/notificationService';
 import { verifyScraperPost } from '@/lib/services/scraperService';
+import { monetizarClipEnClipearte } from '@/lib/services/clipearteService';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { TimePicker } from '@/components/ui/TimePicker';
+
+function resolveRenderableThumbUrl(rawUrl?: string): string | undefined {
+  if (!rawUrl || rawUrl === '#') return undefined;
+  if (rawUrl.startsWith('data:image/')) return rawUrl;
+  const driveId = extractDriveFileId(rawUrl);
+  if (driveId && rawUrl.includes('drive.google.com/file/d/')) {
+    return `https://drive.google.com/thumbnail?id=${driveId}&sz=w1080`;
+  }
+  return rawUrl;
+}
 
 function VideoDetailDialog({ videoId }: { videoId: string }) {
   const setSelectedVideoId = useAppStore((s) => s.setSelectedVideoId);
@@ -95,6 +109,10 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
   const [editDescripcion, setEditDescripcion] = useState(() => video?.descripcion_aprobada_ia || '');
   const [editDriveUrl, setEditDriveUrl] = useState(() => video?.drive_file_url || '');
   const [editReelUrl, setEditReelUrl] = useState(() => (video?.post_url_publica && video.post_url_publica !== '#' ? video.post_url_publica : ''));
+  const [editThumbnailPreview, setEditThumbnailPreview] = useState<string>(() => video?.thumbnail_url || '');
+  const [editThumbnailFile, setEditThumbnailFile] = useState<File | null>(null);
+  const [editThumbnailRemoved, setEditThumbnailRemoved] = useState(false);
+  const editThumbInputRef = useRef<HTMLInputElement>(null);
   const [confirmandoEdit, setConfirmandoEdit] = useState(false);
   const [replacementFile, setReplacementFile] = useState<File | null>(null);
   const [extractedReplacementAudio, setExtractedReplacementAudio] = useState<VideoAudioPayload | null>(null);
@@ -107,6 +125,236 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
   const [editFeedback, setEditFeedback] = useState<{ success: boolean; msg: string } | null>(null);
   const driveFileInputRef = useRef<HTMLInputElement>(null);
   const [retryingDrive, setRetryingDrive] = useState(false);
+
+  // Estado para Monetizar Clip en Clipearte (https://clipearte.com/clipper/subir-clip)
+  const [showMonetizarForm, setShowMonetizarForm] = useState(false);
+  const [monetizarCampanaId, setMonetizarCampanaId] = useState(() => video?.campana_id || '');
+  const [monetizarPlatform, setMonetizarPlatform] = useState<string>(() => {
+    const acc = accounts.find((a) => a.id === video?.cuenta_id);
+    return acc?.plataforma || 'tiktok';
+  });
+  const [monetizarCuentaId, setMonetizarCuentaId] = useState(() => video?.cuenta_id || '');
+  const [monetizarClipUrl, setMonetizarClipUrl] = useState(() =>
+    video?.post_url_publica && video.post_url_publica !== '#' ? video.post_url_publica : ''
+  );
+  const [monetizandoClip, setMonetizandoClip] = useState(false);
+  const [monetizarFeedback, setMonetizarFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+  const [clipearteCfg, setClipearteCfg] = useState<AppConfig>(() => getCachedConfig());
+
+  useEffect(() => {
+    loadAppConfig().then((cfg) => setClipearteCfg(cfg)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (video) {
+      setMonetizarCampanaId(video.campana_id || '');
+      const acc = accounts.find((a) => a.id === video.cuenta_id);
+      if (acc) setMonetizarPlatform(acc.plataforma);
+      setMonetizarCuentaId(video.cuenta_id || '');
+      setMonetizarClipUrl(video.post_url_publica && video.post_url_publica !== '#' ? video.post_url_publica : '');
+      setEditThumbnailPreview(video.thumbnail_url || '');
+      setEditThumbnailFile(null);
+      setEditThumbnailRemoved(false);
+    }
+  }, [video?.id, video?.post_url_publica, video?.thumbnail_url]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Seleccionar y comprimir nueva portada (miniatura) para Short de YouTube
+  const handleSelectEditThumbnail = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setEditFeedback({
+        success: false,
+        msg: '⚠️ Selecciona un archivo de imagen válido (.jpg, .png, .webp) para la portada del Short.',
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl) return;
+
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const maxDim = 720;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.78);
+            setEditThumbnailPreview(compressedBase64);
+            setEditThumbnailFile(file);
+            setEditThumbnailRemoved(false);
+            return;
+          }
+        } catch {}
+        setEditThumbnailPreview(dataUrl);
+        setEditThumbnailFile(file);
+        setEditThumbnailRemoved(false);
+      };
+      img.onerror = () => {
+        setEditThumbnailPreview(dataUrl);
+        setEditThumbnailFile(file);
+        setEditThumbnailRemoved(false);
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Monetizar Clip en https://clipearte.com/clipper/subir-clip
+  const handleMonetizarClip = async () => {
+    if (!video) return;
+    setMonetizarFeedback(null);
+
+    const selectedCamp = campaigns.find((c) => c.id === monetizarCampanaId);
+    const selectedAcc = accounts.find((a) => a.id === monetizarCuentaId);
+    const cleanUrl = monetizarClipUrl.trim();
+
+    // 1. Validar que la campaña esté seleccionada y coincida con la campaña guardada en la app
+    if (!selectedCamp) {
+      setMonetizarFeedback({
+        success: false,
+        msg: '⚠️ 1. Debes seleccionar la campaña del video.',
+      });
+      return;
+    }
+    if (video.campana_id && monetizarCampanaId !== video.campana_id) {
+      const savedCamp = campaigns.find((c) => c.id === video.campana_id);
+      setMonetizarFeedback({
+        success: false,
+        msg: `⚠️ La campaña seleccionada ("${selectedCamp.nombre}") no coincide con la campaña guardada en la publicación ("${savedCamp?.nombre || video.campana_id}"). Selecciona la campaña correcta.`,
+      });
+      return;
+    }
+
+    // 2. Validar tipo de red social
+    if (!monetizarPlatform) {
+      setMonetizarFeedback({
+        success: false,
+        msg: '⚠️ 2. Selecciona el tipo de red social de donde proviene el video.',
+      });
+      return;
+    }
+
+    // 3. Validar que la cuenta seleccionada exista y coincida con la cuenta del video guardada en la app
+    if (!selectedAcc) {
+      setMonetizarFeedback({
+        success: false,
+        msg: '⚠️ 3. Debes seleccionar la cuenta de donde proviene el video.',
+      });
+      return;
+    }
+    if (video.cuenta_id && monetizarCuentaId !== video.cuenta_id) {
+      const savedAcc = accounts.find((a) => a.id === video.cuenta_id);
+      setMonetizarFeedback({
+        success: false,
+        msg: `⚠️ La cuenta seleccionada (@${selectedAcc.username}) no coincide con la cuenta del video guardada en la app (@${savedAcc?.username || video.cuenta_id}).`,
+      });
+      return;
+    }
+    if (selectedAcc.plataforma.toLowerCase() !== monetizarPlatform.toLowerCase()) {
+      setMonetizarFeedback({
+        success: false,
+        msg: `⚠️ El tipo de red social seleccionado (${monetizarPlatform.toUpperCase()}) no coincide con la red social de la cuenta @${selectedAcc.username} (${selectedAcc.plataforma.toUpperCase()}).`,
+      });
+      return;
+    }
+
+    // 4. Validar el link del video y su coincidencia con la red social
+    if (!cleanUrl || (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://'))) {
+      setMonetizarFeedback({
+        success: false,
+        msg: '⚠️ 4. Ingresa un enlace válido del video publicado (debe comenzar con https://).',
+      });
+      return;
+    }
+
+    const urlLower = cleanUrl.toLowerCase();
+    const platLower = monetizarPlatform.toLowerCase();
+    if (platLower === 'tiktok' && !urlLower.includes('tiktok.com')) {
+      setMonetizarFeedback({
+        success: false,
+        msg: '⚠️ El enlace del video no corresponde a TikTok (debe ser un link de tiktok.com).',
+      });
+      return;
+    }
+    if (platLower === 'instagram' && !urlLower.includes('instagram.com')) {
+      setMonetizarFeedback({
+        success: false,
+        msg: '⚠️ El enlace del video no corresponde a Instagram (debe ser un link de instagram.com).',
+      });
+      return;
+    }
+    if (platLower === 'youtube' && !urlLower.includes('youtube.com') && !urlLower.includes('youtu.be')) {
+      setMonetizarFeedback({
+        success: false,
+        msg: '⚠️ El enlace del video no corresponde a YouTube (debe ser un link de youtube.com o youtu.be).',
+      });
+      return;
+    }
+
+    setMonetizandoClip(true);
+    try {
+      // Si el usuario pegó o actualizó el link del video aquí, guardarlo también en la publicación
+      if (cleanUrl !== video.post_url_publica) {
+        await updateVideo(video.id, { post_url_publica: cleanUrl });
+      }
+
+      const res = await monetizarClipEnClipearte({
+        videoId: video.id,
+        campaignName: selectedCamp.nombre,
+        platform: monetizarPlatform,
+        accountUsername: selectedAcc.username,
+        clipUrl: cleanUrl,
+      });
+
+      if (res.ok) {
+        const nowIso = res.monetizadoEn || new Date().toISOString();
+        await updateVideo(video.id, { monetizado_en: nowIso });
+        setMonetizarFeedback({
+          success: true,
+          msg: `✅ ${res.message || 'Clip enviado a Clipearte exitosamente.'}`,
+        });
+        createNotification({
+          tipo: 'success',
+          titulo: 'Clip monetizado en Clipearte',
+          mensaje: `"${video.nombre_archivo || video.titulo}" fue enviado a Clipearte (${selectedCamp.nombre} · @${selectedAcc.username}).`,
+          video_id: video.id,
+          cuenta_id: video.cuenta_id,
+          origen: 'sistema',
+        });
+      } else {
+        setMonetizarFeedback({
+          success: false,
+          msg: `❌ ${res.error || 'No se pudo enviar a Clipearte.'}`,
+        });
+      }
+    } catch (err: any) {
+      setMonetizarFeedback({
+        success: false,
+        msg: `❌ Error al monetizar clip: ${err?.message || 'Error inesperado'}`,
+      });
+    } finally {
+      setMonetizandoClip(false);
+    }
+  };
 
   // Estado y conexión de Google Drive
   const [driveToken, setDriveToken] = useState<string | null>(() => getGoogleDriveToken());
@@ -191,6 +439,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       setEditDescripcion(video.descripcion_aprobada_ia || '');
       setEditDriveUrl(video.drive_file_url || '');
       setEditReelUrl(video.post_url_publica && video.post_url_publica !== '#' ? video.post_url_publica : '');
+      setEditThumbnailPreview(video.thumbnail_url || '');
+      setEditThumbnailFile(null);
+      setEditThumbnailRemoved(false);
       setReplacementFile(null);
       setExtractedReplacementAudio(null);
       setExtractingReplacementAudio(false);
@@ -627,6 +878,39 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
     const cleanDesc = stripDescriptionTags(editDescripcion, finalFileName || editTitle);
 
+    let finalThumbnailUrl: string | undefined = undefined;
+    if (isYouTube) {
+      if (editThumbnailRemoved) {
+        finalThumbnailUrl = '';
+      } else if (editThumbnailFile || editThumbnailPreview !== (video.thumbnail_url || '')) {
+        finalThumbnailUrl = editThumbnailPreview || undefined;
+        // Si hay archivo de portada nuevo y token de Google Drive disponible, intentar subir también a Drive
+        if (editThumbnailFile) {
+          const token = driveToken || getGoogleDriveToken();
+          const cfg = getCachedConfig();
+          const storedDrive = getStoredDriveConfig();
+          const folderId = (cfg.drive_folder_id || storedDrive.folderId || '').trim();
+          if (token && folderId) {
+            try {
+              const thumbRes = await uploadVideoToGoogleDrive(
+                editThumbnailFile,
+                folderId,
+                token,
+                undefined,
+                2,
+                `${finalFileName}_portada`
+              );
+              if (thumbRes.success && thumbRes.fileId) {
+                finalThumbnailUrl = `https://drive.google.com/thumbnail?id=${thumbRes.fileId}&sz=w1080`;
+              }
+            } catch (thumbErr) {
+              console.warn('[VideoDetailModal] Usando portada comprimida directa:', thumbErr);
+            }
+          }
+        }
+      }
+    }
+
     const updates: any = {
       nombre_archivo: isYouTube ? finalFileName : undefined,
       titulo: isYouTube ? finalFileName : (editTitle.trim() || video.titulo),
@@ -637,6 +921,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       descripcion_aprobada_ia: cleanDesc,
       drive_file_url: finalDriveUrl,
       post_url_publica: editReelUrl.trim() || video.post_url_publica || undefined,
+      ...(finalThumbnailUrl !== undefined ? { thumbnail_url: finalThumbnailUrl } : {}),
     };
 
     // Al actualizar un video programado (o reprogramar a futuro o reemplazar el video),
@@ -653,6 +938,8 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     await updateVideo(video.id, updates);
 
     setReplacementFile(null);
+    setEditThumbnailFile(null);
+    setEditThumbnailRemoved(false);
     setUploadProgress(0);
     setSavingEdit(false);
     setIsEditing(false);
@@ -720,6 +1007,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         descripcion_aprobada_ia: cleanDesc,
         drive_file_url: editDriveUrl.trim(),
         post_url_publica: finalReelUrl,
+        ...(isYouTube && (editThumbnailRemoved || editThumbnailPreview !== (video.thumbnail_url || ''))
+          ? { thumbnail_url: editThumbnailRemoved ? '' : editThumbnailPreview }
+          : {}),
       };
 
       const res = await fetch(`/api/publicaciones/${video.id}/confirmar`, {
@@ -1188,15 +1478,15 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       borderColor: video.thumbnail_url ? 'rgba(255,255,255,0.15)' : `${video.thumbnail_color}44`
                     }}
                   >
-                    {video.thumbnail_url ? (
+                    {resolveRenderableThumbUrl(video.thumbnail_url) ? (
                       <div className="relative w-full h-full flex items-center justify-center bg-black/60 group">
                         <img
-                          src={video.thumbnail_url}
+                          src={resolveRenderableThumbUrl(video.thumbnail_url)}
                           alt={video.titulo}
                           className="w-full h-full object-contain"
                         />
                         <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 text-[10px] text-white font-medium border border-white/20">
-                          Miniatura
+                          Portada / Miniatura
                         </span>
                       </div>
                     ) : (
@@ -1555,6 +1845,279 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     </p>
                   </div>
 
+                  {/* ── SECCIÓN MONETIZAR CLIP (CLIPEARTE.COM) ── */}
+                  {(() => {
+                    const isYt = account?.plataforma?.toLowerCase() === 'youtube';
+                    const targetViews = isYt
+                      ? Number(clipearteCfg.clipearte_vistas_min_youtube || 1000)
+                      : Number(clipearteCfg.clipearte_vistas_min_otras_redes || 700);
+                    const maxHours = Number(clipearteCfg.clipearte_horas_limite_auto || 48);
+                    const currentViews = Number(video.vistas_obtenidas || 0);
+                    const pubDateMs = video.publicado_en ? new Date(video.publicado_en).getTime() : 0;
+                    const elapsedHours = pubDateMs > 0 ? (Date.now() - pubDateMs) / (1000 * 3600) : 0;
+                    const timeExpiredWithoutViews =
+                      video.estado === 'PUBLICADO' &&
+                      pubDateMs > 0 &&
+                      elapsedHours >= maxHours &&
+                      currentViews < targetViews &&
+                      !video.monetizado_en;
+
+                    const selectedMonetizarCamp = campaigns.find((c) => c.id === monetizarCampanaId);
+                    const selectedMonetizarAcc = accounts.find((a) => a.id === monetizarCuentaId);
+                    const campaignMatchesApp = Boolean(
+                      monetizarCampanaId && (!video.campana_id || monetizarCampanaId === video.campana_id)
+                    );
+                    const accountMatchesApp = Boolean(
+                      monetizarCuentaId && (!video.cuenta_id || monetizarCuentaId === video.cuenta_id)
+                    );
+
+                    return (
+                      <div className="p-3.5 rounded-xl bg-gradient-to-br from-rose-950/30 via-amber-950/20 to-[#0d1422] border border-rose-500/30 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center shrink-0 text-rose-400">
+                              <Coins size={14} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-xs font-bold text-white">Monetizar Clip (Clipearte)</p>
+                                <span
+                                  className={cn(
+                                    'text-[9px] px-1.5 py-0.5 rounded-full font-bold border',
+                                    clipearteCfg.clipearte_auto_monetizar_activo
+                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                      : 'bg-slate-500/20 text-slate-300 border-slate-500/30'
+                                  )}
+                                >
+                                  Auto: {clipearteCfg.clipearte_auto_monetizar_activo ? 'ACTIVO' : 'APAGADO'}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-[var(--text-muted)] truncate">
+                                Meta auto: {targetViews.toLocaleString()} vistas ({isYt ? 'YouTube' : 'Otra red'}) en &lt; {maxHours}h
+                              </p>
+                            </div>
+                          </div>
+
+                          {video.monetizado_en ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0">
+                              <CheckCircle2 size={11} /> Monetizado
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setShowMonetizarForm((v) => !v)}
+                              className="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold shadow-md shadow-rose-500/20 transition-all active:scale-95 shrink-0 cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Coins size={12} />
+                              <span>Monetizar Clip</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Estado de vistas / tiempo para auto-monetización */}
+                        {video.monetizado_en ? (
+                          <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-300 flex items-center justify-between">
+                            <span>✅ Este clip ya fue enviado a Clipearte para revisión/monetización.</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowMonetizarForm((v) => !v)}
+                              className="text-[10px] underline ml-2 shrink-0 text-emerald-200 hover:text-white cursor-pointer"
+                            >
+                              {showMonetizarForm ? 'Ocultar' : 'Ver datos'}
+                            </button>
+                          </div>
+                        ) : timeExpiredWithoutViews ? (
+                          <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-200 flex items-start gap-1.5">
+                            <Clock size={13} className="shrink-0 text-amber-400 mt-0.5" />
+                            <span>
+                              Pasaron más de <b>{maxHours}h</b> y el clip tiene <b>{currentViews.toLocaleString()}</b> de{' '}
+                              <b>{targetViews.toLocaleString()}</b> vistas. Usa el botón <b>"Monetizar Clip"</b> para subirlo manualmente.
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] px-1">
+                            <span>
+                              Progreso: <b className="text-white">{currentViews.toLocaleString()}</b> /{' '}
+                              <b className="text-rose-300">{targetViews.toLocaleString()} vistas</b>
+                            </span>
+                            {pubDateMs > 0 && (
+                              <span>Tiempo transcurrido: {Math.floor(elapsedHours)}h / {maxHours}h</span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Formulario de 4 campos de Clipearte (https://clipearte.com/clipper/subir-clip) */}
+                        {showMonetizarForm && (
+                          <div className="pt-2 border-t border-white/10 space-y-2.5 animate-in fade-in duration-150">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] uppercase tracking-wider font-bold text-rose-300">
+                                Formulario Subir Clip (clipearte.com)
+                              </span>
+                              <a
+                                href="https://clipearte.com/clipper/subir-clip"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] text-rose-300 hover:text-white underline"
+                              >
+                                <span>Abrir clipearte.com</span>
+                                <ExternalLink size={10} />
+                              </a>
+                            </div>
+
+                            {/* 1. Selección de Campaña */}
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[11px] font-semibold text-slate-200">
+                                  1. Campaña del video
+                                </label>
+                                {selectedMonetizarCamp && (
+                                  <span
+                                    className={cn(
+                                      'text-[9px] font-bold px-1.5 py-0.5 rounded',
+                                      campaignMatchesApp
+                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                    )}
+                                  >
+                                    {campaignMatchesApp ? '✓ Coincide con la app' : '⚠️ Distinta a la guardada'}
+                                  </span>
+                                )}
+                              </div>
+                              <select
+                                value={monetizarCampanaId}
+                                onChange={(e) => setMonetizarCampanaId(e.target.value)}
+                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/15 focus:border-rose-500/60 outline-none"
+                              >
+                                <option value="" className="bg-[#0d0d1a]">Seleccionar campaña...</option>
+                                {campaigns.map((c) => (
+                                  <option key={c.id} value={c.id} className="bg-[#0d0d1a]">
+                                    {c.nombre}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* 2. Tipo de red social de donde proviene el video */}
+                            <div>
+                              <label className="text-[11px] font-semibold text-slate-200 block mb-1">
+                                2. Tipo de red social de donde proviene el video
+                              </label>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {(['tiktok', 'instagram', 'youtube'] as const).map((plat) => {
+                                  const isSelected = monetizarPlatform.toLowerCase() === plat;
+                                  return (
+                                    <button
+                                      key={plat}
+                                      type="button"
+                                      onClick={() => setMonetizarPlatform(plat)}
+                                      className={cn(
+                                        'py-1.5 px-2 rounded-lg text-xs font-bold border transition-all capitalize cursor-pointer',
+                                        isSelected
+                                          ? 'bg-rose-500/20 border-rose-500 text-white shadow-sm'
+                                          : 'bg-[#0d1422] border-white/10 text-[var(--text-muted)] hover:text-white'
+                                      )}
+                                    >
+                                      {plat === 'tiktok' ? 'TikTok' : plat === 'instagram' ? 'Instagram' : 'YouTube'}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* 3. Select del nombre de la cuenta de donde viene el video */}
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[11px] font-semibold text-slate-200">
+                                  3. Cuenta de donde viene el video
+                                </label>
+                                {selectedMonetizarAcc && (
+                                  <span
+                                    className={cn(
+                                      'text-[9px] font-bold px-1.5 py-0.5 rounded',
+                                      accountMatchesApp
+                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                    )}
+                                  >
+                                    {accountMatchesApp ? `✓ @${selectedMonetizarAcc.username}` : '⚠️ Otra cuenta'}
+                                  </span>
+                                )}
+                              </div>
+                              <select
+                                value={monetizarCuentaId}
+                                onChange={(e) => {
+                                  const newAccId = e.target.value;
+                                  setMonetizarCuentaId(newAccId);
+                                  const foundAcc = accounts.find((a) => a.id === newAccId);
+                                  if (foundAcc) setMonetizarPlatform(foundAcc.plataforma);
+                                }}
+                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/15 focus:border-rose-500/60 outline-none"
+                              >
+                                <option value="" className="bg-[#0d0d1a]">Seleccionar cuenta...</option>
+                                {accounts.map((a) => (
+                                  <option key={a.id} value={a.id} className="bg-[#0d0d1a]">
+                                    @{a.username} ({a.plataforma})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* 4. Input text para agregar el link del video */}
+                            <div>
+                              <label className="text-[11px] font-semibold text-slate-200 block mb-1">
+                                4. Enlace del clip publicado
+                              </label>
+                              <input
+                                type="text"
+                                value={monetizarClipUrl}
+                                onChange={(e) => setMonetizarClipUrl(e.target.value)}
+                                placeholder="https://tiktok.com/@tucuenta/video/... o YouTube / Instagram"
+                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/15 focus:border-rose-500/60 outline-none font-mono placeholder:text-[var(--text-muted)]"
+                              />
+                            </div>
+
+                            {monetizarFeedback && (
+                              <div
+                                className={cn(
+                                  'p-2 rounded-lg border text-[11px] flex items-start gap-1.5',
+                                  monetizarFeedback.success
+                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                    : 'bg-red-500/10 border-red-500/30 text-red-300'
+                                )}
+                              >
+                                {monetizarFeedback.success ? (
+                                  <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-emerald-400" />
+                                ) : (
+                                  <AlertCircle size={12} className="shrink-0 mt-0.5 text-red-400" />
+                                )}
+                                <span>{monetizarFeedback.msg}</span>
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={handleMonetizarClip}
+                              disabled={monetizandoClip}
+                              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-400 hover:to-orange-400 text-white text-xs font-bold shadow-lg shadow-rose-500/20 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
+                            >
+                              {monetizandoClip ? (
+                                <>
+                                  <Loader2 size={13} className="animate-spin" />
+                                  <span>Enviando clip a Clipearte...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Upload size={13} />
+                                  <span>↑ Enviar para revisión en Clipearte</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Telegram Feedback */}
                   {telegramFeedback && (
                     <div
@@ -1820,36 +2383,103 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     </p>
                   </div>
 
-                  {/* Título del Video / Short en YouTube (Visible al publicarse) */}
+                  {/* Título del Video / Short en YouTube y Portada (Miniatura) */}
                   {account?.plataforma === 'youtube' && (
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                          <Play size={12} className="text-red-400 fill-red-400" />
-                          <span>Título del Video en YouTube (Short)</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-mono">
-                            Para YouTube
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                            <Play size={12} className="text-red-400 fill-red-400" />
+                            <span>Título del Video en YouTube (Short)</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 font-mono">
+                              Para YouTube
+                            </span>
+                          </label>
+                          <span className="text-[10px] text-red-300 font-mono">
+                            {editShortTitle.length}/100 caracteres
                           </span>
-                        </label>
-                        <span className="text-[10px] text-red-300 font-mono">
-                          {editShortTitle.length}/100 caracteres
-                        </span>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={editShortTitle}
+                            onChange={(e) => setEditShortTitle(e.target.value.slice(0, 100))}
+                            placeholder="Escribe el título específico para este Short en YouTube..."
+                            className="w-full rounded-xl px-3 py-2 text-xs text-white border border-red-500/40 focus:border-red-400 outline-none bg-[#0d1422] transition-colors pr-20"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-semibold">
+                            #Shorts
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-[var(--text-muted)]">
+                          Título real que se subirá y mostrará en YouTube para este video Short.
+                        </p>
                       </div>
-                      <div className="relative">
+
+                      {/* Portada / Miniatura del Short en YouTube */}
+                      <div className="p-3 rounded-xl bg-red-950/15 border border-red-500/25 space-y-2">
                         <input
-                          type="text"
-                          value={editShortTitle}
-                          onChange={(e) => setEditShortTitle(e.target.value.slice(0, 100))}
-                          placeholder="Escribe el título específico para este Short en YouTube..."
-                          className="w-full rounded-xl px-3 py-2 text-xs text-white border border-red-500/40 focus:border-red-400 outline-none bg-[#0d1422] transition-colors pr-20"
+                          ref={editThumbInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/*"
+                          className="hidden"
+                          onChange={handleSelectEditThumbnail}
                         />
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-semibold">
-                          #Shorts
-                        </span>
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                            <ImageIcon size={12} className="text-red-400" />
+                            <span>Portada del Short (Miniatura de YouTube)</span>
+                          </label>
+                          {editThumbnailPreview && !editThumbnailRemoved && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditThumbnailPreview('');
+                                setEditThumbnailFile(null);
+                                setEditThumbnailRemoved(true);
+                              }}
+                              className="text-[10px] text-red-400 hover:text-red-300 underline cursor-pointer"
+                            >
+                              Quitar portada
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="w-20 h-28 rounded-lg overflow-hidden bg-black/50 border border-white/10 flex items-center justify-center shrink-0 relative">
+                            {resolveRenderableThumbUrl(editThumbnailPreview) && !editThumbnailRemoved ? (
+                              <img
+                                src={resolveRenderableThumbUrl(editThumbnailPreview)}
+                                alt="Portada del Short"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="text-center p-1">
+                                <ImageIcon size={16} className="mx-auto text-slate-500 mb-1" />
+                                <span className="text-[9px] text-slate-400 block leading-tight">Sin portada</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex-1 space-y-1.5">
+                            <button
+                              type="button"
+                              onClick={() => editThumbInputRef.current?.click()}
+                              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                            >
+                              <Upload size={12} />
+                              <span>
+                                {editThumbnailPreview && !editThumbnailRemoved
+                                  ? 'Cambiar Portada del Short'
+                                  : 'Subir Portada para el Short'}
+                              </span>
+                            </button>
+                            <p className="text-[10px] text-[var(--text-muted)] leading-relaxed">
+                              Selecciona una imagen vertical (9:16) o miniatura (.jpg, .png, .webp) para actualizar la portada de esta publicación de Short.
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-[10px] text-[var(--text-muted)]">
-                        Título real que se subirá y mostrará en YouTube para este video Short.
-                      </p>
                     </div>
                   )}
 

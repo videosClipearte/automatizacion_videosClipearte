@@ -1258,6 +1258,14 @@ export async function syncPublishedVideosViews(options?: {
       }
     }
 
+    // 5. Evaluar auto-monetización en Clipearte para publicaciones nuevas (solo si el sistema está activo)
+    try {
+      const { checkAndAutoMonetizeVideos } = await import('./clipearteService');
+      await checkAndAutoMonetizeVideos();
+    } catch {
+      // No interrumpir sincronización de vistas si falla auto-monetización
+    }
+
     return {
       success: true,
       checked: youtubeBatchCount + socialScrapedCount,

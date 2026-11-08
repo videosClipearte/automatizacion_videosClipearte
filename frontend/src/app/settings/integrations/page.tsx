@@ -5,7 +5,8 @@ import { motion } from 'framer-motion';
 import {
   CheckCircle, XCircle, Eye, EyeOff, Loader2, Zap, HardDrive,
   Send, Sparkles, FolderCheck, Bot, CheckCircle2, Database,
-  Copy, Check, RefreshCw, Trash2, Clock, KeyRound, DownloadCloud
+  Copy, Check, RefreshCw, Trash2, Clock, KeyRound, DownloadCloud,
+  Coins, ExternalLink
 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
@@ -18,11 +19,12 @@ import {
 } from '@/lib/services/driveService';
 import {
   getStoredSupabaseConfig, saveStoredSupabaseConfig,
-  testSupabaseConnection
+  testSupabaseConnection, getSupabase
 } from '@/lib/supabase';
 import {
   loadAppConfig, saveAppConfig, clearConfigCache
 } from '@/lib/services/appConfigService';
+import { testClipearteConnection } from '@/lib/services/clipearteService';
 
 function YoutubeIcon({ size = 16, className = '' }: { size?: number; className?: string }) {
   return (
@@ -77,6 +79,20 @@ export default function IntegrationsPage() {
   const [showYoutubeSecret, setShowYoutubeSecret] = useState(false);
   const [savingYoutube, setSavingYoutube] = useState(false);
   const [youtubeFeedback, setYoutubeFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+
+  // Clipearte Auto-Monetización state (apagado por defecto)
+  const [clipearteActivo, setClipearteActivo] = useState(false);
+  const [clipearteActivadoDesde, setClipearteActivadoDesde] = useState('');
+  const [clipearteEmail, setClipearteEmail] = useState('');
+  const [clipeartePassword, setClipeartePassword] = useState('');
+  const [showClipeartePassword, setShowClipeartePassword] = useState(false);
+  const [clipearteVistasYoutube, setClipearteVistasYoutube] = useState(1000);
+  const [clipearteVistasOtras, setClipearteVistasOtras] = useState(700);
+  const [clipearteHorasLimite, setClipearteHorasLimite] = useState(48);
+  const [clipearteExcludedIds, setClipearteExcludedIds] = useState<string[]>([]);
+  const [savingClipearte, setSavingClipearte] = useState(false);
+  const [testingClipearte, setTestingClipearte] = useState(false);
+  const [clipearteFeedback, setClipearteFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Supabase state
   const [supabaseUrl, setSupabaseUrl] = useState('');
@@ -136,6 +152,14 @@ export default function IntegrationsPage() {
       const localYtSec = typeof window !== 'undefined' ? localStorage.getItem('autopublish_yt_client_secret') || localStorage.getItem('autopublish_drive_client_secret') : '';
       setYoutubeClientId(cfg.youtube_client_id || cfg.drive_client_id || localYtId || '');
       setYoutubeClientSecret(cfg.youtube_client_secret || cfg.drive_client_secret || localYtSec || '');
+      setClipearteActivo(Boolean(cfg.clipearte_auto_monetizar_activo));
+      setClipearteActivadoDesde(cfg.clipearte_auto_activado_desde || '');
+      setClipearteEmail(cfg.clipearte_email || '');
+      setClipeartePassword(cfg.clipearte_password || '');
+      setClipearteVistasYoutube(Number(cfg.clipearte_vistas_min_youtube || 1000));
+      setClipearteVistasOtras(Number(cfg.clipearte_vistas_min_otras_redes || 700));
+      setClipearteHorasLimite(Number(cfg.clipearte_horas_limite_auto || 48));
+      setClipearteExcludedIds(Array.isArray(cfg.clipearte_excluded_video_ids) ? cfg.clipearte_excluded_video_ids : []);
       setCurrentOrigin(typeof window !== 'undefined' ? window.location.origin : '');
     });
   }, []);
@@ -608,6 +632,17 @@ CREATE TABLE IF NOT EXISTS public.notificaciones (
 );
 ALTER TABLE public.configuracion_app ADD COLUMN IF NOT EXISTS youtube_client_id TEXT DEFAULT '';
 ALTER TABLE public.configuracion_app ADD COLUMN IF NOT EXISTS youtube_client_secret TEXT DEFAULT '';
+ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS nombre_archivo TEXT;
+ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS titulo_youtube TEXT;
+ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
+ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS post_url_publica TEXT;
+ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS ultimo_aviso_en TIMESTAMPTZ;
+ALTER TABLE public.publicaciones ADD COLUMN IF NOT EXISTS confirmado_manualmente BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.metricas_extraidas_scraper ADD COLUMN IF NOT EXISTS compartidos BIGINT DEFAULT 0;
+ALTER TABLE public.metricas_extraidas_scraper ADD COLUMN IF NOT EXISTS guardados BIGINT DEFAULT 0;
+ALTER TABLE public.metricas_extraidas_scraper ADD COLUMN IF NOT EXISTS alcance BIGINT DEFAULT 0;
+ALTER TABLE public.metricas_extraidas_scraper ADD COLUMN IF NOT EXISTS post_url TEXT;
+ALTER TABLE public.metricas_extraidas_scraper ADD COLUMN IF NOT EXISTS fuente TEXT DEFAULT 'scraper';
 CREATE TABLE IF NOT EXISTS public.youtube_tokens (
   canal_id TEXT PRIMARY KEY,
   access_token TEXT NOT NULL DEFAULT '',
@@ -673,11 +708,115 @@ END $$;`;
     setTimeout(() => setYoutubeFeedback(null), 3000);
   };
 
+  // ── Clipearte Handlers ──
+  const handleToggleClipearte = async (nextActive: boolean) => {
+    setClipearteActivo(nextActive);
+    let nextActivadoDesde = clipearteActivadoDesde;
+    let nextExcludedIds = [...clipearteExcludedIds];
+
+    if (nextActive) {
+      // Al encender el sistema, fijar marca de tiempo actual y excluir todos los videos ya publicados de hoy o antes
+      nextActivadoDesde = new Date().toISOString();
+      setClipearteActivadoDesde(nextActivadoDesde);
+      try {
+        const db = getSupabase();
+        const { data: existingPubs } = await db
+          .from('publicaciones')
+          .select('id')
+          .in('estado', ['PUBLICADO', 'ENVIADO']);
+        if (existingPubs && existingPubs.length > 0) {
+          const allIds = Array.from(new Set([...nextExcludedIds, ...existingPubs.map((p: any) => String(p.id))]));
+          nextExcludedIds = allIds;
+          setClipearteExcludedIds(allIds);
+        }
+      } catch {}
+    }
+
+    await saveAppConfig({
+      clipearte_auto_monetizar_activo: nextActive,
+      clipearte_auto_activado_desde: nextActivadoDesde,
+      clipearte_excluded_video_ids: nextExcludedIds,
+    });
+
+    setClipearteFeedback({
+      success: true,
+      msg: nextActive
+        ? `✅ Auto-Monetización en Clipearte ACTIVADA. Solo se auto-monetizarán las publicaciones nuevas que se publiquen a partir de este momento (${new Date(nextActivadoDesde).toLocaleTimeString()}). Los videos ya publicados hoy o antes están protegidos y no se subirán de golpe.`
+        : '⏸️ Auto-Monetización en Clipearte DESACTIVADA. Ningún video se subirá automáticamente.',
+    });
+  };
+
+  const handleSaveClipearte = async () => {
+    setSavingClipearte(true);
+    setClipearteFeedback(null);
+
+    let effectiveSince = clipearteActivadoDesde;
+    let effectiveExcluded = [...clipearteExcludedIds];
+    if (clipearteActivo && !effectiveSince) {
+      effectiveSince = new Date().toISOString();
+      setClipearteActivadoDesde(effectiveSince);
+      try {
+        const db = getSupabase();
+        const { data: existingPubs } = await db
+          .from('publicaciones')
+          .select('id')
+          .in('estado', ['PUBLICADO', 'ENVIADO']);
+        if (existingPubs) {
+          effectiveExcluded = Array.from(new Set([...effectiveExcluded, ...existingPubs.map((p: any) => String(p.id))]));
+          setClipearteExcludedIds(effectiveExcluded);
+        }
+      } catch {}
+    }
+
+    const result = await saveAppConfig({
+      clipearte_auto_monetizar_activo: clipearteActivo,
+      clipearte_auto_activado_desde: effectiveSince,
+      clipearte_email: clipearteEmail.trim(),
+      clipearte_password: clipeartePassword,
+      clipearte_vistas_min_youtube: Math.max(1, Number(clipearteVistasYoutube || 1000)),
+      clipearte_vistas_min_otras_redes: Math.max(1, Number(clipearteVistasOtras || 700)),
+      clipearte_horas_limite_auto: Math.max(1, Number(clipearteHorasLimite || 48)),
+      clipearte_excluded_video_ids: effectiveExcluded,
+    });
+
+    setSavingClipearte(false);
+    setClipearteFeedback({
+      success: result.success,
+      msg: result.success
+        ? '✅ Configuración de Clipearte y metas de vistas para auto-monetizar guardadas correctamente.'
+        : `⚠️ Error al guardar configuración de Clipearte: ${result.error}`,
+    });
+  };
+
+  const handleTestClipearte = async () => {
+    setTestingClipearte(true);
+    setClipearteFeedback(null);
+    await handleSaveClipearte();
+
+    const res = await testClipearteConnection(clipearteEmail, clipeartePassword);
+    setTestingClipearte(false);
+    if (res.ok) {
+      const campsCount = res.campaigns?.length || 0;
+      const accsCount = res.accounts?.length || 0;
+      const campsList = (res.campaigns || []).map((c) => c.name).slice(0, 4).join(', ');
+      setClipearteFeedback({
+        success: true,
+        msg: `🎉 Conexión exitosa con Clipearte. Campañas detectadas: ${campsCount}${campsList ? ` (${campsList})` : ''} · Cuentas detectadas: ${accsCount}.`,
+      });
+    } else {
+      setClipearteFeedback({
+        success: false,
+        msg: `⚠️ ${res.error || 'No se pudo iniciar sesión en Clipearte.'}`,
+      });
+    }
+  };
+
   const handleSaveAll = () => {
     handleSaveTelegram();
     handleSaveGemini();
     handleSaveDrive();
     handleSaveYoutube();
+    handleSaveClipearte();
     handleSaveSupabase();
     setGlobalSaved(true);
     setTimeout(() => setGlobalSaved(false), 3500);
@@ -1563,6 +1702,193 @@ END $$;`;
                 : 'bg-red-500/10 border-red-500/20 text-red-300'
             }`}>
               {youtubeFeedback.msg}
+            </div>
+          )}
+        </div>
+      </GlassCard>
+
+      {/* ── CARD 6: MONETIZACIÓN DE CLIPS EN CLIPEARTE (https://clipearte.com) ── */}
+      <GlassCard>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[var(--border)] mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+              <Coins size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-white">Monetización Automática en Clipearte</h3>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                    clipearteActivo
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      : 'bg-slate-500/15 text-slate-300 border-slate-500/30'
+                  }`}
+                >
+                  {clipearteActivo ? 'Sistema ACTIVO' : 'Sistema INACTIVO (Apagado)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Completa automáticamente el formulario en{' '}
+                <a
+                  href="https://clipearte.com/clipper/subir-clip"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-rose-400 hover:underline inline-flex items-center gap-0.5"
+                >
+                  clipearte.com/clipper/subir-clip <ExternalLink size={10} />
+                </a>{' '}
+                cuando tus publicaciones alcancen las vistas meta
+              </p>
+            </div>
+          </div>
+
+          {/* Switch principal Activo / Inactivo */}
+          <label className="flex items-center gap-2.5 cursor-pointer select-none bg-white/[0.03] border border-white/10 px-3 py-2 rounded-xl">
+            <input
+              type="checkbox"
+              checked={clipearteActivo}
+              onChange={(e) => handleToggleClipearte(e.target.checked)}
+              className="rounded border-[var(--border)] accent-rose-500 w-4 h-4 cursor-pointer"
+            />
+            <span className="text-xs font-bold text-white">
+              {clipearteActivo ? 'Auto-Monetización Activa' : 'Activar Auto-Monetización'}
+            </span>
+          </label>
+        </div>
+
+        {/* Aviso de seguridad anti-subida masiva de videos antiguos o de hoy */}
+        <div className="mb-4 p-3 rounded-xl bg-rose-500/[0.07] border border-rose-500/25 space-y-1.5">
+          <p className="text-xs font-bold text-rose-200 flex items-center gap-1.5">
+            <Sparkles size={13} className="text-rose-400 shrink-0" />
+            Protección Anti-Subida de Videos Previos:
+          </p>
+          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+            Mientras este sistema esté <b>apagado</b>, ningún video se subirá automáticamente. Al encenderlo, el sistema guarda la hora exacta de activación
+            {clipearteActivadoDesde ? ` (${new Date(clipearteActivadoDesde).toLocaleString()})` : ''} y <b>excluye todos los videos ya publicados de hoy o anteriores</b> ({clipearteExcludedIds.length} excluidos), evitando subir de golpe links no deseados.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          {/* Credenciales de Clipearte */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1.5">
+                Correo de Clipearte (Login)
+              </label>
+              <input
+                type="email"
+                value={clipearteEmail}
+                onChange={(e) => setClipearteEmail(e.target.value)}
+                placeholder="tucorreo@ejemplo.com"
+                className="w-full px-3 py-2 rounded-xl text-xs glass border border-[var(--border)] focus:border-rose-500/60 focus:outline-none text-white placeholder:text-slate-600"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1.5">
+                Contraseña de Clipearte
+              </label>
+              <div className="relative">
+                <input
+                  type={showClipeartePassword ? 'text' : 'password'}
+                  value={clipeartePassword}
+                  onChange={(e) => setClipeartePassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full px-3 py-2 pr-9 rounded-xl text-xs glass border border-[var(--border)] focus:border-rose-500/60 focus:outline-none font-mono text-white placeholder:text-slate-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowClipeartePassword((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white"
+                >
+                  {showClipeartePassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Configuración de cantidad de vistas para auto-monetizar y tiempo límite */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10">
+              <label className="text-xs font-bold text-red-300 block mb-1">
+                Vistas Mínimas en YouTube
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={clipearteVistasYoutube}
+                onChange={(e) => setClipearteVistasYoutube(Math.max(1, Number(e.target.value) || 1000))}
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#0d1422] border border-white/15 focus:border-red-500/60 focus:outline-none font-mono text-white"
+              />
+              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                Por defecto: <b>1,000 vistas</b> para auto-monetizar Shorts de YouTube.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10">
+              <label className="text-xs font-bold text-cyan-300 block mb-1">
+                Vistas Mínimas en Otras Redes
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={clipearteVistasOtras}
+                onChange={(e) => setClipearteVistasOtras(Math.max(1, Number(e.target.value) || 700))}
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#0d1422] border border-white/15 focus:border-cyan-500/60 focus:outline-none font-mono text-white"
+              />
+              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                Por defecto: <b>700 vistas</b> para TikTok, Instagram o Facebook.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10">
+              <label className="text-xs font-bold text-amber-300 block mb-1">
+                Tiempo Límite Auto (Horas)
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={clipearteHorasLimite}
+                onChange={(e) => setClipearteHorasLimite(Math.max(1, Number(e.target.value) || 48))}
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#0d1422] border border-white/15 focus:border-amber-500/60 focus:outline-none font-mono text-white"
+              />
+              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                Si pasa este tiempo sin llegar a las vistas, se monetiza con el botón manual.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={handleSaveClipearte}
+              disabled={savingClipearte}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass border border-rose-500/30 text-xs font-semibold text-rose-300 hover:bg-rose-500/10 transition-all disabled:opacity-50"
+            >
+              {savingClipearte ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              <span>Guardar Configuración Clipearte</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleTestClipearte}
+              disabled={testingClipearte}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 hover:bg-rose-500/30 text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
+            >
+              {testingClipearte ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+              <span>Probar Conexión con Clipearte</span>
+            </button>
+          </div>
+
+          {clipearteFeedback && (
+            <div
+              className={`p-2.5 rounded-xl border text-xs ${
+                clipearteFeedback.success
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                  : 'bg-red-500/10 border-red-500/20 text-red-300'
+              }`}
+            >
+              {clipearteFeedback.msg}
             </div>
           )}
         </div>

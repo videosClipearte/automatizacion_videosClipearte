@@ -57,6 +57,7 @@ export interface Video {
   auto_reprogramacion: boolean;
   reintentos_alerta: number;
   post_url_publica?: string;
+  monetizado_en?: string;
 }
 
 export interface DriveUploadState {
@@ -363,13 +364,14 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     set({ isLoading: true, loadError: null });
     try {
       const db = getSupabase();
-      const [accRes, campRes, vidRes, metRes, trackedRes, confRes] = await Promise.all([
+      const [accRes, campRes, vidRes, metRes, trackedRes, confRes, notifClipearteRes] = await Promise.all([
         db.from('cuentas').select('*').order('created_at', { ascending: true }),
         db.from('campanas').select('*').order('created_at', { ascending: true }),
         db.from('publicaciones').select('*').order('programado_para', { ascending: true }),
         db.from('metricas_extraidas_scraper').select('*'),
         db.from('reels_rastreados').select('*'),
         db.from('confirmaciones_telegram').select('*').eq('estado', 'CONFIRMADO'),
+        db.from('notificaciones').select('id, video_id, fecha_envio, origen').or('origen.eq.clipearte,id.like.clipearte_monetizado_%'),
       ]);
 
       // ❗ Verificar errores de Supabase (antes se ignoraban silenciosamente)
@@ -512,6 +514,24 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         }
       });
 
+      const monetizadoByPub = new Map<string, string>();
+      (notifClipearteRes?.data ?? []).forEach((n: any) => {
+        const vidId = n.video_id || (typeof n.id === 'string' && n.id.startsWith('clipearte_monetizado_') ? n.id.replace('clipearte_monetizado_', '') : null);
+        if (vidId) {
+          monetizadoByPub.set(String(vidId), n.fecha_envio || new Date().toISOString());
+        }
+      });
+      if (typeof window !== 'undefined') {
+        try {
+          const localMon = JSON.parse(localStorage.getItem('autopublish_clipearte_monetizados') || '{}');
+          for (const [vidId, iso] of Object.entries(localMon)) {
+            if (!monetizadoByPub.has(vidId) && typeof iso === 'string') {
+              monetizadoByPub.set(vidId, iso);
+            }
+          }
+        } catch {}
+      }
+
       const seenVideoKeys = new Set<string>();
       const videos: Video[] = [];
       for (const v of rawVideos) {
@@ -523,6 +543,10 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         }
         seenVideoKeys.add(v.id);
         seenVideoKeys.add(cloneKey);
+
+        if (monetizadoByPub.has(v.id)) {
+          v.monetizado_en = monetizadoByPub.get(v.id);
+        }
 
         // Consolidar post_url_publica y vistas_obtenidas desde todas las fuentes (Telegram, YouTube, Scraper)
         const effectiveUrl =
@@ -589,16 +613,35 @@ const useAppStoreBase = create<AppState>((set, get) => ({
   refreshData: async () => {
     try {
       const db = getSupabase();
-      const [{ data, error }, { data: metData }, { data: trackedData }, { data: confData }] = await Promise.all([
+      const [{ data, error }, { data: metData }, { data: trackedData }, { data: confData }, { data: notifClipearteData }] = await Promise.all([
         db.from('publicaciones').select('*').order('programado_para', { ascending: true }),
         db.from('metricas_extraidas_scraper').select('*'),
         db.from('reels_rastreados').select('*'),
         db.from('confirmaciones_telegram').select('*').eq('estado', 'CONFIRMADO'),
+        db.from('notificaciones').select('id, video_id, fecha_envio, origen').or('origen.eq.clipearte,id.like.clipearte_monetizado_%'),
       ]);
 
       if (!error && data) {
         const rawVideos = data.map(mapVideo);
         const campaigns = get().campaigns;
+
+        const monetizadoByPub = new Map<string, string>();
+        (notifClipearteData ?? []).forEach((n: any) => {
+          const vidId = n.video_id || (typeof n.id === 'string' && n.id.startsWith('clipearte_monetizado_') ? n.id.replace('clipearte_monetizado_', '') : null);
+          if (vidId) {
+            monetizadoByPub.set(String(vidId), n.fecha_envio || new Date().toISOString());
+          }
+        });
+        if (typeof window !== 'undefined') {
+          try {
+            const localMon = JSON.parse(localStorage.getItem('autopublish_clipearte_monetizados') || '{}');
+            for (const [vidId, iso] of Object.entries(localMon)) {
+              if (!monetizadoByPub.has(vidId) && typeof iso === 'string') {
+                monetizadoByPub.set(vidId, iso);
+              }
+            }
+          } catch {}
+        }
 
         const metricViewsByPub = new Map<string, number>();
         const metricUrlByPub = new Map<string, string>();
@@ -642,6 +685,10 @@ const useAppStoreBase = create<AppState>((set, get) => ({
           if (seenVideoKeys.has(cloneKey)) continue;
           seenVideoKeys.add(v.id);
           seenVideoKeys.add(cloneKey);
+
+          if (monetizadoByPub.has(v.id)) {
+            v.monetizado_en = monetizadoByPub.get(v.id);
+          }
 
           // Asegurar que la descripción esté 100% limpia de tags y prefijos técnicos en Supabase
           const origRow = data.find((r: any) => r.id === v.id);
@@ -747,8 +794,11 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     if (isYouTube && video.titulo_youtube) {
       row.titulo_youtube = video.titulo_youtube;
     }
-    // Optimización CPU/Red: no guardar Base64 enorme en Supabase publicaciones
-    if (video.thumbnail_url && !video.thumbnail_url.startsWith('data:')) {
+    // Guardar URL de miniatura o imagen Base64 comprimida (< 250KB)
+    if (
+      video.thumbnail_url &&
+      (!video.thumbnail_url.startsWith('data:') || video.thumbnail_url.length < 250000)
+    ) {
       row.thumbnail_url = video.thumbnail_url;
     }
     let { error: insErr } = await db.from('publicaciones').insert(row);
@@ -766,8 +816,9 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         const resCols = await db.from('publicaciones').insert(row);
         insErr = resCols.error;
       }
-      // Reintento 1: Si falló por tamaño o formato de miniatura
+      // Reintento 1: Si falló por columna thumbnail_url inexistente, respaldar en thumbnail_color
       if (insErr && row.thumbnail_url) {
+        row.thumbnail_color = row.thumbnail_url;
         delete row.thumbnail_url;
         const res2 = await db.from('publicaciones').insert(row);
         insErr = res2.error;
@@ -802,9 +853,10 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         return s;
       }
 
-      const sanitizedVideo = (video.thumbnail_url && video.thumbnail_url.startsWith('data:'))
-        ? { ...video, thumbnail_url: undefined }
-        : video;
+      const sanitizedVideo =
+        video.thumbnail_url && video.thumbnail_url.startsWith('data:') && video.thumbnail_url.length >= 250000
+          ? { ...video, thumbnail_url: undefined }
+          : video;
       const videos = [...s.videos, sanitizedVideo];
       return { videos, metrics: computeMetrics(videos) };
     });
@@ -856,10 +908,16 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     if (finalUpdates.post_url_publica !== undefined) dbUpdates.post_url_publica = finalUpdates.post_url_publica;
     if (finalUpdates.thumbnail_color !== undefined) dbUpdates.thumbnail_color = finalUpdates.thumbnail_color;
     if (finalUpdates.thumbnail_url !== undefined) {
-      if (finalUpdates.thumbnail_url && !finalUpdates.thumbnail_url.startsWith('data:')) {
+      if (
+        finalUpdates.thumbnail_url &&
+        (!finalUpdates.thumbnail_url.startsWith('data:') || finalUpdates.thumbnail_url.length < 250000)
+      ) {
         dbUpdates.thumbnail_url = finalUpdates.thumbnail_url;
       } else {
         dbUpdates.thumbnail_url = null;
+        if (currentVideo?.thumbnail_color && (currentVideo.thumbnail_color.startsWith('http') || currentVideo.thumbnail_color.startsWith('data:'))) {
+          dbUpdates.thumbnail_color = '#ff0000';
+        }
       }
     }
     if (finalUpdates.drive_file_url !== undefined) dbUpdates.drive_file_url = finalUpdates.drive_file_url;
@@ -883,8 +941,11 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       const resCols = await db.from('publicaciones').update(dbUpdates).eq('id', id);
       updErr = resCols.error;
     }
-    if (updErr && dbUpdates.thumbnail_url) {
-      console.warn('[updateVideo] Error actualizando con thumbnail_url, reintentando sin él:', updErr.message);
+    if (updErr && dbUpdates.thumbnail_url !== undefined) {
+      console.warn('[updateVideo] Error actualizando con thumbnail_url, respaldando en thumbnail_color:', updErr.message);
+      if (dbUpdates.thumbnail_url) {
+        dbUpdates.thumbnail_color = dbUpdates.thumbnail_url;
+      }
       delete dbUpdates.thumbnail_url;
       await db.from('publicaciones').update(dbUpdates).eq('id', id);
     }
@@ -908,7 +969,9 @@ const useAppStoreBase = create<AppState>((set, get) => ({
             nombre_archivo: targetFileName,
             descripcion_aprobada_ia: cleanDesc,
           };
-          if (updated.thumbnail_url && updated.thumbnail_url.startsWith('data:')) {
+          if (finalUpdates.thumbnail_url === '') {
+            updated.thumbnail_url = undefined;
+          } else if (updated.thumbnail_url && updated.thumbnail_url.startsWith('data:') && updated.thumbnail_url.length >= 250000) {
             updated.thumbnail_url = undefined;
           }
           if (isRescheduledToFuture || ('enviado_en' in finalUpdates && !finalUpdates.enviado_en)) {

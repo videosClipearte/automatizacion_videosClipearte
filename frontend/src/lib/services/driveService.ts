@@ -495,8 +495,10 @@ export async function startBackgroundDriveUpload(params: StartBackgroundUploadPa
           folderId,
           token
         );
-        if (thumbUploadRes.success && thumbUploadRes.fileUrl) {
-          finalThumbnailUrl = thumbUploadRes.fileUrl;
+        if (thumbUploadRes.success && (thumbUploadRes.fileId || thumbUploadRes.fileUrl)) {
+          finalThumbnailUrl = thumbUploadRes.fileId
+            ? `https://drive.google.com/thumbnail?id=${thumbUploadRes.fileId}&sz=w1080`
+            : thumbUploadRes.fileUrl;
         }
       } catch (tUpErr) {
         console.warn('[driveService] No se pudo subir miniatura a Drive:', tUpErr);

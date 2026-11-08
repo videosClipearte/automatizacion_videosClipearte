@@ -38,6 +38,15 @@ export interface AppConfig {
   // YouTube Data API v3
   youtube_client_id: string;
   youtube_client_secret: string;
+  // Monetización Clipearte (https://clipearte.com/clipper/subir-clip)
+  clipearte_auto_monetizar_activo: boolean;
+  clipearte_auto_activado_desde: string;
+  clipearte_email: string;
+  clipearte_password: string;
+  clipearte_vistas_min_youtube: number;
+  clipearte_vistas_min_otras_redes: number;
+  clipearte_horas_limite_auto: number;
+  clipearte_excluded_video_ids: string[];
 }
 
 // Config por defecto (vacía - el usuario la llena desde la UI)
@@ -70,6 +79,15 @@ const DEFAULT_CONFIG: AppConfig = {
   // YouTube Data API v3
   youtube_client_id: '',
   youtube_client_secret: '',
+  // Monetización Clipearte (desactivado por defecto para no subir videos previos de golpe)
+  clipearte_auto_monetizar_activo: false,
+  clipearte_auto_activado_desde: '',
+  clipearte_email: '',
+  clipearte_password: '',
+  clipearte_vistas_min_youtube: 1000,
+  clipearte_vistas_min_otras_redes: 700,
+  clipearte_horas_limite_auto: 48,
+  clipearte_excluded_video_ids: [],
 };
 
 // Cache en memoria para evitar múltiples fetches
@@ -82,19 +100,25 @@ let cachedConfig: AppConfig | null = null;
 export async function loadAppConfig(): Promise<AppConfig> {
   try {
     let data: any = null;
+    let clipearteDbData: any = {};
     let dbError: any = null;
     try {
       const db = getSupabase();
-      const res = await db
-        .from('configuracion_app')
-        .select('*')
-        .eq('id', 'singleton')
-        .maybeSingle();
+      const [res, clipRes] = await Promise.all([
+        db.from('configuracion_app').select('*').eq('id', 'singleton').maybeSingle(),
+        db.from('configuracion_app').select('alerta_plantilla_mensaje').eq('id', 'clipearte_config').maybeSingle(),
+      ]);
       data = res.data;
       dbError = res.error;
 
+      if (clipRes.data?.alerta_plantilla_mensaje) {
+        try {
+          clipearteDbData = JSON.parse(clipRes.data.alerta_plantilla_mensaje);
+        } catch {}
+      }
+
       if (!data) {
-        const fallback = await db.from('configuracion_app').select('*').limit(1).maybeSingle();
+        const fallback = await db.from('configuracion_app').select('*').neq('id', 'clipearte_config').limit(1).maybeSingle();
         if (fallback.data) {
           data = fallback.data;
           dbError = null;
@@ -188,6 +212,52 @@ export async function loadAppConfig(): Promise<AppConfig> {
       // YouTube Data API v3
       youtube_client_id: ytClientId,
       youtube_client_secret: ytClientSecret,
+      // Clipearte Auto-Monetización (desactivado por defecto)
+      clipearte_auto_monetizar_activo: Boolean(
+        clipearteDbData?.clipearte_auto_monetizar_activo ??
+        data?.clipearte_auto_monetizar_activo ??
+        localBackup?.clipearte_auto_monetizar_activo ??
+        false
+      ),
+      clipearte_auto_activado_desde:
+        clipearteDbData?.clipearte_auto_activado_desde ??
+        data?.clipearte_auto_activado_desde ??
+        localBackup?.clipearte_auto_activado_desde ??
+        '',
+      clipearte_email: (
+        clipearteDbData?.clipearte_email ??
+        data?.clipearte_email ??
+        localBackup?.clipearte_email ??
+        ''
+      ).trim(),
+      clipearte_password:
+        clipearteDbData?.clipearte_password ??
+        data?.clipearte_password ??
+        localBackup?.clipearte_password ??
+        '',
+      clipearte_vistas_min_youtube: Number(
+        clipearteDbData?.clipearte_vistas_min_youtube ??
+        data?.clipearte_vistas_min_youtube ??
+        localBackup?.clipearte_vistas_min_youtube ??
+        1000
+      ),
+      clipearte_vistas_min_otras_redes: Number(
+        clipearteDbData?.clipearte_vistas_min_otras_redes ??
+        data?.clipearte_vistas_min_otras_redes ??
+        localBackup?.clipearte_vistas_min_otras_redes ??
+        700
+      ),
+      clipearte_horas_limite_auto: Number(
+        clipearteDbData?.clipearte_horas_limite_auto ??
+        data?.clipearte_horas_limite_auto ??
+        localBackup?.clipearte_horas_limite_auto ??
+        48
+      ),
+      clipearte_excluded_video_ids: Array.isArray(clipearteDbData?.clipearte_excluded_video_ids)
+        ? clipearteDbData.clipearte_excluded_video_ids
+        : Array.isArray(localBackup?.clipearte_excluded_video_ids)
+          ? localBackup.clipearte_excluded_video_ids
+          : [],
     };
 
     cachedConfig = config;
@@ -237,7 +307,44 @@ export async function saveAppConfig(updates: Partial<AppConfig>): Promise<{ succ
     }
 
     // 2. Preparar payload para Supabase (espejando credenciales para compatibilidad con schemas previos)
+    const db = getSupabase();
+
+    // Si se actualizan campos de Clipearte, guardarlos en la fila dedicada 'clipearte_config'
+    const clipearteKeys: (keyof AppConfig)[] = [
+      'clipearte_auto_monetizar_activo',
+      'clipearte_auto_activado_desde',
+      'clipearte_email',
+      'clipearte_password',
+      'clipearte_vistas_min_youtube',
+      'clipearte_vistas_min_otras_redes',
+      'clipearte_horas_limite_auto',
+      'clipearte_excluded_video_ids',
+    ];
+    const hasClipearteUpdates = clipearteKeys.some((k) => k in updates);
+    if (hasClipearteUpdates) {
+      const currentClipearteObj: Record<string, any> = {};
+      for (const k of clipearteKeys) {
+        currentClipearteObj[k] = (cachedConfig as any)?.[k] ?? (DEFAULT_CONFIG as any)[k];
+      }
+      await db.from('configuracion_app').upsert(
+        {
+          id: 'clipearte_config',
+          alerta_plantilla_mensaje: JSON.stringify(currentClipearteObj),
+        },
+        { onConflict: 'id' }
+      );
+    }
+
     const dbPayload: Record<string, any> = { id: 'singleton', ...updates };
+    for (const k of clipearteKeys) {
+      delete dbPayload[k];
+    }
+
+    // Si solo había campos de Clipearte en updates, no hace falta hacer upsert vacío en singleton
+    if (Object.keys(dbPayload).length <= 1) {
+      return { success: true };
+    }
+
     if (updates.youtube_client_id && !dbPayload.drive_client_id) {
       dbPayload.drive_client_id = updates.youtube_client_id.trim();
     }
@@ -251,7 +358,6 @@ export async function saveAppConfig(updates: Partial<AppConfig>): Promise<{ succ
       dbPayload.youtube_client_secret = updates.drive_client_secret.trim();
     }
 
-    const db = getSupabase();
     let { error } = await db
       .from('configuracion_app')
       .upsert(dbPayload, { onConflict: 'id' });

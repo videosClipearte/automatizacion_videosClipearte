@@ -46,6 +46,12 @@ export default function AlertsSettingsPage() {
   const [isTestingScraper, setIsTestingScraper] = useState(false);
   const [scraperTestResult, setScraperTestResult] = useState<string | null>(null);
 
+  // Clipearte Auto-Monetización thresholds
+  const [clipearteActivo, setClipearteActivo] = useState(false);
+  const [clipearteVistasYoutube, setClipearteVistasYoutube] = useState(1000);
+  const [clipearteVistasOtras, setClipearteVistasOtras] = useState(700);
+  const [clipearteHorasLimite, setClipearteHorasLimite] = useState(48);
+
   // Save status
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -67,6 +73,10 @@ export default function AlertsSettingsPage() {
         if (cfg.scraper_intervalo_minutos !== undefined) setScraperIntervalMinutes(cfg.scraper_intervalo_minutos);
         if (cfg.scraper_modo_headless !== undefined) setHeadlessMode(cfg.scraper_modo_headless);
         if (cfg.scraper_timeout_segundos !== undefined) setTimeoutSeconds(cfg.scraper_timeout_segundos);
+        setClipearteActivo(Boolean(cfg.clipearte_auto_monetizar_activo));
+        setClipearteVistasYoutube(Number(cfg.clipearte_vistas_min_youtube || 1000));
+        setClipearteVistasOtras(Number(cfg.clipearte_vistas_min_otras_redes || 700));
+        setClipearteHorasLimite(Number(cfg.clipearte_horas_limite_auto || 48));
       } catch (err) {
         console.warn('Error cargando configuración en alerts page:', err);
       }
@@ -126,6 +136,24 @@ export default function AlertsSettingsPage() {
         localStorage.setItem(ALERTS_SETTINGS_STORAGE_KEY, JSON.stringify(dataToSave));
       }
 
+      const currentCfg = await loadAppConfig();
+      let nextActivadoDesde = currentCfg.clipearte_auto_activado_desde || '';
+      let nextExcludedIds = Array.isArray(currentCfg.clipearte_excluded_video_ids) ? [...currentCfg.clipearte_excluded_video_ids] : [];
+
+      if (clipearteActivo && !currentCfg.clipearte_auto_monetizar_activo) {
+        nextActivadoDesde = new Date().toISOString();
+        try {
+          const supa = getSupabase();
+          const { data: existingPubs } = await supa
+            .from('publicaciones')
+            .select('id')
+            .in('estado', ['PUBLICADO', 'ENVIADO']);
+          if (existingPubs) {
+            nextExcludedIds = Array.from(new Set([...nextExcludedIds, ...existingPubs.map((p: any) => String(p.id))]));
+          }
+        } catch {}
+      }
+
       await saveAppConfig({
         alerta_tolerancia_minutos: toleranceMinutes,
         alerta_intervalo_reintento_minutos: retryIntervalMinutes,
@@ -139,6 +167,12 @@ export default function AlertsSettingsPage() {
         scraper_intervalo_minutos: scraperIntervalMinutes,
         scraper_modo_headless: headlessMode,
         scraper_timeout_segundos: timeoutSeconds,
+        clipearte_auto_monetizar_activo: clipearteActivo,
+        clipearte_auto_activado_desde: nextActivadoDesde,
+        clipearte_vistas_min_youtube: Math.max(1, Number(clipearteVistasYoutube || 1000)),
+        clipearte_vistas_min_otras_redes: Math.max(1, Number(clipearteVistasOtras || 700)),
+        clipearte_horas_limite_auto: Math.max(1, Number(clipearteHorasLimite || 48)),
+        clipearte_excluded_video_ids: nextExcludedIds,
       });
 
       setSavedSuccess(true);
@@ -596,6 +630,88 @@ export default function AlertsSettingsPage() {
             <span>{dailyReportFeedback}</span>
           </div>
         )}
+      </GlassCard>
+
+      {/* CARD 3.5: Vistas para Auto-Monetizar en Clipearte */}
+      <GlassCard>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
+              <Target size={20} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Vistas para Auto-Monetizar Clips (Clipearte)</h3>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Configura las vistas a las que debe llegar cada publicación para monetizarse automáticamente en clipearte.com
+              </p>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={clipearteActivo}
+              onChange={(e) => setClipearteActivo(e.target.checked)}
+              className="rounded accent-rose-500 w-4 h-4 cursor-pointer"
+            />
+            <span className="text-xs font-semibold text-white">
+              {clipearteActivo ? 'Auto-Monetizar Activo' : 'Activar Auto-Monetizar'}
+            </span>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-3">
+          <div>
+            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+              Vistas Mínimas en YouTube
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={clipearteVistasYoutube}
+              onChange={(e) => setClipearteVistasYoutube(Math.max(1, Number(e.target.value) || 1000))}
+              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-rose-500/50 outline-none bg-transparent font-mono"
+            />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              Por defecto: 1,000 vistas en Shorts de YouTube.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+              Vistas Mínimas en Otras Redes
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={clipearteVistasOtras}
+              onChange={(e) => setClipearteVistasOtras(Math.max(1, Number(e.target.value) || 700))}
+              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-rose-500/50 outline-none bg-transparent font-mono"
+            />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              Por defecto: 700 vistas en TikTok, Instagram o Facebook.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+              Tiempo Máximo Auto (Horas)
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={clipearteHorasLimite}
+              onChange={(e) => setClipearteHorasLimite(Math.max(1, Number(e.target.value) || 48))}
+              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-rose-500/50 outline-none bg-transparent font-mono"
+            />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              Pasado este tiempo sin llegar a la meta, usa el botón "Monetizar Clip" manual.
+            </p>
+          </div>
+        </div>
+        <p className="text-[11px] text-[var(--text-muted)]">
+          💡 Nota: Los videos ya publicados de hoy o antes mientras el sistema estaba apagado nunca se subirán automáticamente. Configura tu correo y contraseña de Clipearte en la pestaña <b>Integraciones API</b>.
+        </p>
       </GlassCard>
 
       {/* CARD 4: Plantilla de Mensaje a Telegram */}
