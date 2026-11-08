@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Plus, Grid3x3, CalendarDays, Clock,
   Eye, Send, Play, Globe,
-  Upload, Filter, Loader2, HardDrive
+  Upload, Filter, Loader2, HardDrive, Image as ImageIcon, FileVideo, Sparkles
 } from 'lucide-react';
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -17,6 +17,12 @@ import { es } from 'date-fns/locale';
 import { useAppStore, type Video } from '@/store/useAppStore';
 import { MetricPill } from '@/components/ui/MetricPill';
 import { cn, formatViews, getStatusClass } from '@/lib/utils';
+import {
+  isVideoFile,
+  isImageFile,
+  replacePublicationVideo,
+  updatePublicationThumbnail,
+} from '@/lib/services/driveService';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -30,14 +36,16 @@ const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i); // 00:00 → 23:00
 
 // Helper de extracción rápida y segura de archivos desde eventos de arrastre
-function extractFileFromDrag(e: React.DragEvent): File | null {
-  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    return e.dataTransfer.files[0];
+function extractFileFromDrag(e: React.DragEvent | DragEvent): File | null {
+  const dt = e.dataTransfer;
+  if (!dt) return null;
+  if (dt.files && dt.files.length > 0) {
+    return dt.files[0];
   }
-  if (e.dataTransfer.items) {
-    for (let i = 0; i < e.dataTransfer.items.length; i++) {
-      if (e.dataTransfer.items[i].kind === 'file') {
-        const file = e.dataTransfer.items[i].getAsFile();
+  if (dt.items) {
+    for (let i = 0; i < dt.items.length; i++) {
+      if (dt.items[i].kind === 'file') {
+        const file = dt.items[i].getAsFile();
         if (file) return file;
       }
     }
@@ -62,6 +70,9 @@ export function CalendarView() {
 
   const [mounted, setMounted] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const currentDateRef = useRef(currentDate);
+  currentDateRef.current = currentDate;
+
   // clientToday se inicializa VACÍO para que el build/SSR de Next.js NUNCA congele
   // una fecha pasada o de build estático como "Hoy". Se sincroniza 100% en el cliente al montar.
   const [clientToday, setClientToday] = useState<string>('');
@@ -78,8 +89,6 @@ export function CalendarView() {
     if (forceSyncCurrentDate) {
       setCurrentDate(now);
     } else if (prevTodayStr && prevTodayStr !== todayStr) {
-      // El día cambió en el dispositivo (pasó la medianoche o retorno de suspensión)
-      // Si el usuario estaba visualizando el día anterior que era "hoy" o no ha navegado, avanzar automáticamente
       setCurrentDate((prev) => {
         const prevDateStr = format(prev, 'yyyy-MM-dd');
         if (!hasUserNavigatedRef.current || prevDateStr === prevTodayStr) {
@@ -91,17 +100,13 @@ export function CalendarView() {
   }, []);
 
   useEffect(() => {
-    // 1. Activar bandera de cliente y sincronizar inmediatamente con la fecha real del dispositivo
     setMounted(true);
     syncDeviceDate(true);
 
-    // 2. Intervalo periódico (cada 10s) para detectar cambio de medianoche en tiempo real
     const interval = setInterval(() => {
       syncDeviceDate(false);
     }, 10000);
 
-    // 3. Sincronizar de inmediato cuando la pestaña/ventana vuelve a estar activa o visible
-    // (muy común al abrir la laptop, desbloquear el móvil o regresar de otra app)
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
         syncDeviceDate(false);
@@ -124,7 +129,6 @@ export function CalendarView() {
   }, [syncDeviceDate]);
 
   const isDayToday = useCallback((day: Date) => {
-    // Si aún no se ha montado en el cliente o no hay clientToday, no marcar ningún día como "Hoy"
     if (!mounted || !clientToday) return false;
     const formattedDay = format(day, 'yyyy-MM-dd');
     return formattedDay === clientToday;
@@ -133,22 +137,41 @@ export function CalendarView() {
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const currentDragKeyRef = useRef<string | null>(null);
 
+  // Estados de arrastre sobre publicaciones individuales y a nivel global de pantalla
+  const [dragTargetVideoId, setDragTargetVideoId] = useState<string | null>(null);
+  const [dragHoverFileType, setDragHoverFileType] = useState<'video' | 'image' | null>(null);
+  const [isGlobalDragging, setIsGlobalDragging] = useState(false);
+  const [globalDragType, setGlobalDragType] = useState<'video' | 'image' | null>(null);
+
   // Limpieza total y segura del estado de arrastre (evita bloqueos si no se suelta o se cancela)
   const clearDragState = useCallback(() => {
     currentDragKeyRef.current = null;
     setDragOverDay(null);
+    setDragTargetVideoId(null);
+    setDragHoverFileType(null);
+    setIsGlobalDragging(false);
+    setGlobalDragType(null);
   }, []);
 
-  // Prevenir que el navegador abra el archivo en ventana y detectar arrastre de archivos con auto-limpieza
+  // Prevenir que el navegador abra el archivo en ventana y detectar arrastre a cualquier parte de la pantalla
   useEffect(() => {
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault();
+      if (e.dataTransfer?.types?.includes('Files')) {
+        setIsGlobalDragging(true);
+        const itemType = e.dataTransfer.items?.[0]?.type || '';
+        if (itemType.startsWith('image/')) setGlobalDragType('image');
+        else if (itemType.startsWith('video/')) setGlobalDragType('video');
+      }
     };
 
     const onDragOver = (e: DragEvent) => {
       e.preventDefault();
       if (e.dataTransfer) {
         e.dataTransfer.dropEffect = 'copy';
+        if (!isGlobalDragging && e.dataTransfer.types?.includes('Files')) {
+          setIsGlobalDragging(true);
+        }
       }
     };
 
@@ -161,7 +184,41 @@ export function CalendarView() {
 
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
+      const file = extractFileFromDrag(e);
       clearDragState();
+
+      if (!file) return;
+
+      const store = useAppStore.getState();
+      const openVideoId = store.selectedVideoId;
+
+      // 1. Si el modal de detalles de una publicación está abierto:
+      if (openVideoId) {
+        if (isImageFile(file)) {
+          updatePublicationThumbnail(openVideoId, file);
+        } else {
+          replacePublicationVideo(openVideoId, file);
+        }
+        return;
+      }
+
+      // 2. Si no hay modal abierto y se suelta en cualquier parte de la pantalla:
+      if (isVideoFile(file)) {
+        openScheduleModal(currentDateRef.current, file);
+      } else if (isImageFile(file)) {
+        // Si se soltó una imagen, buscar si hay una publicación de YouTube reciente o abrir modal
+        const todayStr = format(currentDateRef.current, 'yyyy-MM-dd');
+        const ytTodayVideo = store.videos.find((v) => {
+          const vDate = format(new Date(v.programado_para), 'yyyy-MM-dd');
+          const acc = store.accounts.find((a) => a.id === v.cuenta_id);
+          return vDate === todayStr && acc?.plataforma === 'youtube';
+        });
+        if (ytTodayVideo) {
+          updatePublicationThumbnail(ytTodayVideo.id, file);
+        } else {
+          openScheduleModal(currentDateRef.current);
+        }
+      }
     };
 
     const onDragEnd = () => {
@@ -197,7 +254,7 @@ export function CalendarView() {
       window.removeEventListener('blur', clearDragState);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [clearDragState]);
+  }, [clearDragState, isGlobalDragging, openScheduleModal]);
 
   // Month / week helpers memorizados para máximo rendimiento (inicio de semana en Lunes = 1)
   const monthDays = useMemo(() => {
@@ -347,6 +404,49 @@ export function CalendarView() {
     openScheduleModal(targetDate, file);
   }, [clearDragState, openScheduleModal]);
 
+  // ── Drag handlers para tarjetas de publicaciones individuales (reemplazar video o cambiar portada) ──
+  const handleVideoCardDragOver = useCallback((e: React.DragEvent, videoId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+    if (dragTargetVideoId !== videoId) {
+      setDragTargetVideoId(videoId);
+      const itemType = e.dataTransfer.items?.[0]?.type || '';
+      if (itemType.startsWith('image/')) setDragHoverFileType('image');
+      else if (itemType.startsWith('video/')) setDragHoverFileType('video');
+      else setDragHoverFileType(null);
+    }
+  }, [dragTargetVideoId]);
+
+  const handleVideoCardDragLeave = useCallback((e: React.DragEvent, videoId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.relatedTarget && (e.currentTarget as Node).contains(e.relatedTarget as Node)) {
+      return;
+    }
+    if (dragTargetVideoId === videoId) {
+      setDragTargetVideoId(null);
+      setDragHoverFileType(null);
+    }
+  }, [dragTargetVideoId]);
+
+  const handleVideoCardDrop = useCallback((e: React.DragEvent, video: Video) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearDragState();
+
+    const file = extractFileFromDrag(e);
+    if (!file) return;
+
+    if (isImageFile(file)) {
+      updatePublicationThumbnail(video.id, file);
+    } else {
+      replacePublicationVideo(video.id, file);
+    }
+  }, [clearDragState]);
+
   // Fallback si se suelta en el contenedor general fuera de una celda específica
   const handleCalendarDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -355,6 +455,32 @@ export function CalendarView() {
 
     const file = extractFileFromDrag(e);
     if (!file) return;
+
+    const store = useAppStore.getState();
+    const openVideoId = store.selectedVideoId;
+
+    if (openVideoId) {
+      if (isImageFile(file)) {
+        updatePublicationThumbnail(openVideoId, file);
+      } else {
+        replacePublicationVideo(openVideoId, file);
+      }
+      return;
+    }
+
+    if (isImageFile(file)) {
+      // Si se soltó una imagen en el fondo, buscar si el día actual tiene un video de YouTube
+      const todayStr = format(currentDate, 'yyyy-MM-dd');
+      const ytVideo = store.videos.find((v) => {
+        const vDate = format(new Date(v.programado_para), 'yyyy-MM-dd');
+        const acc = store.accounts.find((a) => a.id === v.cuenta_id);
+        return vDate === todayStr && acc?.plataforma === 'youtube';
+      });
+      if (ytVideo) {
+        updatePublicationThumbnail(ytVideo.id, file);
+        return;
+      }
+    }
 
     openScheduleModal(currentDate, file);
   }, [clearDragState, currentDate, openScheduleModal]);
@@ -365,6 +491,38 @@ export function CalendarView() {
       onDragOver={(e) => { e.preventDefault(); }}
       onDrop={handleCalendarDrop}
     >
+      {/* Banner flotante interactivo de arrastre */}
+      <AnimatePresence>
+        {isGlobalDragging && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="absolute top-2 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl glass-strong border border-cyan-400/50 shadow-2xl backdrop-blur-xl flex items-center gap-2.5 text-xs text-white pointer-events-none"
+            style={{ boxShadow: '0 10px 40px rgba(6,182,212,0.25)' }}
+          >
+            {globalDragType === 'image' ? (
+              <>
+                <div className="w-6 h-6 rounded-lg bg-pink-500/20 border border-pink-400/40 flex items-center justify-center text-pink-300">
+                  <ImageIcon size={13} />
+                </div>
+                <span>
+                  <strong className="text-pink-300">Imagen detectada:</strong> Suéltala sobre un Short de YouTube para cambiar su portada / miniatura.
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
+                  <FileVideo size={13} />
+                </div>
+                <span>
+                  <strong className="text-cyan-300">Video detectado:</strong> Suéltalo en un día para programarlo, o sobre una publicación para reemplazarla.
+                </span>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
 
       {/* Calendar Toolbar */}
@@ -575,13 +733,22 @@ export function CalendarView() {
                           const isDriveUploading = uploadInfo?.status === 'uploading';
                           const isDriveError = uploadInfo?.status === 'error';
 
+                          const isHoverTarget = dragTargetVideoId === video.id;
+
                           return (
                             <button
                               key={video.id}
                               onClick={(e) => { e.stopPropagation(); setSelectedVideoId(video.id); }}
+                              onDragOver={(e) => handleVideoCardDragOver(e, video.id)}
+                              onDragLeave={(e) => handleVideoCardDragLeave(e, video.id)}
+                              onDrop={(e) => handleVideoCardDrop(e, video)}
                               className={cn(
                                 "relative px-1 py-0.5 rounded text-left transition-all flex items-center gap-1 border shrink-0 group/chip overflow-hidden",
-                                isDriveUploading
+                                isHoverTarget
+                                  ? (dragHoverFileType === 'image' || acct?.plataforma === 'youtube'
+                                      ? "ring-2 ring-pink-400 bg-pink-950/70 border-pink-400 text-pink-200 z-30 scale-[1.02]"
+                                      : "ring-2 ring-cyan-400 bg-cyan-950/70 border-cyan-400 text-cyan-200 z-30 scale-[1.02]")
+                                  : isDriveUploading
                                   ? "bg-cyan-950/40 border-cyan-500/50 text-cyan-200 shadow-sm shadow-cyan-500/20"
                                   : isDriveError
                                   ? "bg-red-950/30 border-red-500/40 text-red-200"
@@ -593,6 +760,11 @@ export function CalendarView() {
                                 isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado === 'PUBLICADO' ? `PUBLICADO (${formatViews(video.vistas_obtenidas || 0)} vistas)` : video.estado
                               }`}
                             >
+                              {isHoverTarget && (
+                                <span className="absolute inset-0 bg-black/90 backdrop-blur-xs flex items-center justify-center text-[8px] font-bold text-white z-40">
+                                  {dragHoverFileType === 'image' ? '📸 Asignar portada' : '🔄 Reemplazar video'}
+                                </span>
+                              )}
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full shrink-0",
                                 isDriveUploading ? "bg-cyan-400" :
@@ -767,16 +939,40 @@ export function CalendarView() {
                           const isDriveUploading = uploadInfo?.status === 'uploading';
                           const isDriveError = uploadInfo?.status === 'error';
 
+                          const isHoverTarget = dragTargetVideoId === video.id;
+
                           return (
                             <div key={video.id}
                               onClick={(e) => { e.stopPropagation(); setSelectedVideoId(video.id); }}
+                              onDragOver={(e) => handleVideoCardDragOver(e, video.id)}
+                              onDragLeave={(e) => handleVideoCardDragLeave(e, video.id)}
+                              onDrop={(e) => handleVideoCardDrop(e, video)}
                               className={cn(
-                                "p-2.5 rounded-xl border transition-all cursor-pointer group",
-                                isDriveUploading
+                                "p-2.5 rounded-xl border transition-all cursor-pointer group relative overflow-hidden",
+                                isHoverTarget
+                                  ? (dragHoverFileType === 'image' || acct?.plataforma === 'youtube'
+                                      ? "ring-2 ring-pink-400 bg-pink-950/60 border-pink-400 shadow-lg shadow-pink-500/20"
+                                      : "ring-2 ring-cyan-400 bg-cyan-950/60 border-cyan-400 shadow-lg shadow-cyan-500/20")
+                                  : isDriveUploading
                                   ? "bg-cyan-950/30 border-cyan-500/40 hover:border-cyan-400"
                                   : "glass border-[var(--border)] hover:border-emerald-500/40 hover:bg-white/[0.04]"
                               )}
                             >
+                              {isHoverTarget && (
+                                <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-30 border border-cyan-400 rounded-xl">
+                                  {dragHoverFileType === 'image' || acct?.plataforma === 'youtube' ? (
+                                    <>
+                                      <ImageIcon size={18} className="text-pink-400 mb-1 animate-bounce" />
+                                      <span className="text-xs font-bold text-white">Soltar para asignar portada / miniatura</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <FileVideo size={18} className="text-cyan-400 mb-1 animate-bounce" />
+                                      <span className="text-xs font-bold text-white">Soltar para reemplazar video</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
                               <div className="flex items-center justify-between gap-1 mb-1.5">
                                 <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
                                   {format(new Date(video.programado_para), 'HH:mm')}
@@ -937,19 +1133,42 @@ export function CalendarView() {
                             const uploadInfo = driveUploads[video.id];
                             const isDriveUploading = uploadInfo?.status === 'uploading';
                             const isDriveError = uploadInfo?.status === 'error';
+                            const isHoverTarget = dragTargetVideoId === video.id;
 
                             return (
                               <motion.div key={video.id}
                                 initial={{ opacity: 0, x: -5 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 onClick={() => setSelectedVideoId(video.id)}
+                                onDragOver={(e) => handleVideoCardDragOver(e, video.id)}
+                                onDragLeave={(e) => handleVideoCardDragLeave(e, video.id)}
+                                onDrop={(e) => handleVideoCardDrop(e, video)}
                                 className={cn(
-                                  "p-3 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3",
-                                  isDriveUploading
+                                  "p-3 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative overflow-hidden",
+                                  isHoverTarget
+                                    ? (dragHoverFileType === 'image' || acct?.plataforma === 'youtube'
+                                        ? "ring-2 ring-pink-400 bg-pink-950/60 border-pink-400 shadow-lg shadow-pink-500/20"
+                                        : "ring-2 ring-cyan-400 bg-cyan-950/60 border-cyan-400 shadow-lg shadow-cyan-500/20")
+                                    : isDriveUploading
                                     ? "bg-cyan-950/25 border-cyan-500/40 hover:border-cyan-400"
                                     : "glass-strong border-[var(--border)] hover:border-emerald-500/40"
                                 )}
                               >
+                                {isHoverTarget && (
+                                  <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-30 border border-cyan-400 rounded-xl">
+                                    {dragHoverFileType === 'image' || acct?.plataforma === 'youtube' ? (
+                                      <div className="flex items-center gap-2 text-pink-300 font-bold text-xs">
+                                        <ImageIcon size={16} className="animate-bounce" />
+                                        <span>Soltar imagen para asignar portada / miniatura al Short</span>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2 text-cyan-300 font-bold text-xs">
+                                        <FileVideo size={16} className="animate-bounce" />
+                                        <span>Soltar video para reemplazar este contenido</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                                 <div className="flex items-center gap-3 min-w-0">
                                   <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 relative"
                                     style={{ backgroundColor: `${video.thumbnail_color}33`, border: `1px solid ${video.thumbnail_color}66` }}

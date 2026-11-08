@@ -45,6 +45,8 @@ import {
   getGoogleDriveToken,
   requestGoogleDriveOAuthToken,
   startBackgroundDriveUpload,
+  isVideoFile,
+  isImageFile,
 } from '@/lib/services/driveService';
 import { createNotification } from '@/lib/services/notificationService';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -921,6 +923,58 @@ function ScheduleModalDialog() {
     };
   }, [debouncedVideoTitle, preparedVideoTokens]);
 
+  const [modalDragHover, setModalDragHover] = useState<'video' | 'image' | null>(null);
+
+  const handleModalDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+      const itemType = e.dataTransfer.items?.[0]?.type || '';
+      if (itemType.startsWith('image/')) setModalDragHover('image');
+      else if (itemType.startsWith('video/')) setModalDragHover('video');
+      else setModalDragHover('video');
+    }
+  };
+
+  const handleModalDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.relatedTarget && (e.currentTarget as Node).contains(e.relatedTarget as Node)) {
+      return;
+    }
+    setModalDragHover(null);
+  };
+
+  const handleModalDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setModalDragHover(null);
+
+    let file: File | null = null;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      file = e.dataTransfer.files[0];
+    } else if (e.dataTransfer.items) {
+      for (let i = 0; i < e.dataTransfer.items.length; i++) {
+        if (e.dataTransfer.items[i].kind === 'file') {
+          file = e.dataTransfer.items[i].getAsFile();
+          if (file) break;
+        }
+      }
+    }
+
+    if (!file) return;
+
+    if (isImageFile(file)) {
+      handleThumbnailChange(file);
+    } else {
+      setVideoFile(file);
+      const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
+      setVideoTitle(cleanName);
+      if (!shortTitle) setShortTitle(cleanName);
+    }
+  };
+
   const cfg = getCachedConfig();
   const folderIdConfigured = cfg.drive_folder_id;
 
@@ -941,9 +995,52 @@ function ScheduleModalDialog() {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
+        onDragOver={handleModalDragOver}
+        onDragLeave={handleModalDragLeave}
+        onDrop={handleModalDrop}
         className="relative z-10 w-full max-w-xl bg-[#0b0f19] rounded-3xl border border-emerald-500/30 shadow-2xl overflow-hidden h-[90vh] max-h-[820px] flex flex-col will-change-transform"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Overlay cuando se arrastra archivo sobre el modal de programación */}
+        <AnimatePresence>
+          {modalDragHover && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center border-2 border-dashed rounded-3xl m-2 pointer-events-none"
+              style={{
+                borderColor: modalDragHover === 'image' ? '#f472b6' : '#10b981',
+              }}
+            >
+              {modalDragHover === 'image' ? (
+                <>
+                  <div className="w-14 h-14 rounded-2xl bg-pink-500/20 border border-pink-400/40 flex items-center justify-center mb-2.5 text-pink-300">
+                    <ImageIcon size={28} className="animate-bounce" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white mb-1">
+                    ¡Soltar imagen para usar como miniatura del Short!
+                  </h4>
+                  <p className="text-[11px] text-pink-200/80 max-w-xs">
+                    Esta imagen se subirá a Google Drive y se aplicará como portada de YouTube.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center mb-2.5 text-emerald-300">
+                    <FileVideo size={28} className="animate-bounce" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white mb-1">
+                    ¡Soltar video para esta publicación!
+                  </h4>
+                  <p className="text-[11px] text-emerald-200/80 max-w-xs">
+                    Se cargará el video y su título para completar la programación.
+                  </p>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
             {/* Header */}
             <div className="px-5 py-3.5 border-b border-white/[0.07] bg-white/[0.015] space-y-2.5">

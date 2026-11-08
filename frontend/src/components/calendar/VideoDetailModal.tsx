@@ -45,6 +45,10 @@ import {
   getPendingDriveUpload,
   unregisterPendingDriveUpload,
   extractDriveFileId,
+  replacePublicationVideo,
+  updatePublicationThumbnail,
+  isVideoFile,
+  isImageFile,
 } from '@/lib/services/driveService';
 import { generateWithGemini, generateDescriptionFromAudio, generateDescriptionFromVideo, ExtractedSubtitlesJson } from '@/lib/services/geminiService';
 import { extractAudioFromVideo, VideoAudioPayload } from '@/lib/services/videoAudioExtractorService';
@@ -157,6 +161,77 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       setEditThumbnailRemoved(false);
     }
   }, [video?.id, video?.post_url_publica, video?.thumbnail_url]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [modalDragHover, setModalDragHover] = useState<'video' | 'image' | null>(null);
+
+  const handleModalDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+      const itemType = e.dataTransfer.items?.[0]?.type || '';
+      if (itemType.startsWith('image/')) setModalDragHover('image');
+      else if (itemType.startsWith('video/')) setModalDragHover('video');
+      else setModalDragHover('video');
+    }
+  };
+
+  const handleModalDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.relatedTarget && (e.currentTarget as Node).contains(e.relatedTarget as Node)) {
+      return;
+    }
+    setModalDragHover(null);
+  };
+
+  const handleModalDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setModalDragHover(null);
+
+    if (!video) return;
+
+    let file: File | null = null;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      file = e.dataTransfer.files[0];
+    } else if (e.dataTransfer.items) {
+      for (let i = 0; i < e.dataTransfer.items.length; i++) {
+        if (e.dataTransfer.items[i].kind === 'file') {
+          file = e.dataTransfer.items[i].getAsFile();
+          if (file) break;
+        }
+      }
+    }
+
+    if (!file) return;
+
+    if (isImageFile(file)) {
+      if (isEditing) {
+        setEditThumbnailFile(file);
+        setEditThumbnailPreview(URL.createObjectURL(file));
+        setEditThumbnailRemoved(false);
+        setEditFeedback({ success: true, msg: '📸 Imagen asignada como portada para guardar en los cambios.' });
+      } else {
+        const res = await updatePublicationThumbnail(video.id, file);
+        if (res.success && res.thumbnailUrl) {
+          setEditThumbnailPreview(res.thumbnailUrl);
+          setEditFeedback({ success: true, msg: '✅ Portada / miniatura actualizada exitosamente en Google Drive y Supabase.' });
+        }
+      }
+    } else {
+      // Es un archivo de video
+      if (isEditing) {
+        onDropReplacement([file]);
+        setEditFeedback({ success: true, msg: `🎬 Video "${file.name}" cargado para reemplazar. Haz clic en Guardar Cambios.` });
+      } else {
+        const res = await replacePublicationVideo(video.id, file);
+        if (res.success) {
+          setEditFeedback({ success: true, msg: `🔄 Reemplazando video con "${file.name}". Subida a Google Drive iniciada en segundo plano.` });
+        }
+      }
+    }
+  };
 
   // Seleccionar y comprimir nueva portada (miniatura) para Short de YouTube
   const handleSelectEditThumbnail = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1414,15 +1489,59 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         className="fixed inset-0 bg-black/80 pointer-events-auto"
       />
 
-      {/* Drawer Panel con fondo sólido oscuro optimizado */}
+      {/* Drawer Panel con fondo sólido oscuro optimizado y soporte para arrastrar videos o imágenes */}
       <motion.div
         key={`video-detail-drawer-${video.id}`}
         initial={{ opacity: 0, scale: 0.96, x: 40 }}
         animate={{ opacity: 1, scale: 1, x: 0 }}
         exit={{ opacity: 0, scale: 0.96, x: 40 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
+        onDragOver={handleModalDragOver}
+        onDragLeave={handleModalDragLeave}
+        onDrop={handleModalDrop}
         className="relative z-10 w-full max-w-md bg-[#0b0f19] rounded-2xl border border-white/10 shadow-2xl overflow-y-auto max-h-[92vh] pointer-events-auto flex flex-col will-change-transform"
       >
+        {/* Overlay visual cuando se arrastra un archivo sobre el modal */}
+        <AnimatePresence>
+          {modalDragHover && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center border-2 border-dashed rounded-2xl m-2 pointer-events-none"
+              style={{
+                borderColor: modalDragHover === 'image' ? '#f472b6' : '#22d3ee',
+              }}
+            >
+              {modalDragHover === 'image' ? (
+                <>
+                  <div className="w-14 h-14 rounded-2xl bg-pink-500/20 border border-pink-400/40 flex items-center justify-center mb-2.5 text-pink-300">
+                    <ImageIcon size={28} className="animate-bounce" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white mb-1">
+                    ¡Soltar imagen para cambiar la portada del Short!
+                  </h4>
+                  <p className="text-[11px] text-pink-200/80 max-w-xs">
+                    Se actualizará como la miniatura de esta publicación en YouTube y Google Drive.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="w-14 h-14 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center mb-2.5 text-cyan-300">
+                    <FileVideo size={28} className="animate-bounce" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white mb-1">
+                    ¡Soltar video para reemplazar esta publicación!
+                  </h4>
+                  <p className="text-[11px] text-cyan-200/80 max-w-xs">
+                    El video anterior en Google Drive será reemplazado automáticamente por este nuevo archivo.
+                  </p>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Header */}
         <div
           className="p-5 border-b border-white/[0.08]"
@@ -1611,6 +1730,74 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       </div>
                     )}
                   </div>
+
+                  {/* Portada / Miniatura del Short de YouTube */}
+                  {(account?.plataforma === 'youtube' || video.thumbnail_url) && (
+                    <div className="p-3 rounded-xl bg-red-950/20 border border-red-500/25 space-y-2.5">
+                      <input
+                        type="file"
+                        id={`cover-upload-${video.id}`}
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = '';
+                          if (f) {
+                            const res = await updatePublicationThumbnail(video.id, f);
+                            if (res.success && res.thumbnailUrl) {
+                              setEditThumbnailPreview(res.thumbnailUrl);
+                              setEditFeedback({ success: true, msg: '✅ Portada / miniatura actualizada exitosamente.' });
+                            }
+                          }
+                        }}
+                      />
+                      <div className="flex items-center justify-between text-xs font-semibold text-white">
+                        <div className="flex items-center gap-2">
+                          <ImageIcon size={13} className="text-red-400" />
+                          <span>Portada / Miniatura del Short</span>
+                        </div>
+                        <label
+                          htmlFor={`cover-upload-${video.id}`}
+                          className="text-[11px] text-red-300 hover:text-red-200 underline cursor-pointer font-medium"
+                        >
+                          {video.thumbnail_url ? 'Cambiar imagen' : 'Subir imagen'}
+                        </label>
+                      </div>
+
+                      {resolveRenderableThumbUrl(video.thumbnail_url || editThumbnailPreview) ? (
+                        <div className="flex items-center gap-3 p-2 rounded-lg bg-black/40 border border-white/10">
+                          <div className="w-12 h-18 rounded-md overflow-hidden bg-black/60 shrink-0 border border-white/20 flex items-center justify-center">
+                            <img
+                              src={resolveRenderableThumbUrl(video.thumbnail_url || editThumbnailPreview)}
+                              alt="Portada Short"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-white truncate">
+                              Portada de YouTube Short
+                            </p>
+                            <p className="text-[10px] text-[var(--text-muted)] mt-0.5 leading-snug">
+                              Arrastra cualquier imagen a la pantalla para cambiarla al instante.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <label
+                          htmlFor={`cover-upload-${video.id}`}
+                          className="flex flex-col items-center justify-center p-3 rounded-lg border border-dashed border-red-500/30 hover:border-red-400 hover:bg-red-500/10 cursor-pointer transition-all text-center"
+                        >
+                          <ImageIcon size={16} className="text-red-400 mb-1" />
+                          <span className="text-[11px] text-white font-medium">
+                            Arrastra una imagen aquí o haz clic para asignar portada
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] mt-0.5">
+                            Recomendado: 1080x1920 (9:16) o 1280x720 (.jpg / .png)
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  )}
 
                   {/* ── SECCIÓN DE ESTADO Y PUBLICACIÓN EN YOUTUBE ── */}
                   {account?.plataforma === 'youtube' && (

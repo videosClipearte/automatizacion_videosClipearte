@@ -1,7 +1,7 @@
 // src/lib/services/driveService.ts
 import { useAppStore } from '@/store/useAppStore';
 import { createNotification } from './notificationService';
-import { loadAppConfig } from './appConfigService';
+import { getCachedConfig, loadAppConfig } from './appConfigService';
 import { getLocalMonetizadosMap } from './clipearteService';
 
 export interface DriveConfig {
@@ -629,6 +629,226 @@ export async function cleanupConfirmedMonetizedDriveVideos(): Promise<number> {
   } catch (err) {
     console.warn('[driveService] Error en limpieza automática de Drive post-monetización:', err);
     return 0;
+  }
+}
+
+/**
+ * Detecta si un archivo arrastrado o seleccionado corresponde a un video
+ */
+export function isVideoFile(file: File): boolean {
+  if (file.type && file.type.startsWith('video/')) return true;
+  const name = file.name.toLowerCase();
+  return /\.(mp4|mov|avi|mkv|webm|m4v|3gp|wmv|flv)$/i.test(name);
+}
+
+/**
+ * Detecta si un archivo arrastrado o seleccionado corresponde a una imagen
+ */
+export function isImageFile(file: File): boolean {
+  if (file.type && file.type.startsWith('image/')) return true;
+  const name = file.name.toLowerCase();
+  return /\.(jpg|jpeg|png|webp|gif|bmp|svg|avif)$/i.test(name);
+}
+
+/**
+ * Convierte un archivo de imagen en un DataURL comprimido (< 200KB)
+ */
+export async function compressImageToDataUrl(file: File, maxDim = 1080, quality = 0.85): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(reader.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(reader.result as string);
+      img.src = reader.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Reemplaza el archivo de video de una publicación existente:
+ * 1. Prepara el nombre limpio de archivo.
+ * 2. Si hay token y carpeta de Google Drive, lanza la subida en segundo plano con startBackgroundDriveUpload,
+ *    la cual reemplaza el video, borra el video anterior en Drive y actualiza drive_file_url en Supabase/store.
+ * 3. Actualiza el título / nombre de archivo de la publicación en el store y BD.
+ * 4. Envía notificación informativa.
+ */
+export async function replacePublicationVideo(
+  videoId: string,
+  videoFile: File
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const video = useAppStore.getState().videos.find((v) => v.id === videoId);
+    if (!video) {
+      return { success: false, error: 'Publicación no encontrada' };
+    }
+
+    const cleanFileName = videoFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
+    const accounts = useAppStore.getState().accounts;
+    const account = accounts.find((a) => a.id === video.cuenta_id);
+    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
+
+    let cfg = getCachedConfig();
+    if (!cfg.drive_folder_id && !cfg.drive_client_id) {
+      cfg = await loadAppConfig();
+    }
+
+    let token = getGoogleDriveToken();
+    if (!token && cfg.drive_client_id) {
+      const authRes = await requestGoogleDriveOAuthToken(cfg.drive_client_id);
+      if (authRes.success && authRes.token) token = authRes.token;
+    }
+
+    const folderId = (cfg.drive_folder_id || getStoredDriveConfig().folderId || '').trim();
+
+    // Actualizar nombre en la publicación de inmediato
+    const updates: any = {
+      ...(isYouTube
+        ? { nombre_archivo: cleanFileName }
+        : { titulo: cleanFileName, nombre_archivo: cleanFileName }),
+    };
+    await useAppStore.getState().updateVideo(videoId, updates);
+
+    if (token && folderId) {
+      // Iniciar subida en background que reemplazará drive_file_url y borrará el archivo anterior
+      startBackgroundDriveUpload({
+        videoId,
+        videoTitle: isYouTube ? (video.titulo_youtube || video.titulo) : cleanFileName,
+        customFileName: cleanFileName,
+        file: videoFile,
+        folderId,
+        token,
+        cuentaId: video.cuenta_id,
+        oldDriveUrl: video.drive_file_url,
+      });
+
+      createNotification({
+        tipo: 'info',
+        titulo: 'Reemplazando video de publicación',
+        mensaje: `Se inició la subida del nuevo video "${cleanFileName}" para "${video.titulo}". El archivo anterior en Google Drive será reemplazado.`,
+        video_id: videoId,
+        cuenta_id: video.cuenta_id,
+        origen: 'drive',
+      });
+    } else {
+      createNotification({
+        tipo: 'warning',
+        titulo: 'Video asignado localmente',
+        mensaje: `Se asignó el nuevo video "${cleanFileName}" a "${video.titulo}". Conecta Google Drive en Configuración para subirlo a la nube.`,
+        video_id: videoId,
+        cuenta_id: video.cuenta_id,
+        origen: 'drive',
+      });
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('[driveService] Error en replacePublicationVideo:', err);
+    return { success: false, error: err?.message || 'Error al reemplazar video' };
+  }
+}
+
+/**
+ * Actualiza la miniatura / portada de una publicación (especialmente YouTube Shorts o cualquier red):
+ * 1. Genera preview inmediato / DataURL comprimido.
+ * 2. Si Google Drive está conectado, sube la miniatura a Drive para tener URL permanente de alta calidad.
+ * 3. Actualiza thumbnail_url en el store y Supabase.
+ * 4. Notifica al usuario.
+ */
+export async function updatePublicationThumbnail(
+  videoId: string,
+  imageFile: File
+): Promise<{ success: boolean; thumbnailUrl?: string; error?: string }> {
+  try {
+    const video = useAppStore.getState().videos.find((v) => v.id === videoId);
+    if (!video) {
+      return { success: false, error: 'Publicación no encontrada' };
+    }
+
+    // 1. Vista previa / DataURL inicial inmediata
+    let fallbackDataUrl = '';
+    try {
+      fallbackDataUrl = await compressImageToDataUrl(imageFile, 1080, 0.8);
+    } catch {
+      fallbackDataUrl = URL.createObjectURL(imageFile);
+    }
+
+    // Aplicar de inmediato en el store para feedback instantáneo
+    await useAppStore.getState().updateVideo(videoId, { thumbnail_url: fallbackDataUrl });
+
+    // 2. Intentar subir a Google Drive si hay credenciales
+    let finalThumbnailUrl = fallbackDataUrl;
+    let cfg = getCachedConfig();
+    if (!cfg.drive_folder_id && !cfg.drive_client_id) {
+      cfg = await loadAppConfig();
+    }
+
+    let token = getGoogleDriveToken();
+    if (!token && cfg.drive_client_id) {
+      const authRes = await requestGoogleDriveOAuthToken(cfg.drive_client_id);
+      if (authRes.success && authRes.token) token = authRes.token;
+    }
+
+    const folderId = (cfg.drive_folder_id || getStoredDriveConfig().folderId || '').trim();
+
+    if (token && folderId) {
+      try {
+        const thumbUploadRes = await uploadVideoToGoogleDrive(
+          imageFile,
+          folderId,
+          token,
+          undefined,
+          2,
+          `${video.nombre_archivo || video.titulo}_portada`
+        );
+        if (thumbUploadRes.success && (thumbUploadRes.fileId || thumbUploadRes.fileUrl)) {
+          finalThumbnailUrl = thumbUploadRes.fileId
+            ? `https://drive.google.com/thumbnail?id=${thumbUploadRes.fileId}&sz=w1080`
+            : thumbUploadRes.fileUrl!;
+          await useAppStore.getState().updateVideo(videoId, { thumbnail_url: finalThumbnailUrl });
+        }
+      } catch (uploadErr) {
+        console.warn('[driveService] Miniatura guardada localmente/Base64:', uploadErr);
+      }
+    }
+
+    createNotification({
+      tipo: 'success',
+      titulo: 'Portada de Short actualizada',
+      mensaje: `Se actualizó la portada/miniatura de "${video.titulo}".`,
+      video_id: videoId,
+      cuenta_id: video.cuenta_id,
+      origen: 'drive',
+    });
+
+    return { success: true, thumbnailUrl: finalThumbnailUrl };
+  } catch (err: any) {
+    console.error('[driveService] Error en updatePublicationThumbnail:', err);
+    return { success: false, error: err?.message || 'Error al actualizar miniatura' };
   }
 }
 
