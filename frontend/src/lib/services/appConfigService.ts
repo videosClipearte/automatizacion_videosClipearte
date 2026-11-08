@@ -58,8 +58,8 @@ const DEFAULT_CONFIG: AppConfig = {
   drive_client_secret: '',
   drive_folder_id: '',
   drive_auto_download: true,
-  drive_auto_delete_after_verify: false,
-  drive_retention_hours: 24,
+  drive_auto_delete_after_verify: true,
+  drive_retention_hours: 120,
   gemini_api_key: '',
   gemini_model: 'gemini-flash-lite-latest',
   gemini_system_prompt: 'Actúa como un experto en copywriting para redes sociales. Genera descripciones dinámicas y llamativas con hashtags de tendencia.',
@@ -191,8 +191,14 @@ export async function loadAppConfig(): Promise<AppConfig> {
       drive_client_secret: drvClientSecret,
       drive_folder_id: data?.drive_folder_id ?? localBackup?.drive_folder_id ?? '',
       drive_auto_download: data?.drive_auto_download ?? localBackup?.drive_auto_download ?? true,
-      drive_auto_delete_after_verify: data?.drive_auto_delete_after_verify ?? localBackup?.drive_auto_delete_after_verify ?? false,
-      drive_retention_hours: data?.drive_retention_hours ?? localBackup?.drive_retention_hours ?? 24,
+      drive_auto_delete_after_verify:
+        data?.drive_retention_hours === 24 && data?.drive_auto_delete_after_verify === false && !localBackup?.drive_cleanup_v2_configured
+          ? true
+          : (data?.drive_auto_delete_after_verify ?? localBackup?.drive_auto_delete_after_verify ?? true),
+      drive_retention_hours:
+        data?.drive_retention_hours === 24 && data?.drive_auto_delete_after_verify === false && !localBackup?.drive_cleanup_v2_configured
+          ? 120
+          : (data?.drive_retention_hours ?? localBackup?.drive_retention_hours ?? 120),
       gemini_api_key: data?.gemini_api_key ?? localBackup?.gemini_api_key ?? '',
       gemini_model: activeModel,
       gemini_system_prompt: data?.gemini_system_prompt ?? localBackup?.gemini_system_prompt ?? DEFAULT_CONFIG.gemini_system_prompt,
@@ -278,7 +284,13 @@ export async function saveAppConfig(updates: Partial<AppConfig>): Promise<{ succ
     if (typeof window !== 'undefined') {
       try {
         const stored = JSON.parse(localStorage.getItem('autopublish_app_config') || '{}');
-        const merged = { ...stored, ...updates };
+        const merged = {
+          ...stored,
+          ...updates,
+          ...(updates.drive_retention_hours !== undefined || updates.drive_auto_delete_after_verify !== undefined
+            ? { drive_cleanup_v2_configured: true }
+            : {}),
+        };
         localStorage.setItem('autopublish_app_config', JSON.stringify(merged));
         if (updates.youtube_client_id) {
           localStorage.setItem('autopublish_yt_client_id', updates.youtube_client_id.trim());

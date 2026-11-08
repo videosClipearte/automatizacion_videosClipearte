@@ -1073,7 +1073,7 @@ export async function syncPublishedVideosViews(options?: {
       const isPublishedOrConfirmed =
         pub.estado === 'PUBLICADO' ||
         (pub.estado === 'ENVIADO' && Boolean(confirmedUrlByPubId.get(pub.id))) ||
-        (platform === 'youtube' && Boolean(effectiveUrl && effectiveUrl.startsWith('http')));
+        (platform === 'youtube' && pub.estado !== 'PROGRAMADO' && Boolean(effectiveUrl && effectiveUrl.startsWith('http')));
 
       if (!isPublishedOrConfirmed) continue;
       if (!effectiveUrl || !effectiveUrl.startsWith('http') || effectiveUrl.includes('#pub_')) continue;
@@ -1266,10 +1266,18 @@ export async function syncPublishedVideosViews(options?: {
       // No interrumpir sincronización de vistas si falla auto-monetización
     }
 
+    // 6. Auto-reprogramar publicaciones confirmadas que lleven >= 24 horas con 0 vistas
+    let autoRescheduledCount = 0;
+    try {
+      autoRescheduledCount = await checkAndAutoRescheduleZeroViewVideos();
+    } catch (reschedErr) {
+      console.warn('[syncPublishedVideosViews] Aviso en auto-reprogramación por 0 vistas:', reschedErr);
+    }
+
     return {
       success: true,
       checked: youtubeBatchCount + socialScrapedCount,
-      updated: details.length,
+      updated: details.length + autoRescheduledCount,
       youtubeBatchCount,
       socialScrapedCount,
       details,
@@ -1284,5 +1292,193 @@ export async function syncPublishedVideosViews(options?: {
       socialScrapedCount,
       details,
     };
+  }
+}
+
+/**
+ * Revisa todas las publicaciones confirmadas (PUBLICADO) que lleven al menos 24 horas
+ * desde su confirmación (`publicado_en`) y sigan teniendo 0 vistas.
+ * Si siguen en 0 vistas, las auto-reprograma exactamente a la misma hora (`HH:mm`)
+ * en el próximo día disponible donde no haya otro video programado a esa misma hora.
+ */
+export async function checkAndAutoRescheduleZeroViewVideos(): Promise<number> {
+  try {
+    const db = getSupabase();
+    const nowMs = Date.now();
+    const nowIso = new Date().toISOString();
+    const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+    const [{ data: pubs, error: pubErr }, { data: accounts }, { data: metrics }, { data: tracked }] =
+      await Promise.all([
+        db.from('publicaciones').select('*').neq('estado', 'CANCELADO'),
+        db.from('cuentas').select('id, username, plataforma'),
+        db.from('metricas_extraidas_scraper').select('publicacion_id, vistas'),
+        db.from('reels_rastreados').select('publicacion_id, url, vistas'),
+      ]);
+
+    if (pubErr || !pubs || pubs.length === 0) return 0;
+
+    const accountMap = new Map<string, any>();
+    (accounts || []).forEach((a: any) => accountMap.set(a.id, a));
+
+    const metricViewsByPub = new Map<string, number>();
+    (metrics || []).forEach((m: any) => {
+      if (m.publicacion_id) {
+        metricViewsByPub.set(
+          m.publicacion_id,
+          Math.max(metricViewsByPub.get(m.publicacion_id) || 0, Number(m.vistas) || 0)
+        );
+      }
+    });
+
+    const trackedViewsByPub = new Map<string, number>();
+    const trackedViewsByUrl = new Map<string, number>();
+    (tracked || []).forEach((t: any) => {
+      const v = Number(t.vistas) || 0;
+      if (t.publicacion_id) {
+        trackedViewsByPub.set(t.publicacion_id, Math.max(trackedViewsByPub.get(t.publicacion_id) || 0, v));
+      }
+      if (t.url && typeof t.url === 'string' && t.url.startsWith('http')) {
+        trackedViewsByUrl.set(t.url.trim(), Math.max(trackedViewsByUrl.get(t.url.trim()) || 0, v));
+      }
+    });
+
+    let rescheduledCount = 0;
+
+    for (const pub of pubs) {
+      if (pub.estado !== 'PUBLICADO') continue;
+      if (!pub.publicado_en) continue;
+
+      const pubTimeMs = new Date(pub.publicado_en).getTime();
+      if (isNaN(pubTimeMs) || nowMs - pubTimeMs < TWENTY_FOUR_HOURS_MS) {
+        continue;
+      }
+
+      const urlClean = pub.post_url_publica && pub.post_url_publica !== '#' ? pub.post_url_publica.trim() : '';
+      let effectiveViews = Math.max(
+        Number(pub.vistas_obtenidas) || 0,
+        metricViewsByPub.get(pub.id) || 0,
+        trackedViewsByPub.get(pub.id) || 0,
+        urlClean ? trackedViewsByUrl.get(urlClean) || 0 : 0
+      );
+
+      if (effectiveViews > 0) continue;
+
+      // Verificación final en vivo antes de reprogramar para estar 100% seguros de que sigue en 0 vistas
+      if (urlClean && urlClean.startsWith('http') && !urlClean.includes('#pub_')) {
+        try {
+          const liveCheck = await scrapePostUrl(urlClean, { bypassCache: true });
+          if (liveCheck.metrics.vistas > 0) {
+            effectiveViews = liveCheck.metrics.vistas;
+            await db
+              .from('publicaciones')
+              .update({ vistas_obtenidas: effectiveViews, updated_at: nowIso })
+              .eq('id', pub.id);
+            continue;
+          }
+        } catch {}
+      }
+
+      // Buscar el próximo día disponible a la MISMA HORA donde no haya un video programado a esa misma hora
+      const baseTimeMs = pub.programado_para
+        ? new Date(pub.programado_para).getTime()
+        : pubTimeMs;
+      const validBaseMs = isNaN(baseTimeMs) ? nowMs : baseTimeMs;
+
+      // Avanzar en múltiplos exactos de 24h (1 día) para mantener exactamente la misma hora y minuto (HH:mm)
+      const minDaysAhead = Math.max(
+        1,
+        Math.ceil((nowMs + 15 * 60 * 1000 - validBaseMs) / ONE_DAY_MS)
+      );
+
+      let chosenTimeMs = validBaseMs + minDaysAhead * ONE_DAY_MS;
+
+      for (let dayOffset = minDaysAhead; dayOffset <= minDaysAhead + 365; dayOffset++) {
+        const candidateMs = validBaseMs + dayOffset * ONE_DAY_MS;
+        if (candidateMs <= nowMs + 10 * 60 * 1000) continue;
+
+        // Comprobar si ya existe algún video programado en ese día a la misma hora (ventana de < 60 min)
+        const hasSameHourConflict = pubs.some((other: any) => {
+          if (other.id === pub.id || other.estado === 'CANCELADO') return false;
+          const otherMs = new Date(other.programado_para).getTime();
+          if (isNaN(otherMs)) return false;
+          // Misma franja horaria (< 60 minutos de diferencia en ese día)
+          return Math.abs(otherMs - candidateMs) < 60 * 60 * 1000;
+        });
+
+        if (!hasSameHourConflict) {
+          chosenTimeMs = candidateMs;
+          break;
+        }
+      }
+
+      const newScheduledIso = new Date(chosenTimeMs).toISOString();
+      // Actualizar en memoria para que si hay otro video con 0 vistas en este mismo ciclo no elija el mismo día/hora
+      pub.programado_para = newScheduledIso;
+      pub.estado = 'PROGRAMADO';
+
+      // Actualizar publicación en Supabase de vuelta a PROGRAMADO para la nueva fecha
+      const { error: updErr } = await db
+        .from('publicaciones')
+        .update({
+          estado: 'PROGRAMADO',
+          programado_para: newScheduledIso,
+          enviado_en: null,
+          publicado_en: null,
+          post_url_publica: null,
+          vistas_obtenidas: 0,
+          ganancias_estimadas: 0,
+          reintentos_alerta: 0,
+          ultimo_aviso_en: null,
+          confirmado_manualmente: false,
+          auto_reprogramacion: true,
+          updated_at: nowIso,
+        })
+        .eq('id', pub.id);
+
+      if (updErr) {
+        console.warn(`[AutoReschedule0Views] Error reprogramando ${pub.id}:`, updErr.message);
+        continue;
+      }
+
+      // Limpiar registros antiguos de confirmación y métricas en 0 para que inicie limpio en su nueva fecha
+      await Promise.all([
+        db.from('confirmaciones_telegram').delete().eq('publicacion_id', pub.id),
+        db.from('metricas_extraidas_scraper').delete().eq('publicacion_id', pub.id),
+        db.from('reels_rastreados').delete().eq('publicacion_id', pub.id),
+      ]);
+
+      const acc = accountMap.get(pub.cuenta_id);
+      const formattedNewDate = new Date(chosenTimeMs).toLocaleString('es-ES', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      await db.from('notificaciones').insert({
+        id: `auto_resched_0views_${pub.id}_${Date.now()}`,
+        tipo: 'warning',
+        titulo: 'Video auto-reprogramado (0 vistas tras 24h)',
+        mensaje: `El video "${pub.titulo}" (@${acc?.username || 'cuenta'}) seguía con 0 vistas 24h después de confirmarse y se reprogramó automáticamente para ${formattedNewDate} (misma hora en día libre).`,
+        leido: false,
+        video_id: pub.id,
+        cuenta_id: pub.cuenta_id,
+        origen: 'scraper',
+        created_at: nowIso,
+      });
+
+      console.log(
+        `[AutoReschedule0Views] 🔄 Video "${pub.titulo}" (${pub.id}) tenía 0 vistas tras >24h publicado. Reprogramado para ${newScheduledIso}.`
+      );
+      rescheduledCount++;
+    }
+
+    return rescheduledCount;
+  } catch (err) {
+    console.warn('[checkAndAutoRescheduleZeroViewVideos] Error:', err);
+    return 0;
   }
 }

@@ -64,7 +64,7 @@ export default function IntegrationsPage() {
   const [driveFolderId, setDriveFolderId] = useState('');
   const [driveAutoDownload, setDriveAutoDownload] = useState(true);
   const [driveAutoDelete, setDriveAutoDelete] = useState(true);
-  const [driveRetentionHours, setDriveRetentionHours] = useState(24);
+  const [driveRetentionHours, setDriveRetentionHours] = useState(120);
   const [driveConnected, setDriveConnected] = useState(true);
   const [testingDrive, setTestingDrive] = useState(false);
   const [savingDrive, setSavingDrive] = useState(false);
@@ -1489,7 +1489,7 @@ END $$;`;
             <div className="flex items-center gap-2">
               <Trash2 size={15} className="text-cyan-400" />
               <span className="text-xs font-bold text-white">
-                Eliminación Automática tras Verificación Exitosa
+                Eliminación Automática de Drive tras Confirmación y Monetización
               </span>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -1504,27 +1504,58 @@ END $$;`;
           </div>
 
           <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-            Cuando el sistema (mediante el scraper o la API de la red social) confirma que el video está publicado y se ha enviado la notificación de éxito por Telegram, el archivo en Drive se eliminará automáticamente tras el tiempo de retención seleccionado para ahorrar espacio.
+            Cuando una publicación ha sido <strong className="text-white">confirmada como publicada</strong> y además ha sido <strong className="text-emerald-300">monetizada en Clipearte</strong>, el archivo de video se eliminará automáticamente de Google Drive después de los días configurados (por defecto <strong className="text-cyan-300">5 días</strong>) para aprovechar mejor el espacio disponible.
           </p>
 
           {driveAutoDelete && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-cyan-500/15">
-              <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                <Clock size={13} className="text-cyan-400" />
-                <span>Tiempo de espera antes de eliminar de Drive:</span>
+            <div className="space-y-2.5 pt-2 border-t border-cyan-500/15">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+                  <Clock size={13} className="text-cyan-400" />
+                  <span>Días después de confirmada y monetizada para eliminar de Drive:</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={Math.max(1, Math.round((driveRetentionHours > 0 ? driveRetentionHours : 120) / 24))}
+                    onChange={(e) => {
+                      const days = Math.max(1, Math.min(90, Number(e.target.value) || 5));
+                      setDriveRetentionHours(days * 24);
+                    }}
+                    className="w-20 glass rounded-xl px-3 py-1.5 text-xs text-cyan-300 border border-cyan-500/30 focus:border-cyan-400 outline-none bg-[var(--bg-elevated)] font-bold text-center"
+                  />
+                  <span className="text-xs text-cyan-300 font-semibold">días</span>
+                </div>
               </div>
-              <select
-                value={driveRetentionHours}
-                onChange={(e) => setDriveRetentionHours(Number(e.target.value))}
-                className="glass rounded-xl px-3 py-1.5 text-xs text-cyan-300 border border-cyan-500/30 focus:border-cyan-400 outline-none bg-[var(--bg-elevated)] font-medium cursor-pointer"
-              >
-                <option value={0} className="bg-gray-900 text-white">Inmediatamente tras aviso de éxito</option>
-                <option value={6} className="bg-gray-900 text-white">6 horas después de publicado</option>
-                <option value={24} className="bg-gray-900 text-white">24 horas después (Recomendado)</option>
-                <option value={72} className="bg-gray-900 text-white">3 días después</option>
-                <option value={168} className="bg-gray-900 text-white">7 días después (1 semana)</option>
-                <option value={-1} className="bg-gray-900 text-white">Nunca eliminar (Conservar en Drive)</option>
-              </select>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { days: 1, label: '1 día' },
+                  { days: 3, label: '3 días' },
+                  { days: 5, label: '5 días (Recomendado)' },
+                  { days: 7, label: '7 días' },
+                  { days: 15, label: '15 días' },
+                ].map((preset) => {
+                  const currentDays = Math.max(1, Math.round((driveRetentionHours > 0 ? driveRetentionHours : 120) / 24));
+                  const isActive = currentDays === preset.days;
+                  return (
+                    <button
+                      key={preset.days}
+                      type="button"
+                      onClick={() => setDriveRetentionHours(preset.days * 24)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border ${
+                        isActive
+                          ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200 font-bold'
+                          : 'bg-white/5 border-white/10 text-[var(--text-muted)] hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

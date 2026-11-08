@@ -1470,38 +1470,6 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
               {/* ─────────────────── VISTA NORMAL / DETALLE ─────────────────── */}
               {!isEditing ? (
                 <>
-                  {/* Thumbnail preview */}
-                  <div
-                    className="w-full h-40 rounded-xl flex items-center justify-center relative overflow-hidden bg-black/40 border border-white/10"
-                    style={{
-                      background: video.thumbnail_url ? undefined : `linear-gradient(135deg, ${video.thumbnail_color}44, ${video.thumbnail_color}18)`,
-                      borderColor: video.thumbnail_url ? 'rgba(255,255,255,0.15)' : `${video.thumbnail_color}44`
-                    }}
-                  >
-                    {resolveRenderableThumbUrl(video.thumbnail_url) ? (
-                      <div className="relative w-full h-full flex items-center justify-center bg-black/60 group">
-                        <img
-                          src={resolveRenderableThumbUrl(video.thumbnail_url)}
-                          alt={video.titulo}
-                          className="w-full h-full object-contain"
-                        />
-                        <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 text-[10px] text-white font-medium border border-white/20">
-                          Portada / Miniatura
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="text-center">
-                        <div
-                          className="w-14 h-14 rounded-full mx-auto mb-2 flex items-center justify-center text-lg font-bold text-white shadow-lg"
-                          style={{ background: `linear-gradient(135deg, ${video.thumbnail_color}, ${video.thumbnail_color}aa)` }}
-                        >
-                          {account?.username?.slice(0, 2).toUpperCase() ?? 'VD'}
-                        </div>
-                        <p className="text-xs text-[var(--text-muted)] font-medium">Contenido Multimedia</p>
-                      </div>
-                    )}
-                  </div>
-
                   {/* Account & Campaign info */}
                   <div className="space-y-2">
                     {account && (
@@ -1591,16 +1559,35 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         </button>
                       </div>
                     ) : video.drive_file_url && video.drive_file_url !== '#' ? (
-                      <div className="flex items-center justify-between gap-2">
-                        <a
-                          href={video.drive_file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium break-all"
-                        >
-                          <span>Abrir archivo en Google Drive</span>
-                          <ExternalLink size={12} className="shrink-0" />
-                        </a>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <a
+                            href={video.drive_file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium break-all"
+                          >
+                            <span>Abrir archivo en Google Drive</span>
+                            <ExternalLink size={12} className="shrink-0" />
+                          </a>
+                        </div>
+                        {video.estado === 'PUBLICADO' && Boolean(video.monetizado_en) && getCachedConfig().drive_auto_delete_after_verify && getCachedConfig().drive_retention_hours >= 0 && (
+                          <p className="text-[10px] text-cyan-200/70 flex items-center gap-1">
+                            <Clock size={10} className="shrink-0 text-cyan-400" />
+                            <span>
+                              Se eliminará automáticamente de Drive {Math.max(1, Math.round((getCachedConfig().drive_retention_hours || 120) / 24))} día(s) después de confirmada y monetizada para liberar espacio.
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    ) : video.estado === 'PUBLICADO' ? (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-300/90 font-medium py-0.5">
+                        <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
+                        <span>
+                          {Boolean(video.monetizado_en)
+                            ? 'Archivo eliminado automáticamente de Google Drive tras confirmarse y monetizarse (espacio liberado).'
+                            : 'Publicación confirmada (sin archivo retenido en Google Drive).'}
+                        </span>
                       </div>
                     ) : (
                       <div className="space-y-2 py-1">

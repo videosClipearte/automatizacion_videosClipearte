@@ -575,10 +575,13 @@ async function submitClipToClipearte(params: {
       await db.from('notificaciones').upsert(
         {
           id: `clipearte_monetizado_${videoId}`,
+          tipo: 'success',
+          titulo: 'Clip monetizado en Clipearte',
+          mensaje: `Clip enviado a Clipearte (${matchedCampaign.name} · ${matchedAccount.username})`,
+          leido: false,
           video_id: videoId,
-          fecha_envio: monetizadoEn,
           origen: 'clipearte',
-          confirmado: true,
+          created_at: monetizadoEn,
         },
         { onConflict: 'id' }
       );

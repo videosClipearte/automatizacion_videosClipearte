@@ -1,6 +1,8 @@
 // src/lib/services/driveService.ts
 import { useAppStore } from '@/store/useAppStore';
 import { createNotification } from './notificationService';
+import { loadAppConfig } from './appConfigService';
+import { getLocalMonetizadosMap } from './clipearteService';
 
 export interface DriveConfig {
   clientId: string;
@@ -551,5 +553,84 @@ export async function startBackgroundDriveUpload(params: StartBackgroundUploadPa
     });
   }
 }
+
+/**
+ * Elimina automáticamente de Google Drive los videos que cumplen TODAS estas condiciones:
+ * 1. La función está activa en Configuración (drive_auto_delete_after_verify === true).
+ * 2. La publicación está confirmada como publicada (estado === 'PUBLICADO').
+ * 3. La publicación está monetizada en Clipearte (monetizado_en presente).
+ * 4. Han transcurrido al menos N días (por defecto 5 días = 120 horas) desde que se cumplieron
+ *    ambas condiciones (confirmación y monetización).
+ */
+export async function cleanupConfirmedMonetizedDriveVideos(): Promise<number> {
+  try {
+    const cfg = await loadAppConfig();
+    if (!cfg.drive_auto_delete_after_verify || cfg.drive_retention_hours < 0) {
+      return 0;
+    }
+
+    const token = getGoogleDriveToken();
+    if (!token) {
+      return 0;
+    }
+
+    const retentionHours = cfg.drive_retention_hours > 0 ? cfg.drive_retention_hours : 120; // 5 días por defecto
+    const retentionMs = retentionHours * 3600 * 1000;
+    const retentionDaysLabel = Math.max(1, Math.round(retentionHours / 24));
+    const nowMs = Date.now();
+
+    const { videos, updateVideo } = useAppStore.getState();
+    const localMonetizados = getLocalMonetizadosMap();
+
+    let deletedCount = 0;
+
+    for (const video of videos) {
+      if (video.estado !== 'PUBLICADO') continue;
+      if (!video.drive_file_url || video.drive_file_url === '#' || !extractDriveFileId(video.drive_file_url)) {
+        continue;
+      }
+
+      const monetizadoIso = video.monetizado_en || localMonetizados[video.id];
+      if (!monetizadoIso) continue;
+
+      const pubMs = video.publicado_en ? new Date(video.publicado_en).getTime() : 0;
+      const monMs = new Date(monetizadoIso).getTime();
+      const completedMs = Math.max(isNaN(pubMs) ? 0 : pubMs, isNaN(monMs) ? 0 : monMs);
+      if (completedMs <= 0) continue;
+
+      if (nowMs - completedMs < retentionMs) {
+        continue;
+      }
+
+      const delRes = await deleteGoogleDriveFile(video.drive_file_url, token);
+      if (delRes.success) {
+        // Si también tiene miniatura alojada en Google Drive, liberarla
+        if (video.thumbnail_url && extractDriveFileId(video.thumbnail_url)) {
+          try {
+            await deleteGoogleDriveFile(video.thumbnail_url, token);
+          } catch {}
+        }
+
+        await updateVideo(video.id, { drive_file_url: '' });
+        deletedCount++;
+
+        createNotification({
+          tipo: 'info',
+          titulo: 'Espacio liberado en Google Drive',
+          mensaje: `El archivo de "${video.titulo}" fue eliminado automáticamente de Google Drive tras ${retentionDaysLabel} día(s) de estar confirmado y monetizado.`,
+          video_id: video.id,
+          cuenta_id: video.cuenta_id,
+          origen: 'drive',
+        });
+      }
+    }
+
+    return deletedCount;
+  } catch (err) {
+    console.warn('[driveService] Error en limpieza automática de Drive post-monetización:', err);
+    return 0;
+  }
+}
+
 
 

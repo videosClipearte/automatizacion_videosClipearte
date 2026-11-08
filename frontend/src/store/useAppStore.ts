@@ -371,7 +371,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         db.from('metricas_extraidas_scraper').select('*'),
         db.from('reels_rastreados').select('*'),
         db.from('confirmaciones_telegram').select('*').eq('estado', 'CONFIRMADO'),
-        db.from('notificaciones').select('id, video_id, fecha_envio, origen').or('origen.eq.clipearte,id.like.clipearte_monetizado_%'),
+        db.from('notificaciones').select('id, video_id, created_at, origen').or('origen.eq.clipearte,id.like.clipearte_monetizado_%'),
       ]);
 
       // ❗ Verificar errores de Supabase (antes se ignoraban silenciosamente)
@@ -518,7 +518,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       (notifClipearteRes?.data ?? []).forEach((n: any) => {
         const vidId = n.video_id || (typeof n.id === 'string' && n.id.startsWith('clipearte_monetizado_') ? n.id.replace('clipearte_monetizado_', '') : null);
         if (vidId) {
-          monetizadoByPub.set(String(vidId), n.fecha_envio || new Date().toISOString());
+          monetizadoByPub.set(String(vidId), n.created_at || new Date().toISOString());
         }
       });
       if (typeof window !== 'undefined') {
@@ -618,7 +618,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         db.from('metricas_extraidas_scraper').select('*'),
         db.from('reels_rastreados').select('*'),
         db.from('confirmaciones_telegram').select('*').eq('estado', 'CONFIRMADO'),
-        db.from('notificaciones').select('id, video_id, fecha_envio, origen').or('origen.eq.clipearte,id.like.clipearte_monetizado_%'),
+        db.from('notificaciones').select('id, video_id, created_at, origen').or('origen.eq.clipearte,id.like.clipearte_monetizado_%'),
       ]);
 
       if (!error && data) {
@@ -927,6 +927,9 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       dbUpdates.estado = 'PROGRAMADO';
       dbUpdates.enviado_en = null;
       dbUpdates.publicado_en = null;
+      dbUpdates.post_url_publica = null;
+      dbUpdates.vistas_obtenidas = 0;
+      dbUpdates.ganancias_estimadas = 0;
       dbUpdates.reintentos_alerta = 0;
     }
 
@@ -952,7 +955,11 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
     if (isRescheduledToFuture) {
       try {
-        await db.from('confirmaciones_telegram').delete().eq('publicacion_id', id);
+        await Promise.all([
+          db.from('confirmaciones_telegram').delete().eq('publicacion_id', id),
+          db.from('metricas_extraidas_scraper').delete().eq('publicacion_id', id),
+          db.from('reels_rastreados').delete().eq('publicacion_id', id),
+        ]);
       } catch (delErr) {
         console.warn('[updateVideo] Error limpiando confirmaciones viejas:', delErr);
       }
@@ -979,6 +986,11 @@ const useAppStoreBase = create<AppState>((set, get) => ({
           }
           if (isRescheduledToFuture || ('publicado_en' in finalUpdates && !finalUpdates.publicado_en)) {
             delete (updated as any).publicado_en;
+          }
+          if (isRescheduledToFuture) {
+            delete (updated as any).post_url_publica;
+            updated.vistas_obtenidas = 0;
+            updated.ganancias_estimadas = 0;
           }
           return updated;
         }

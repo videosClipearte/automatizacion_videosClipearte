@@ -88,10 +88,13 @@ export async function monetizarClipEnClipearte(
       await db.from('notificaciones').upsert(
         {
           id: `clipearte_monetizado_${params.videoId}`,
+          tipo: 'success',
+          titulo: 'Clip monetizado en Clipearte',
+          mensaje: `Clip enviado a Clipearte (${params.campaignName} · @${params.accountUsername})`,
+          leido: false,
           video_id: params.videoId,
-          fecha_envio: nowIso,
           origen: 'clipearte',
-          confirmado: true,
+          created_at: nowIso,
         },
         { onConflict: 'id' }
       );

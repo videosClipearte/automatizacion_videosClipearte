@@ -18,6 +18,7 @@ import { getStoredSupabaseConfig, getSupabase } from '@/lib/supabase';
 import { createNotification } from '@/lib/services/notificationService';
 import { verifyScraperPost } from '@/lib/services/scraperService';
 import {
+  cleanupConfirmedMonetizedDriveVideos,
   getGoogleDriveToken,
   getPendingDriveUpload,
   unregisterPendingDriveUpload,
@@ -705,6 +706,11 @@ export function PublicationScheduler() {
             );
             await useAppStore.getState().refreshData();
           }
+        }
+        // Evaluar limpieza automática en Google Drive tras 5 días (o días configurados) de estar confirmada y monetizada
+        const cleanedDriveCount = await cleanupConfirmedMonetizedDriveVideos();
+        if (cleanedDriveCount > 0) {
+          console.log(`[PublicationScheduler] 🗑️ Se liberaron ${cleanedDriveCount} archivo(s) de Google Drive tras cumplir plazo post-monetización.`);
         }
       } catch {
         // Ignorar errores transitorios de red
