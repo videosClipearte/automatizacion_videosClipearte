@@ -774,17 +774,23 @@ export function CalendarView() {
                               onDragLeave={(e) => handleVideoCardDragLeave(e, video.id)}
                               onDrop={(e) => handleVideoCardDrop(e, video)}
                               className={cn(
-                                "relative px-1 py-0.5 rounded text-left transition-all flex items-center gap-1 border shrink-0 group/chip overflow-hidden",
+                                "relative px-1.5 py-0.5 rounded-md text-left transition-all flex items-center gap-1 border shrink-0 group/chip overflow-hidden",
                                 isHoverTarget
                                   ? (dragHoverFileType === 'image' || acct?.plataforma === 'youtube'
                                       ? "ring-2 ring-pink-400 bg-pink-950/70 border-pink-400 text-pink-200 z-30 scale-[1.02]"
                                       : "ring-2 ring-orange-500 bg-orange-950/70 border-orange-500 text-orange-200 z-30 scale-[1.02]")
                                   : isDriveUploading
-                                  ? "bg-orange-950/40 border-orange-500/50 text-orange-200 shadow-sm shadow-orange-500/20"
+                                  ? (isCurrentDay
+                                      ? "bg-black/80 border-amber-300/70 text-amber-100 shadow-md"
+                                      : "bg-orange-950/40 border-orange-500/50 text-orange-200 shadow-sm shadow-orange-500/20")
                                   : isDriveError
-                                  ? "bg-red-950/30 border-red-500/40 text-red-200"
+                                  ? "bg-red-950/60 border-red-400 text-red-200"
                                   : isYtUploading
-                                  ? "bg-red-500/10 border-red-500/40 text-red-200"
+                                  ? (isCurrentDay
+                                      ? "bg-black/80 border-red-400/80 text-red-200 shadow-md"
+                                      : "bg-red-500/10 border-red-500/40 text-red-200")
+                                  : isCurrentDay
+                                  ? "bg-black/70 hover:bg-black/90 border-black/40 hover:border-white/50 text-white shadow-md backdrop-blur-xs"
                                   : "bg-white/[0.04] hover:bg-white/[0.08] border-white/10 hover:border-orange-500/40 text-white"
                               )}
                               title={`${video.nombre_archivo || video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${
@@ -798,25 +804,43 @@ export function CalendarView() {
                               )}
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full shrink-0",
-                                isDriveUploading ? "bg-orange-400" :
-                                video.estado === 'PUBLICADO' ? "bg-orange-500" :
+                                isDriveUploading ? (isCurrentDay ? "bg-amber-300 ring-1 ring-black/40" : "bg-orange-400") :
+                                video.estado === 'PUBLICADO' ? (isCurrentDay ? "bg-emerald-400 ring-1 ring-emerald-300/60" : "bg-orange-500") :
                                 isYtUploading ? "bg-red-500" :
-                                video.estado === 'ENVIADO'   ? "bg-blue-400" :
-                                video.estado === 'ERROR_DE_RED' || isDriveError ? "bg-red-400" : "bg-purple-400"
+                                video.estado === 'ENVIADO'   ? (isCurrentDay ? "bg-sky-300 ring-1 ring-sky-200/50" : "bg-blue-400") :
+                                video.estado === 'ERROR_DE_RED' || isDriveError ? "bg-red-400" : (isCurrentDay ? "bg-purple-300" : "bg-purple-400")
                               )} />
-                              <span className="shrink-0">{getPlatformIcon(acct?.plataforma)}</span>
+                              <span className={cn("shrink-0", isCurrentDay && "brightness-125 drop-shadow-xs")}>
+                                {getPlatformIcon(acct?.plataforma)}
+                              </span>
                               <span className={cn(
                                 "text-[9px] font-mono font-semibold shrink-0",
-                                isDriveUploading ? "text-orange-300" : isYtUploading ? "text-red-400" : "text-orange-400"
+                                isCurrentDay
+                                  ? "text-amber-200 font-bold"
+                                  : isDriveUploading
+                                  ? "text-orange-300"
+                                  : isYtUploading
+                                  ? "text-red-400"
+                                  : "text-orange-400"
                               )}>
                                 {format(new Date(video.programado_para), 'HH:mm')}
                               </span>
-                              <span className="text-[9px] font-medium truncate flex-1 group-hover/chip:text-orange-300">
+                              <span className={cn(
+                                "text-[9px] font-medium truncate flex-1",
+                                isCurrentDay
+                                  ? "text-white font-semibold group-hover/chip:text-amber-200 drop-shadow-xs"
+                                  : "text-zinc-200 group-hover/chip:text-orange-300"
+                              )}>
                                 {video.nombre_archivo || video.titulo}
                               </span>
                               {isDriveUploading && (
-                                <span className="text-[8px] px-1 py-0 rounded bg-orange-500/25 text-orange-200 border border-orange-400/40 font-bold shrink-0 flex items-center gap-0.5">
-                                  <Loader2 size={8} className="animate-spin text-orange-300" />
+                                <span className={cn(
+                                  "text-[8px] px-1 py-0 rounded font-bold shrink-0 flex items-center gap-0.5",
+                                  isCurrentDay
+                                    ? "bg-amber-400/20 text-amber-200 border border-amber-300/40"
+                                    : "bg-orange-500/25 text-orange-200 border border-orange-400/40"
+                                )}>
+                                  <Loader2 size={8} className={cn("animate-spin", isCurrentDay ? "text-amber-200" : "text-orange-300")} />
                                   {uploadInfo.progress}%
                                 </span>
                               )}
@@ -831,7 +855,10 @@ export function CalendarView() {
                                 </span>
                               )}
                               {!isDriveUploading && !isYtUploading && (video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
-                                <span className="text-[8px] font-mono text-orange-400 font-bold shrink-0 flex items-center gap-0.5">
+                                <span className={cn(
+                                  "text-[8px] font-mono font-bold shrink-0 flex items-center gap-0.5",
+                                  isCurrentDay ? "text-emerald-300" : "text-orange-400"
+                                )}>
                                   <Eye size={8} />
                                   {formatViews(video.vistas_obtenidas || 0)}
                                 </span>
@@ -856,7 +883,12 @@ export function CalendarView() {
                               setCurrentDate(day);
                               setCalendarView('day');
                             }}
-                            className="text-[8px] text-orange-400 font-semibold hover:underline text-left pl-0.5 leading-none shrink-0"
+                            className={cn(
+                              "leading-none shrink-0 transition-colors",
+                              isCurrentDay
+                                ? "text-[9px] text-white font-bold bg-black/40 hover:bg-black/60 px-1.5 py-0.5 rounded border border-white/20 text-left w-fit shadow-xs"
+                                : "text-[8px] text-orange-400 font-semibold hover:underline text-left pl-0.5"
+                            )}
                           >
                             +{dayVideos.length - 2} más →
                           </button>
