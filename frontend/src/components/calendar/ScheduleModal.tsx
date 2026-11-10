@@ -279,20 +279,8 @@ function ScheduleModalDialog() {
 
   const isYouTube = selectedAccount?.plataforma?.toLowerCase() === 'youtube';
 
-  // Cuentas filtradas según la campaña seleccionada
-  const selectedCampaignForFilter = campaigns.find((c) => c.id === selectedCampanaId);
-  const filteredAccounts = selectedCampaignForFilter
-    ? accounts.filter((a) => a.activo && selectedCampaignForFilter.cuentas_ids.includes(a.id))
-    : accounts.filter((a) => a.activo);
-
-  // Si la cuenta seleccionada no pertenece a la nueva campaña, limpiarla
-  useEffect(() => {
-    if (!selectedCampanaId) return;
-    const campaign = campaigns.find((c) => c.id === selectedCampanaId);
-    if (campaign && selectedCuentaId && Array.isArray(campaign.cuentas_ids) && !campaign.cuentas_ids.includes(selectedCuentaId)) {
-      setValue('cuenta_id', '');
-    }
-  }, [selectedCampanaId, selectedCuentaId, campaigns, setValue]);
+  // Todas las cuentas activas están siempre disponibles para programar (incluso cuentas nuevas)
+  const filteredAccounts = accounts.filter((a) => a.activo);
 
   // Cargar token existente de Google Drive y preseleccionar cuenta/campaña/hora al abrir modal (solo se ejecuta 1 vez al montar)
   useEffect(() => {
@@ -722,6 +710,15 @@ function ScheduleModalDialog() {
       };
 
       await addVideo(newVideo);
+
+      // Si la campaña aún no tenía vinculada esta cuenta (cuenta nueva), vincularla automáticamente
+      if (data.campana_id && data.cuenta_id) {
+        const camp = campaigns.find((c) => c.id === data.campana_id);
+        if (camp && Array.isArray(camp.cuentas_ids) && !camp.cuentas_ids.includes(data.cuenta_id)) {
+          const updatedIds = [...camp.cuentas_ids, data.cuenta_id];
+          useAppStore.getState().updateCampaign(camp.id, { cuentas_ids: updatedIds }).catch(() => {});
+        }
+      }
 
       // ── 2. Si requiere subida a Drive, registrar estado inicial 0% ──
       if (needsDriveUpload) {

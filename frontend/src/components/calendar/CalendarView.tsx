@@ -302,16 +302,19 @@ export function CalendarView() {
 
     for (const v of videos) {
       if (seenVideoIds.has(v.id)) continue;
-      const cloneKey = `${v.cuenta_id}_${(v.nombre_archivo || v.titulo).toLowerCase().trim()}_${new Date(v.programado_para).getTime()}`;
-      if (seenVideoIds.has(cloneKey)) continue;
       seenVideoIds.add(v.id);
-      seenVideoIds.add(cloneKey);
 
-      if (selectedAccountId && selectedAccountId !== 'ALL' && v.cuenta_id !== selectedAccountId) {
-        continue;
-      }
-      if (selectedPlatform && selectedPlatform !== 'ALL') {
-        const acc = accountMap.get(v.cuenta_id);
+      if (selectedAccountId && selectedAccountId !== 'ALL') {
+        const targetAcc = accountMap.get(selectedAccountId) || accounts.find((a) => a.username === selectedAccountId || `@${a.username}` === selectedAccountId);
+        const matchesAccount =
+          v.cuenta_id === selectedAccountId ||
+          (targetAcc && (v.cuenta_id === targetAcc.id || v.cuenta_id === targetAcc.username || v.cuenta_id === `@${targetAcc.username}`)) ||
+          (v.cuenta_id && selectedAccountId && v.cuenta_id.replace(/^@/, '') === selectedAccountId.replace(/^@/, ''));
+        if (!matchesAccount) {
+          continue;
+        }
+      } else if (selectedPlatform && selectedPlatform !== 'ALL') {
+        const acc = accountMap.get(v.cuenta_id) || accounts.find((a) => a.username === v.cuenta_id || `@${a.username}` === v.cuenta_id);
         if (acc?.plataforma?.toLowerCase() !== selectedPlatform.toLowerCase()) {
           continue;
         }

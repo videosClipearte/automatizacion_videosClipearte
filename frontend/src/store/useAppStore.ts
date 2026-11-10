@@ -545,13 +545,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       const videos: Video[] = [];
       for (const v of rawVideos) {
         if (seenVideoKeys.has(v.id)) continue;
-        const cloneKey = `${v.cuenta_id}_${v.titulo.toLowerCase().trim()}_${new Date(v.programado_para).getTime()}`;
-        if (seenVideoKeys.has(cloneKey)) {
-          console.warn('[initializeStore] Clon previo omitido de memoria:', v.titulo);
-          continue;
-        }
         seenVideoKeys.add(v.id);
-        seenVideoKeys.add(cloneKey);
 
         if (monetizadoByPub.has(v.id)) {
           v.monetizado_en = monetizadoByPub.get(v.id);
@@ -690,10 +684,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         const videos: Video[] = [];
         for (const v of rawVideos) {
           if (seenVideoKeys.has(v.id)) continue;
-          const cloneKey = `${v.cuenta_id}_${v.titulo.toLowerCase().trim()}_${new Date(v.programado_para).getTime()}`;
-          if (seenVideoKeys.has(cloneKey)) continue;
           seenVideoKeys.add(v.id);
-          seenVideoKeys.add(cloneKey);
 
           if (monetizadoByPub.has(v.id)) {
             v.monetizado_en = monetizadoByPub.get(v.id);

@@ -39,7 +39,7 @@ const PLATFORM_COLORS: Record<string, string> = {
 };
 
 export default function AccountsPage() {
-  const { accounts, videos, addAccount, updateAccount, deleteAccount } = useAppStore();
+  const { accounts, campaigns, videos, addAccount, updateAccount, deleteAccount, updateCampaign } = useAppStore();
 
   // Form states
   const [showAddForm, setShowAddForm] = useState(false);
@@ -320,6 +320,12 @@ export default function AccountsPage() {
     };
 
     addAccount(newAcc);
+    // Vincular automáticamente la cuenta nueva a las campañas activas
+    campaigns.forEach((camp) => {
+      if (Array.isArray(camp.cuentas_ids) && !camp.cuentas_ids.includes(newAcc.id)) {
+        updateCampaign(camp.id, { cuentas_ids: [...camp.cuentas_ids, newAcc.id] }).catch(() => {});
+      }
+    });
     setNewUsername('');
     setNewProfileUrl('');
     setNewTargetPerDay(3);

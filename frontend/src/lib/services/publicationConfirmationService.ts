@@ -237,8 +237,12 @@ export function parseMetricsFromHtml(html: string, url: string): ParsedPostMetri
 
   // ── Instagram ──
   if (isInstagram) {
-    // Des-escapar posibles secuencias JSON de los embeds de Instagram (\"video_view_count\":123)
-    const unescapedHtml = html.includes('\\"') ? html.replace(/\\"/g, '"') : html;
+    // Des-escapar posibles secuencias JSON de los embeds de Instagram (\"video_view_count\":123, &quot;video_view_count&quot;:123)
+    const unescapedHtml = html
+      .replace(/\\"/g, '"')
+      .replace(/&quot;/g, '"')
+      .replace(/&#34;/g, '"')
+      .replace(/&amp;/g, '&');
 
     const ogTitle =
       headChunk.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
@@ -488,6 +492,48 @@ export async function fetchYouTubeBatchMetrics(
             fecha_publicacion: mf?.publishDate || mf?.uploadDate || null,
           };
         }
+      }
+
+      // Si no obtuvo vistas con cliente WEB, intentar con cliente ANDROID de Innertube (inmune a consent-dialogs)
+      if (!results[vid] || results[vid].vistas === 0) {
+        try {
+          const androidRes = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11)',
+            },
+            body: JSON.stringify({
+              videoId: vid,
+              context: {
+                client: {
+                  clientName: 'ANDROID',
+                  clientVersion: '19.09.37',
+                  hl: 'es',
+                  gl: 'US',
+                },
+              },
+            }),
+            signal: AbortSignal.timeout(6000),
+          });
+          if (androidRes.ok) {
+            const aData = await androidRes.json();
+            const aVd = aData?.videoDetails;
+            const aViews = parseInt(aVd?.viewCount || '0', 10) || 0;
+            if (aViews > 0) {
+              results[vid] = {
+                vistas: aViews,
+                likes: 0,
+                comentarios: 0,
+                compartidos: 0,
+                guardados: 0,
+                titulo: (aVd?.title || results[vid]?.titulo || '').slice(0, 250),
+                descripcion: (aVd?.shortDescription || results[vid]?.descripcion || '').slice(0, 600),
+                fecha_publicacion: results[vid]?.fecha_publicacion || null,
+              };
+            }
+          }
+        } catch {}
       }
     } catch {}
   }
@@ -831,12 +877,11 @@ export async function confirmPublicationAndProcessMetrics(
     }
   }
 
-  // Si se pasaron vistas manuales y el scraper no encontró ninguna, usar las manuales
-  if ((!metrics.vistas || metrics.vistas === 0) && vistas !== undefined && vistas > 0) {
-    metrics.vistas = vistas;
-  }
-
-  const finalViews = Math.max(video.vistas_obtenidas || 0, metrics.vistas || 0);
+  // Si se pasaron vistas manuales o la base de datos ya tenía vistas, asegurar que no se pierdan
+  const manualViews = typeof vistas === 'number' && !isNaN(vistas) && vistas >= 0 ? vistas : undefined;
+  const currentDbViews = Number(video.vistas_obtenidas) || 0;
+  const finalViews = Math.max(currentDbViews, metrics.vistas || 0, manualViews || 0);
+  metrics.vistas = finalViews;
   const gananciasEstimadas = await computeEstimatedEarnings(db, video.campana_id, cuentaIdFinal, finalViews);
 
   // 3. Actualizar publicaciones: estado = PUBLICADO, vistas_obtenidas y ganancias_estimadas

@@ -44,6 +44,12 @@ export default function CalendarPage() {
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
 
+  // Red social activa para filtrar la lista de cuentas en el selector
+  const activePlatformForAccounts = selectedPlatform || (selectedAccount ? selectedAccount.plataforma : null);
+  const displayedAccounts = activePlatformForAccounts
+    ? accounts.filter((a) => a.plataforma?.toLowerCase() === activePlatformForAccounts.toLowerCase())
+    : accounts;
+
   const getPlatformIcon = (platform?: string) => {
     switch (platform) {
       case 'instagram':
@@ -184,14 +190,20 @@ export default function CalendarPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-1 px-1 mb-1">
                     {PLATFORMS.map((plat) => {
-                      const isSelected = selectedPlatform === plat.id && !selectedAccountId;
+                      const isSelected = selectedPlatform?.toLowerCase() === plat.id.toLowerCase();
                       return (
                         <button
                           key={plat.id}
                           onClick={() => {
-                            setSelectedPlatform(plat.id);
-                            setSelectedAccountId(null);
-                            setIsDropdownOpen(false);
+                            if (isSelected) {
+                              setSelectedPlatform(null);
+                              setSelectedAccountId(null);
+                            } else {
+                              setSelectedPlatform(plat.id);
+                              if (selectedAccount && selectedAccount.plataforma.toLowerCase() !== plat.id.toLowerCase()) {
+                                setSelectedAccountId(null);
+                              }
+                            }
                           }}
                           className={cn(
                             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs transition-all cursor-pointer border',
@@ -207,27 +219,41 @@ export default function CalendarPage() {
                     })}
                   </div>
 
-                  {/* Sección: Cuentas individuales */}
+                  {/* Sección: Cuentas individuales filtradas por la red social seleccionada */}
                   <div className="my-1.5 border-t border-white/5" />
-                  <div className="px-2.5 py-1">
+                  <div className="px-2.5 py-1 flex items-center justify-between">
                     <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-400">
-                      Filtrar por Cuenta Específica
+                      Filtrar por Cuenta Específica {activePlatformForAccounts ? `(${PLATFORMS.find(p => p.id === activePlatformForAccounts)?.label || activePlatformForAccounts})` : ''}
                     </p>
+                    {activePlatformForAccounts && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPlatform(null);
+                          setSelectedAccountId(null);
+                        }}
+                        className="text-[9px] text-orange-400 hover:text-white underline cursor-pointer"
+                      >
+                        Ver todas
+                      </button>
+                    )}
                   </div>
                   <div className="max-h-48 overflow-y-auto space-y-0.5">
-                    {accounts.length === 0 ? (
+                    {displayedAccounts.length === 0 ? (
                       <div className="p-3 text-center text-xs text-zinc-400">
-                        No hay cuentas registradas
+                        {activePlatformForAccounts
+                          ? `No hay cuentas de ${PLATFORMS.find(p => p.id === activePlatformForAccounts)?.label || activePlatformForAccounts} registradas`
+                          : 'No hay cuentas registradas'}
                       </div>
                     ) : (
-                      accounts.map((acc) => {
+                      displayedAccounts.map((acc) => {
                         const isSelected = selectedAccountId === acc.id;
                         return (
                           <button
                             key={acc.id}
                             onClick={() => {
                               setSelectedAccountId(acc.id);
-                              setSelectedPlatform(null);
+                              setSelectedPlatform(acc.plataforma);
                               setIsDropdownOpen(false);
                             }}
                             className={cn(

@@ -27,7 +27,9 @@ import {
   Link2,
   Play,
   Image as ImageIcon,
-  Coins
+  Coins,
+  Pencil,
+  Check
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useAppStore } from '@/store/useAppStore';
@@ -89,6 +91,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
   const [confirmFeedback, setConfirmFeedback] = useState<{ success: boolean; msg: string } | null>(null);
   const [confirmPostUrl, setConfirmPostUrl] = useState('');
   const [confirmVistas, setConfirmVistas] = useState('');
+
+  // Edición directa e instantánea de vistas verificadas (manual override)
+  const [isEditingViews, setIsEditingViews] = useState(false);
+  const [viewsInputValue, setViewsInputValue] = useState(() => String(video?.vistas_obtenidas ?? 0));
+  const [savingManualViews, setSavingManualViews] = useState(false);
+  const [editVistas, setEditVistas] = useState(() => String(video?.vistas_obtenidas ?? ''));
 
   // Estado de subida y monitoreo en vivo para YouTube
   const [publishingToYouTube, setPublishingToYouTube] = useState(false);
@@ -160,8 +168,10 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       setEditThumbnailPreview(video.thumbnail_url || '');
       setEditThumbnailFile(null);
       setEditThumbnailRemoved(false);
+      setViewsInputValue(String(video.vistas_obtenidas ?? 0));
+      setEditVistas(String(video.vistas_obtenidas ?? ''));
     }
-  }, [video?.id, video?.post_url_publica, video?.thumbnail_url]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [video?.id, video?.post_url_publica, video?.thumbnail_url, video?.vistas_obtenidas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [modalDragHover, setModalDragHover] = useState<'video' | 'image' | null>(null);
 
@@ -497,11 +507,8 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     ? calcGanancias(video.vistas_obtenidas, effectiveRpm)
     : '0.00';
 
-  // Cuentas filtradas según la campaña en edición
-  const editingCampaign = campaigns.find(c => c.id === editCampanaId);
-  const filteredEditAccounts = editingCampaign
-    ? accounts.filter(a => editingCampaign.cuentas_ids.includes(a.id))
-    : accounts;
+  // Cuentas disponibles en edición
+  const filteredEditAccounts = accounts.filter(a => a.activo);
 
   const handleCancelEdit = () => {
     if (video) {
@@ -524,6 +531,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       setExtractingReplacementAudio(false);
       setExtractedSubtitles(null);
       setShowSubtitlesJson(false);
+      setEditVistas(String(video.vistas_obtenidas ?? ''));
       setEditFeedback(null);
     }
     setIsEditing(false);
@@ -941,6 +949,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       }
     }
 
+    const parsedEditVistas = editVistas.trim() ? parseInt(editVistas.replace(/[^0-9]/g, ''), 10) : undefined;
+    const hasEditVistas = parsedEditVistas !== undefined && !isNaN(parsedEditVistas) && parsedEditVistas >= 0;
+
     const updates: any = {
       nombre_archivo: isYouTube ? finalFileName : undefined,
       titulo: isYouTube ? finalFileName : (editTitle.trim() || video.titulo),
@@ -952,7 +963,14 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
       drive_file_url: finalDriveUrl,
       post_url_publica: editReelUrl.trim() || video.post_url_publica || undefined,
       ...(finalThumbnailUrl !== undefined ? { thumbnail_url: finalThumbnailUrl } : {}),
+      ...(hasEditVistas ? { vistas_obtenidas: parsedEditVistas } : {}),
     };
+
+    if (hasEditVistas) {
+      const effRpm = getEffectiveRpm(campaign, account?.plataforma);
+      const newEarnings = parseFloat(calcGanancias(parsedEditVistas, effRpm));
+      if (!isNaN(newEarnings)) updates.ganancias_estimadas = newEarnings;
+    }
 
     // Al actualizar un video programado (o reprogramar a futuro o reemplazar el video),
     // se reactiva el envío reseteando enviado_en, publicado_en y reintentos_alerta
@@ -966,6 +984,29 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     }
 
     await updateVideo(video.id, updates);
+
+    if (hasEditVistas) {
+      try {
+        const { getSupabase } = await import('@/lib/supabase');
+        const db = getSupabase();
+        await db.from('publicaciones').update({
+          vistas_obtenidas: parsedEditVistas,
+          ...(updates.ganancias_estimadas !== undefined ? { ganancias_estimadas: updates.ganancias_estimadas } : {}),
+          updated_at: new Date().toISOString(),
+        }).eq('id', video.id);
+
+        await db.from('metricas_extraidas_scraper').upsert({
+          publicacion_id: video.id,
+          cuenta_id: editCuentaId || video.cuenta_id,
+          vistas: parsedEditVistas,
+          fuente: 'manual_edicion',
+          estado_confirmado: true,
+          fecha_extraccion: new Date().toISOString(),
+        }, { onConflict: 'publicacion_id' });
+      } catch (dbErr: any) {
+        console.warn('[handleSaveEdit] Error persistiendo vistas:', dbErr?.message);
+      }
+    }
 
     setReplacementFile(null);
     setEditThumbnailFile(null);
@@ -1042,29 +1083,40 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
           : {}),
       };
 
+      const parsedEditVistas = editVistas.trim() ? parseInt(editVistas.replace(/[^0-9]/g, ''), 10) : undefined;
       const res = await fetch(`/api/publicaciones/${video.id}/confirmar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           post_url_publica: finalReelUrl,
+          vistas_obtenidas: parsedEditVistas !== undefined && !isNaN(parsedEditVistas) ? parsedEditVistas : undefined,
         }),
       });
       const data = await res.json();
 
       if (res.ok && data.success) {
+        const resolvedViews = Math.max(
+          data.metrics?.vistas || 0,
+          parsedEditVistas || 0,
+          video.vistas_obtenidas || 0
+        );
+        const effRpm = getEffectiveRpm(campaign, account?.plataforma);
+        const newEarnings = parseFloat(calcGanancias(resolvedViews, effRpm));
+
         await updateVideo(video.id, {
           ...baseUpdates,
           estado: 'PUBLICADO',
           publicado_en: new Date(),
           post_url_publica: finalReelUrl,
-          ...(data.metrics?.vistas ? { vistas_obtenidas: data.metrics.vistas } : {}),
+          vistas_obtenidas: resolvedViews,
+          ganancias_estimadas: !isNaN(newEarnings) ? newEarnings : undefined,
         });
 
         setConfirmandoEdit(false);
         setIsEditing(false);
         setEditFeedback({
           success: true,
-          msg: `✅ ¡Video confirmado como PUBLICADO con URL de Reel! ${data.metrics?.vistas ? `(${data.metrics.vistas.toLocaleString()} vistas extraídas)` : ''}`,
+          msg: `✅ ¡Video confirmado como PUBLICADO con URL de Reel! ${resolvedViews > 0 ? `(${resolvedViews.toLocaleString()} vistas registradas)` : ''}`,
         });
 
         createNotification({
@@ -1369,6 +1421,78 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     }
   };
 
+  // Guardar vistas manualmente ingresadas por el usuario (cuando una red social bloquea el scraper por WAF/Anti-bot)
+  const handleSaveManualViews = async (customVal?: number) => {
+    if (!video) return;
+    const rawVal = customVal !== undefined ? customVal : parseInt(viewsInputValue.replace(/[^0-9]/g, ''), 10);
+    const parsedViews = isNaN(rawVal) || rawVal < 0 ? 0 : rawVal;
+
+    setSavingManualViews(true);
+    setScraperFeedback(null);
+
+    try {
+      const effRpm = getEffectiveRpm(campaign, account?.plataforma);
+      const newEarningsStr = calcGanancias(parsedViews, effRpm);
+      const newEarnings = parseFloat(newEarningsStr);
+
+      await updateVideo(video.id, {
+        vistas_obtenidas: parsedViews,
+        ganancias_estimadas: !isNaN(newEarnings) ? newEarnings : 0,
+      });
+
+      try {
+        const { getSupabase } = await import('@/lib/supabase');
+        const db = getSupabase();
+        await db
+          .from('publicaciones')
+          .update({
+            vistas_obtenidas: parsedViews,
+            ganancias_estimadas: !isNaN(newEarnings) ? newEarnings : 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', video.id);
+
+        if (video.post_url_publica && video.post_url_publica !== '#') {
+          await db
+            .from('reels_rastreados')
+            .update({
+              vistas: parsedViews,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('url', video.post_url_publica);
+        }
+
+        await db.from('metricas_extraidas_scraper').upsert(
+          {
+            publicacion_id: video.id,
+            cuenta_id: video.cuenta_id,
+            vistas: parsedViews,
+            fuente: 'manual_usuario',
+            estado_confirmado: true,
+            post_url: video.post_url_publica || '',
+            fecha_extraccion: new Date().toISOString(),
+          },
+          { onConflict: 'publicacion_id' }
+        );
+      } catch (dbErr: any) {
+        console.warn('[handleSaveManualViews] Persistencia Supabase:', dbErr?.message);
+      }
+
+      setIsEditingViews(false);
+      setScraperFeedback({
+        success: true,
+        msg: `✅ Vistas actualizadas manualmente: ${parsedViews.toLocaleString()} reproducciones registradas ($${newEarningsStr} est.).`,
+      });
+    } catch (err: any) {
+      setScraperFeedback({
+        success: false,
+        msg: `Error guardando vistas: ${err?.message || 'Error inesperado'}`,
+      });
+    } finally {
+      setSavingManualViews(false);
+    }
+  };
+
   // Actualizar vistas en vivo de un video PUBLICADO (YouTube, TikTok, Instagram, Facebook)
   const handleRefreshPublishedViews = async (silent = false) => {
     if (!video) return;
@@ -1391,23 +1515,47 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         const detectedViews =
           typeof data.bestView === 'number' && data.bestView > 0
             ? data.bestView
+            : typeof data.metrics?.vistas === 'number' && data.metrics.vistas > 0
+            ? data.metrics.vistas
             : data.details?.[0]?.newViews ?? video.vistas_obtenidas ?? 0;
 
-        if (detectedViews > (video.vistas_obtenidas || 0)) {
-          await updateVideo(video.id, { vistas_obtenidas: detectedViews });
-        } else {
-          await useAppStore.getState().refreshData();
-        }
-        if (!silent) {
-          setScraperFeedback({
-            success: true,
-            msg: `✅ Vistas sincronizadas: ${detectedViews.toLocaleString()} reproducciones registradas.`,
+        const currentKnownViews = video.vistas_obtenidas || 0;
+        const finalViews = Math.max(detectedViews, currentKnownViews);
+
+        if (finalViews > currentKnownViews) {
+          const effRpm = getEffectiveRpm(campaign, account?.plataforma);
+          const newEarningsStr = calcGanancias(finalViews, effRpm);
+          const newEarnings = parseFloat(newEarningsStr);
+          await updateVideo(video.id, {
+            vistas_obtenidas: finalViews,
+            ganancias_estimadas: !isNaN(newEarnings) ? newEarnings : undefined,
           });
+          if (!silent) {
+            setScraperFeedback({
+              success: true,
+              msg: `✅ Vistas sincronizadas: ${finalViews.toLocaleString()} reproducciones registradas ($${newEarningsStr} est.).`,
+            });
+          }
+        } else if (finalViews > 0) {
+          await useAppStore.getState().refreshData();
+          if (!silent) {
+            setScraperFeedback({
+              success: true,
+              msg: `✅ Vistas al día: ${finalViews.toLocaleString()} reproducciones verificadas.`,
+            });
+          }
+        } else {
+          if (!silent) {
+            setScraperFeedback({
+              success: false,
+              msg: 'ℹ️ La red social protegió la consulta automática (WAF / Anti-bot) o aún no muestra el contador. Haz clic en el lápiz ✏️ para ingresar las vistas verificadas (ej: 800) directamente.',
+            });
+          }
         }
       } else if (!silent) {
         setScraperFeedback({
           success: false,
-          msg: data.error || data.message || 'No se pudieron extraer nuevas vistas en este momento.',
+          msg: data.error || data.message || 'No se pudieron extraer nuevas vistas en este momento. Haz clic en el lápiz ✏️ para ingresarlas.',
         });
       }
     } catch (err: any) {
@@ -1991,20 +2139,73 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     <div className="space-y-2">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-center relative group">
-                          <div className="flex items-center justify-center gap-1 text-orange-400 mb-0.5">
-                            <Eye size={13} />
-                            <span className="text-base font-bold font-mono">{formatViews(video.vistas_obtenidas || 0)}</span>
-                          </div>
-                          <p className="text-[10px] text-[var(--text-muted)]">Vistas Verificadas</p>
-                          <button
-                            type="button"
-                            onClick={() => handleRefreshPublishedViews(false)}
-                            disabled={verifyingScraper}
-                            title="Actualizar vistas ahora"
-                            className="absolute top-2 right-2 p-1 rounded-lg bg-orange-500/15 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 transition-all disabled:opacity-50 cursor-pointer"
-                          >
-                            <RefreshCw size={10} className={verifyingScraper ? 'animate-spin' : ''} />
-                          </button>
+                          {isEditingViews ? (
+                            <div className="flex flex-col items-center gap-1.5 py-0.5">
+                              <div className="flex items-center gap-1 w-full max-w-[145px]">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  autoFocus
+                                  value={viewsInputValue}
+                                  onChange={(e) => setViewsInputValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveManualViews();
+                                    if (e.key === 'Escape') setIsEditingViews(false);
+                                  }}
+                                  placeholder="Ej: 800"
+                                  className="w-full px-2 py-0.5 text-xs text-white font-mono bg-black/60 border border-orange-500/50 rounded focus:outline-none focus:border-orange-400 text-center"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveManualViews()}
+                                  disabled={savingManualViews}
+                                  title="Guardar vistas"
+                                  className="p-1 rounded bg-orange-500/30 hover:bg-orange-500/50 text-orange-200 border border-orange-500/40 cursor-pointer disabled:opacity-50 shrink-0"
+                                >
+                                  {savingManualViews ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditingViews(false)}
+                                  title="Cancelar"
+                                  className="p-1 rounded bg-white/10 hover:bg-white/20 text-zinc-300 border border-white/15 cursor-pointer shrink-0"
+                                >
+                                  <X size={11} />
+                                </button>
+                              </div>
+                              <p className="text-[9px] text-orange-300">Enter o ✓ para guardar</p>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-center gap-1 text-orange-400 mb-0.5">
+                                <Eye size={13} />
+                                <span className="text-base font-bold font-mono">{formatViews(video.vistas_obtenidas || 0)}</span>
+                              </div>
+                              <p className="text-[10px] text-[var(--text-muted)]">Vistas Verificadas</p>
+                              <div className="absolute top-2 right-2 flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setViewsInputValue(String(video.vistas_obtenidas || 0));
+                                    setIsEditingViews(true);
+                                  }}
+                                  title="Editar vistas manualmente"
+                                  className="p-1 rounded-lg bg-orange-500/15 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 transition-all cursor-pointer"
+                                >
+                                  <Pencil size={10} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRefreshPublishedViews(false)}
+                                  disabled={verifyingScraper}
+                                  title="Actualizar vistas ahora desde la red"
+                                  className="p-1 rounded-lg bg-orange-500/15 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 transition-all disabled:opacity-50 cursor-pointer"
+                                >
+                                  <RefreshCw size={10} className={verifyingScraper ? 'animate-spin' : ''} />
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                         <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
                           <div className="flex items-center justify-center gap-1 text-amber-400 mb-0.5">
@@ -2014,6 +2215,25 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           <p className="text-[10px] text-[var(--text-muted)]">Ganancia Est.</p>
                         </div>
                       </div>
+
+                      {/* Feedback del scraper o edición de vistas directamente visible aquí */}
+                      {scraperFeedback && (
+                        <div
+                          className={`p-2.5 rounded-xl border text-xs leading-relaxed flex items-center gap-2 ${
+                            scraperFeedback.success
+                              ? 'bg-orange-500/10 border-orange-500/25 text-orange-300'
+                              : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+                          }`}
+                        >
+                          {scraperFeedback.success ? (
+                            <CheckCircle2 size={13} className="shrink-0 text-orange-400" />
+                          ) : (
+                            <AlertCircle size={13} className="shrink-0 text-amber-400" />
+                          )}
+                          <span>{scraperFeedback.msg}</span>
+                        </div>
+                      )}
+
                       {video.post_url_publica && video.post_url_publica !== '#' && account?.plataforma !== 'youtube' && (
                         <a
                           href={video.post_url_publica}
@@ -2654,6 +2874,32 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     </div>
                   </div>
 
+                  {/* Vistas Obtenidas (Edición manual / Verificación) */}
+                  <div className="p-3 rounded-xl bg-[#1e1b1b] border border-white/10 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
+                        <Eye size={12} className="text-orange-400" />
+                        <span>Vistas Obtenidas (Verificación Manual)</span>
+                      </label>
+                      {editVistas && !isNaN(parseInt(editVistas, 10)) && parseInt(editVistas, 10) > 0 && (
+                        <span className="text-[10px] font-mono text-orange-400 font-bold">
+                          {parseInt(editVistas, 10).toLocaleString()} vistas
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editVistas}
+                      onChange={(e) => setEditVistas(e.target.value)}
+                      placeholder="Ej: 800 (útil si la red social bloquea el scraper por WAF/Anti-bot)"
+                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] font-mono placeholder:text-[var(--text-muted)] transition-colors"
+                    />
+                    <p className="text-[10px] text-[var(--text-muted)] leading-tight">
+                      Fija las vistas reales para registrar ganancias calculadas según el RPM de la campaña.
+                    </p>
+                  </div>
+
                   {/* Cuenta y Campaña — la campaña filtra las cuentas disponibles */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -2662,15 +2908,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       </label>
                       <select
                         value={editCampanaId}
-                        onChange={(e) => {
-                          const newCampanaId = e.target.value;
-                          setEditCampanaId(newCampanaId);
-                          // Si la cuenta actual no pertenece a la nueva campaña, limpiarla
-                          const newCampaign = campaigns.find(c => c.id === newCampanaId);
-                          if (newCampaign && editCuentaId && !newCampaign.cuentas_ids.includes(editCuentaId)) {
-                            setEditCuentaId('');
-                          }
-                        }}
+                        onChange={(e) => setEditCampanaId(e.target.value)}
                         className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#121111] border border-white/10 focus:border-orange-500/60 outline-none transition-colors"
                       >
                         <option value="" className="bg-[#161414]">Seleccionar campaña...</option>
