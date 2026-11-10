@@ -499,11 +499,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
   };
 
   const currentCuentaVal = isEditing ? editCuentaId : video?.cuenta_id;
-  const isVideoYt = Boolean(video && (video.titulo_youtube || video.nombre_archivo || video.thumbnail_color === '#ef4444' || video.post_url_publica?.includes('youtube')));
   const account =
     accounts.find(a => a.id === currentCuentaVal) ||
-    accounts.find(a => a.username.trim().replace(/^@/, '').toLowerCase() === (currentCuentaVal || '').trim().replace(/^@/, '').toLowerCase()) ||
-    (isVideoYt ? accounts.find(a => a.plataforma?.toLowerCase() === 'youtube') : undefined);
+    accounts.find(a => a.username.trim().replace(/^@/, '').toLowerCase() === (currentCuentaVal || '').trim().replace(/^@/, '').toLowerCase());
   const campaign = campaigns.find(c => c.id === (isEditing ? editCampanaId : video?.campana_id));
 
   const platformColor = account ? getPlatformColor(account.plataforma) : '#10b981';

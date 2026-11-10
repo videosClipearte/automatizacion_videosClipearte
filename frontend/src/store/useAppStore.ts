@@ -543,40 +543,23 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
       const seenVideoKeys = new Set<string>();
       const videos: Video[] = [];
-      const ytAccountFallback = accounts.find((a) => a.plataforma?.toLowerCase() === 'youtube');
 
       for (const v of rawVideos) {
         if (seenVideoKeys.has(v.id)) continue;
         seenVideoKeys.add(v.id);
 
-        // ── Auto-reconciliar y curar cuenta_id huérfana o desvinculada (soporte para cuentas nuevas) ──
+        // ── Normalizar cuenta_id si viene como username en vez de id ──
         let matchedAccount = accounts.find((a) => a.id === v.cuenta_id);
         if (!matchedAccount && v.cuenta_id) {
           const cleanVidCuenta = v.cuenta_id.trim().replace(/^@/, '').toLowerCase();
           matchedAccount = accounts.find((a) => a.username.trim().replace(/^@/, '').toLowerCase() === cleanVidCuenta);
-        }
-
-        // Si sigue sin coincidir, verificar si es un Short / video de YouTube
-        const isYt =
-          matchedAccount?.plataforma?.toLowerCase() === 'youtube' ||
-          Boolean(v.titulo_youtube) ||
-          Boolean(v.nombre_archivo) ||
-          v.thumbnail_color === '#ef4444' ||
-          Boolean(v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be'))) ||
-          Boolean(v.titulo && v.titulo.toLowerCase().includes('#shorts')) ||
-          Boolean(v.descripcion_aprobada_ia && v.descripcion_aprobada_ia.toLowerCase().includes('#shorts'));
-
-        if (!matchedAccount && isYt && ytAccountFallback) {
-          matchedAccount = ytAccountFallback;
-        }
-
-        if (matchedAccount && v.cuenta_id !== matchedAccount.id) {
-          console.log(`[useAppStore] Auto-reparando cuenta_id de video "${v.titulo}" (${v.id}): "${v.cuenta_id}" -> "${matchedAccount.id}" (@${matchedAccount.username})`);
-          v.cuenta_id = matchedAccount.id;
-          db.from('publicaciones')
-            .update({ cuenta_id: matchedAccount.id })
-            .eq('id', v.id)
-            .then(() => {});
+          if (matchedAccount) {
+            v.cuenta_id = matchedAccount.id;
+            db.from('publicaciones')
+              .update({ cuenta_id: matchedAccount.id })
+              .eq('id', v.id)
+              .then(() => {});
+          }
         }
 
         if (monetizadoByPub.has(v.id)) {
@@ -715,38 +698,23 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         const seenVideoKeys = new Set<string>();
         const videos: Video[] = [];
         const accounts = get().accounts;
-        const ytAccountFallback = accounts.find((a) => a.plataforma?.toLowerCase() === 'youtube');
 
         for (const v of rawVideos) {
           if (seenVideoKeys.has(v.id)) continue;
           seenVideoKeys.add(v.id);
 
-          // ── Auto-reconciliar y curar cuenta_id huérfana o desvinculada (soporte para cuentas nuevas) ──
+          // ── Normalizar cuenta_id si viene como username en vez de id ──
           let matchedAccount = accounts.find((a) => a.id === v.cuenta_id);
           if (!matchedAccount && v.cuenta_id) {
             const cleanVidCuenta = v.cuenta_id.trim().replace(/^@/, '').toLowerCase();
             matchedAccount = accounts.find((a) => a.username.trim().replace(/^@/, '').toLowerCase() === cleanVidCuenta);
-          }
-
-          const isYt =
-            matchedAccount?.plataforma?.toLowerCase() === 'youtube' ||
-            Boolean(v.titulo_youtube) ||
-            Boolean(v.nombre_archivo) ||
-            v.thumbnail_color === '#ef4444' ||
-            Boolean(v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be'))) ||
-            Boolean(v.titulo && v.titulo.toLowerCase().includes('#shorts')) ||
-            Boolean(v.descripcion_aprobada_ia && v.descripcion_aprobada_ia.toLowerCase().includes('#shorts'));
-
-          if (!matchedAccount && isYt && ytAccountFallback) {
-            matchedAccount = ytAccountFallback;
-          }
-
-          if (matchedAccount && v.cuenta_id !== matchedAccount.id) {
-            v.cuenta_id = matchedAccount.id;
-            db.from('publicaciones')
-              .update({ cuenta_id: matchedAccount.id })
-              .eq('id', v.id)
-              .then(() => {});
+            if (matchedAccount) {
+              v.cuenta_id = matchedAccount.id;
+              db.from('publicaciones')
+                .update({ cuenta_id: matchedAccount.id })
+                .eq('id', v.id)
+                .then(() => {});
+            }
           }
 
           if (monetizadoByPub.has(v.id)) {
@@ -838,16 +806,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
       );
       if (account) effectiveCuentaId = account.id;
     }
-    const isYouTube =
-      account?.plataforma?.toLowerCase() === 'youtube' ||
-      Boolean(video.titulo_youtube) ||
-      Boolean(video.nombre_archivo);
-
-    if (!account && isYouTube) {
-      account = accounts.find((a) => a.plataforma?.toLowerCase() === 'youtube');
-      if (account) effectiveCuentaId = account.id;
-    }
-
+    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
     video.cuenta_id = effectiveCuentaId;
 
     const finalDesc = stripDescriptionTags(

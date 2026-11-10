@@ -304,70 +304,48 @@ export function CalendarView() {
       if (seenVideoIds.has(v.id)) continue;
       seenVideoIds.add(v.id);
 
-      const targetAcc =
-        selectedAccountId && selectedAccountId !== 'ALL'
-          ? accountMap.get(selectedAccountId) ||
-            accounts.find(
-              (a) =>
-                a.id === selectedAccountId ||
-                a.username.toLowerCase().trim() === selectedAccountId.toLowerCase().trim().replace(/^@/, '')
-            )
-          : null;
+      // Resolver la cuenta a la que pertenece este video
+      const videoAcc =
+        accountMap.get(v.cuenta_id) ||
+        accounts.find(
+          (a) =>
+            a.id === v.cuenta_id ||
+            a.username.toLowerCase().trim() === (v.cuenta_id || '').toLowerCase().trim().replace(/^@/, '')
+        );
 
-      if (targetAcc) {
-        const videoAcc =
-          accountMap.get(v.cuenta_id) ||
+      // 1. Filtrar por cuenta específica
+      if (selectedAccountId && selectedAccountId !== 'ALL') {
+        const targetAcc =
+          accountMap.get(selectedAccountId) ||
           accounts.find(
             (a) =>
-              a.id === v.cuenta_id ||
-              a.username.toLowerCase().trim() === (v.cuenta_id || '').toLowerCase().trim().replace(/^@/, '')
+              a.id === selectedAccountId ||
+              a.username.toLowerCase().trim() === selectedAccountId.toLowerCase().trim().replace(/^@/, '')
           );
+
+        if (!targetAcc) continue;
+
         const cleanVidCuenta = (v.cuenta_id || '').trim().replace(/^@/, '').toLowerCase();
         const cleanTargetUser = targetAcc.username.trim().replace(/^@/, '').toLowerCase();
 
-        const directMatch =
+        const matchesAccount =
           v.cuenta_id === targetAcc.id ||
           cleanVidCuenta === cleanTargetUser ||
           (videoAcc && videoAcc.id === targetAcc.id);
 
-        const isYtVideo =
-          videoAcc?.plataforma?.toLowerCase() === 'youtube' ||
-          Boolean(v.titulo_youtube) ||
-          Boolean(v.nombre_archivo) ||
-          v.thumbnail_color === '#ef4444' ||
-          Boolean(v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be'))) ||
-          Boolean(v.titulo && v.titulo.toLowerCase().includes('#shorts')) ||
-          Boolean(v.descripcion_aprobada_ia && v.descripcion_aprobada_ia.toLowerCase().includes('#shorts'));
-
-        // Si la cuenta objetivo es YouTube y el video es de YouTube (y no pertenece explícitamente a otra cuenta de YouTube)
-        const isOtherYtAcc = accounts.some(
-          (a) => a.id !== targetAcc.id && a.plataforma?.toLowerCase() === 'youtube' && a.id === v.cuenta_id
-        );
-        const ytMatch = targetAcc.plataforma?.toLowerCase() === 'youtube' && isYtVideo && !isOtherYtAcc;
-
-        if (!directMatch && !ytMatch) {
-          continue;
-        }
-      } else if (selectedPlatform && selectedPlatform !== 'ALL') {
-        const videoAcc =
-          accountMap.get(v.cuenta_id) ||
-          accounts.find(
-            (a) =>
-              a.id === v.cuenta_id ||
-              a.username.toLowerCase().trim() === (v.cuenta_id || '').toLowerCase().trim().replace(/^@/, '')
-          );
-        const isYtVideo =
-          videoAcc?.plataforma?.toLowerCase() === 'youtube' ||
-          Boolean(v.titulo_youtube) ||
-          Boolean(v.nombre_archivo) ||
-          v.thumbnail_color === '#ef4444' ||
-          Boolean(v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be')));
-
-        const plat = videoAcc?.plataforma?.toLowerCase() || (isYtVideo ? 'youtube' : undefined);
-        if (plat !== selectedPlatform.toLowerCase()) {
+        if (!matchesAccount) {
           continue;
         }
       }
+
+      // 2. Filtrar por red social
+      if (selectedPlatform && selectedPlatform !== 'ALL') {
+        const videoPlat = videoAcc?.plataforma?.toLowerCase();
+        if (videoPlat !== selectedPlatform.toLowerCase()) {
+          continue;
+        }
+      }
+
       if (statusFilter && statusFilter !== 'ALL' && v.estado !== statusFilter) {
         continue;
       }
@@ -816,9 +794,7 @@ export function CalendarView() {
                           const acct =
                             accounts.find(a => a.id === video.cuenta_id) ||
                             accounts.find(a => a.username.trim().replace(/^@/, '').toLowerCase() === (video.cuenta_id || '').trim().replace(/^@/, '').toLowerCase());
-                          const isYt = acct?.plataforma?.toLowerCase() === 'youtube' || Boolean(video.titulo_youtube) || Boolean(video.nombre_archivo) || video.thumbnail_color === '#ef4444';
-                          const effectivePlatform = acct?.plataforma || (isYt ? 'youtube' : undefined);
-                          const isYtUploading = effectivePlatform === 'youtube' && video.estado === 'ENVIADO';
+                          const isYtUploading = acct?.plataforma?.toLowerCase() === 'youtube' && video.estado === 'ENVIADO';
                           const uploadInfo = driveUploads[video.id];
                           const isDriveUploading = uploadInfo?.status === 'uploading';
                           const isDriveError = uploadInfo?.status === 'error';
@@ -835,7 +811,7 @@ export function CalendarView() {
                               className={cn(
                                 "relative px-1.5 py-0.5 rounded-md text-left transition-all flex items-center gap-1 border shrink-0 group/chip overflow-hidden",
                                 isHoverTarget
-                                  ? (dragHoverFileType === 'image' || effectivePlatform === 'youtube'
+                                  ? (dragHoverFileType === 'image' || acct?.plataforma?.toLowerCase() === 'youtube'
                                       ? "ring-2 ring-pink-400 bg-pink-950/70 border-pink-400 text-pink-200 z-30 scale-[1.02]"
                                       : "ring-2 ring-orange-500 bg-orange-950/70 border-orange-500 text-orange-200 z-30 scale-[1.02]")
                                   : isDriveUploading
@@ -870,7 +846,7 @@ export function CalendarView() {
                                 video.estado === 'ERROR_DE_RED' || isDriveError ? "bg-red-400" : (isCurrentDay ? "bg-purple-300" : "bg-purple-400")
                               )} />
                               <span className={cn("shrink-0", isCurrentDay && "brightness-125 drop-shadow-xs")}>
-                                {getPlatformIcon(effectivePlatform)}
+                                {getPlatformIcon(acct?.plataforma)}
                               </span>
                               <span className={cn(
                                 "text-[9px] font-mono font-semibold shrink-0",
@@ -1058,9 +1034,7 @@ export function CalendarView() {
                           const acct =
                             accounts.find(a => a.id === video.cuenta_id) ||
                             accounts.find(a => a.username.trim().replace(/^@/, '').toLowerCase() === (video.cuenta_id || '').trim().replace(/^@/, '').toLowerCase());
-                          const isYt = acct?.plataforma?.toLowerCase() === 'youtube' || Boolean(video.titulo_youtube) || Boolean(video.nombre_archivo) || video.thumbnail_color === '#ef4444';
-                          const effectivePlatform = acct?.plataforma || (isYt ? 'youtube' : undefined);
-                          const isYtUploading = effectivePlatform === 'youtube' && video.estado === 'ENVIADO';
+                          const isYtUploading = acct?.plataforma?.toLowerCase() === 'youtube' && video.estado === 'ENVIADO';
                           const uploadInfo = driveUploads[video.id];
                           const isDriveUploading = uploadInfo?.status === 'uploading';
                           const isDriveError = uploadInfo?.status === 'error';
@@ -1076,7 +1050,7 @@ export function CalendarView() {
                               className={cn(
                                 "p-2.5 rounded-xl border transition-all cursor-pointer group relative overflow-hidden",
                                 isHoverTarget
-                                  ? (dragHoverFileType === 'image' || effectivePlatform === 'youtube'
+                                  ? (dragHoverFileType === 'image' || acct?.plataforma?.toLowerCase() === 'youtube'
                                       ? "ring-2 ring-pink-400 bg-pink-950/60 border-pink-400 shadow-lg shadow-pink-500/20"
                                       : "ring-2 ring-orange-500 bg-orange-950/60 border-orange-500 shadow-lg shadow-orange-500/20")
                                   : isDriveUploading
@@ -1086,7 +1060,7 @@ export function CalendarView() {
                             >
                               {isHoverTarget && (
                                 <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-30 border border-orange-500 rounded-xl">
-                                  {dragHoverFileType === 'image' || effectivePlatform === 'youtube' ? (
+                                  {dragHoverFileType === 'image' || acct?.plataforma?.toLowerCase() === 'youtube' ? (
                                     <>
                                       <ImageIcon size={18} className="text-pink-400 mb-1 animate-bounce" />
                                       <span className="text-xs font-bold text-white">Soltar para asignar portada / miniatura</span>
@@ -1104,9 +1078,9 @@ export function CalendarView() {
                                   {format(new Date(video.programado_para), 'HH:mm')}
                                 </span>
                                 <div className="flex items-center gap-1">
-                                  {getPlatformIcon(effectivePlatform)}
+                                  {getPlatformIcon(acct?.plataforma)}
                                   <span className="text-[10px] text-zinc-400 font-medium truncate max-w-[65px]">
-                                    @{acct?.username || (effectivePlatform === 'youtube' ? 'startrading-clips' : 'cuenta')}
+                                    @{acct?.username}
                                   </span>
                                 </div>
                               </div>
@@ -1257,9 +1231,7 @@ export function CalendarView() {
                             const acct =
                               accounts.find(a => a.id === video.cuenta_id) ||
                               accounts.find(a => a.username.trim().replace(/^@/, '').toLowerCase() === (video.cuenta_id || '').trim().replace(/^@/, '').toLowerCase());
-                            const isYt = acct?.plataforma?.toLowerCase() === 'youtube' || Boolean(video.titulo_youtube) || Boolean(video.nombre_archivo) || video.thumbnail_color === '#ef4444';
-                            const effectivePlatform = acct?.plataforma || (isYt ? 'youtube' : undefined);
-                            const isYtUploading = effectivePlatform === 'youtube' && video.estado === 'ENVIADO';
+                            const isYtUploading = acct?.plataforma?.toLowerCase() === 'youtube' && video.estado === 'ENVIADO';
                             const uploadInfo = driveUploads[video.id];
                             const isDriveUploading = uploadInfo?.status === 'uploading';
                             const isDriveError = uploadInfo?.status === 'error';
@@ -1276,7 +1248,7 @@ export function CalendarView() {
                                 className={cn(
                                   "p-3 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 relative overflow-hidden",
                                   isHoverTarget
-                                    ? (dragHoverFileType === 'image' || effectivePlatform === 'youtube'
+                                    ? (dragHoverFileType === 'image' || acct?.plataforma?.toLowerCase() === 'youtube'
                                         ? "ring-2 ring-pink-400 bg-pink-950/60 border-pink-400 shadow-lg shadow-pink-500/20"
                                         : "ring-2 ring-orange-500 bg-orange-950/60 border-orange-500 shadow-lg shadow-orange-500/20")
                                     : isDriveUploading
@@ -1286,7 +1258,7 @@ export function CalendarView() {
                               >
                                 {isHoverTarget && (
                                   <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-30 border border-orange-500 rounded-xl">
-                                    {dragHoverFileType === 'image' || effectivePlatform === 'youtube' ? (
+                                    {dragHoverFileType === 'image' || acct?.plataforma?.toLowerCase() === 'youtube' ? (
                                       <div className="flex items-center gap-2 text-pink-300 font-bold text-xs">
                                         <ImageIcon size={16} className="animate-bounce" />
                                         <span>Soltar imagen para asignar portada / miniatura al Short</span>
@@ -1303,7 +1275,7 @@ export function CalendarView() {
                                   <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 relative"
                                     style={{ backgroundColor: `${video.thumbnail_color}33`, border: `1px solid ${video.thumbnail_color}66` }}
                                   >
-                                    {getPlatformIcon(effectivePlatform)}
+                                    {getPlatformIcon(acct?.plataforma)}
                                     {isDriveUploading && (
                                       <span className="absolute -top-1 -right-1 w-3 h-3 bg-orange-400 rounded-full animate-ping" />
                                     )}
@@ -1314,7 +1286,7 @@ export function CalendarView() {
                                         {format(new Date(video.programado_para), 'HH:mm')}
                                       </span>
                                       <span className="text-xs font-bold text-white truncate">{video.nombre_archivo || video.titulo}</span>
-                                      <span className="text-[10px] text-zinc-400">@{acct?.username || (effectivePlatform === 'youtube' ? 'startrading-clips' : 'cuenta')}</span>
+                                      <span className="text-[10px] text-zinc-400">@{acct?.username}</span>
                                     </div>
                                     <p className="text-[11px] text-zinc-300 line-clamp-1 max-w-lg">
                                       {video.descripcion_aprobada_ia}
