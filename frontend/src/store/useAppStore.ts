@@ -543,9 +543,41 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
       const seenVideoKeys = new Set<string>();
       const videos: Video[] = [];
+      const ytAccountFallback = accounts.find((a) => a.plataforma?.toLowerCase() === 'youtube');
+
       for (const v of rawVideos) {
         if (seenVideoKeys.has(v.id)) continue;
         seenVideoKeys.add(v.id);
+
+        // ── Auto-reconciliar y curar cuenta_id huérfana o desvinculada (soporte para cuentas nuevas) ──
+        let matchedAccount = accounts.find((a) => a.id === v.cuenta_id);
+        if (!matchedAccount && v.cuenta_id) {
+          const cleanVidCuenta = v.cuenta_id.trim().replace(/^@/, '').toLowerCase();
+          matchedAccount = accounts.find((a) => a.username.trim().replace(/^@/, '').toLowerCase() === cleanVidCuenta);
+        }
+
+        // Si sigue sin coincidir, verificar si es un Short / video de YouTube
+        const isYt =
+          matchedAccount?.plataforma?.toLowerCase() === 'youtube' ||
+          Boolean(v.titulo_youtube) ||
+          Boolean(v.nombre_archivo) ||
+          v.thumbnail_color === '#ef4444' ||
+          Boolean(v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be'))) ||
+          Boolean(v.titulo && v.titulo.toLowerCase().includes('#shorts')) ||
+          Boolean(v.descripcion_aprobada_ia && v.descripcion_aprobada_ia.toLowerCase().includes('#shorts'));
+
+        if (!matchedAccount && isYt && ytAccountFallback) {
+          matchedAccount = ytAccountFallback;
+        }
+
+        if (matchedAccount && v.cuenta_id !== matchedAccount.id) {
+          console.log(`[useAppStore] Auto-reparando cuenta_id de video "${v.titulo}" (${v.id}): "${v.cuenta_id}" -> "${matchedAccount.id}" (@${matchedAccount.username})`);
+          v.cuenta_id = matchedAccount.id;
+          db.from('publicaciones')
+            .update({ cuenta_id: matchedAccount.id })
+            .eq('id', v.id)
+            .then(() => {});
+        }
 
         if (monetizadoByPub.has(v.id)) {
           v.monetizado_en = monetizadoByPub.get(v.id);
@@ -682,9 +714,40 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
         const seenVideoKeys = new Set<string>();
         const videos: Video[] = [];
+        const accounts = get().accounts;
+        const ytAccountFallback = accounts.find((a) => a.plataforma?.toLowerCase() === 'youtube');
+
         for (const v of rawVideos) {
           if (seenVideoKeys.has(v.id)) continue;
           seenVideoKeys.add(v.id);
+
+          // ── Auto-reconciliar y curar cuenta_id huérfana o desvinculada (soporte para cuentas nuevas) ──
+          let matchedAccount = accounts.find((a) => a.id === v.cuenta_id);
+          if (!matchedAccount && v.cuenta_id) {
+            const cleanVidCuenta = v.cuenta_id.trim().replace(/^@/, '').toLowerCase();
+            matchedAccount = accounts.find((a) => a.username.trim().replace(/^@/, '').toLowerCase() === cleanVidCuenta);
+          }
+
+          const isYt =
+            matchedAccount?.plataforma?.toLowerCase() === 'youtube' ||
+            Boolean(v.titulo_youtube) ||
+            Boolean(v.nombre_archivo) ||
+            v.thumbnail_color === '#ef4444' ||
+            Boolean(v.post_url_publica && (v.post_url_publica.includes('youtube.com') || v.post_url_publica.includes('youtu.be'))) ||
+            Boolean(v.titulo && v.titulo.toLowerCase().includes('#shorts')) ||
+            Boolean(v.descripcion_aprobada_ia && v.descripcion_aprobada_ia.toLowerCase().includes('#shorts'));
+
+          if (!matchedAccount && isYt && ytAccountFallback) {
+            matchedAccount = ytAccountFallback;
+          }
+
+          if (matchedAccount && v.cuenta_id !== matchedAccount.id) {
+            v.cuenta_id = matchedAccount.id;
+            db.from('publicaciones')
+              .update({ cuenta_id: matchedAccount.id })
+              .eq('id', v.id)
+              .then(() => {});
+          }
 
           if (monetizadoByPub.has(v.id)) {
             v.monetizado_en = monetizadoByPub.get(v.id);
@@ -766,8 +829,26 @@ const useAppStoreBase = create<AppState>((set, get) => ({
   // ── Videos ────────────────────────────────────────────────────────────────
   addVideo: async (video) => {
     const db = getSupabase();
-    const account = get().accounts.find((a) => a.id === video.cuenta_id);
-    const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
+    const accounts = get().accounts;
+    let effectiveCuentaId = video.cuenta_id;
+    let account = accounts.find((a) => a.id === effectiveCuentaId);
+    if (!account && effectiveCuentaId) {
+      account = accounts.find(
+        (a) => a.username.trim().replace(/^@/, '').toLowerCase() === effectiveCuentaId.trim().replace(/^@/, '').toLowerCase()
+      );
+      if (account) effectiveCuentaId = account.id;
+    }
+    const isYouTube =
+      account?.plataforma?.toLowerCase() === 'youtube' ||
+      Boolean(video.titulo_youtube) ||
+      Boolean(video.nombre_archivo);
+
+    if (!account && isYouTube) {
+      account = accounts.find((a) => a.plataforma?.toLowerCase() === 'youtube');
+      if (account) effectiveCuentaId = account.id;
+    }
+
+    video.cuenta_id = effectiveCuentaId;
 
     const finalDesc = stripDescriptionTags(
       video.descripcion_aprobada_ia,
@@ -776,7 +857,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
     const row: any = {
       id: video.id,
-      cuenta_id: video.cuenta_id,
+      cuenta_id: effectiveCuentaId || video.cuenta_id,
       campana_id: video.campana_id || null,
       titulo: isYouTube ? (video.nombre_archivo || video.titulo) : video.titulo,
       descripcion_aprobada_ia: finalDesc,
@@ -830,6 +911,17 @@ const useAppStoreBase = create<AppState>((set, get) => ({
         row.campana_id = null;
         const res3 = await db.from('publicaciones').insert(row);
         insErr = res3.error;
+      }
+      // Reintento 3: Si falló por clave foránea de cuenta_id no existente
+      if (insErr && (insErr.message.includes('cuenta_id') || insErr.message.includes('foreign key'))) {
+        const fallbackAcc = accounts.find((a) => a.plataforma?.toLowerCase() === (isYouTube ? 'youtube' : 'tiktok')) || accounts[0];
+        if (fallbackAcc && row.cuenta_id !== fallbackAcc.id) {
+          console.warn('[addVideo] Reintentando inserción con cuenta fallback por restricción FK:', fallbackAcc.id);
+          row.cuenta_id = fallbackAcc.id;
+          video.cuenta_id = fallbackAcc.id;
+          const res4 = await db.from('publicaciones').insert(row);
+          insErr = res4.error;
+        }
       }
       if (insErr) {
         console.error('[addVideo] Fallo persistente insertando en Supabase publicaciones:', insErr.message);

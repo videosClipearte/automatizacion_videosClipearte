@@ -785,9 +785,10 @@ function ScheduleModalDialog() {
 
   const displayDateStr = format(targetDateObj, "EEEE, d 'de' MMMM yyyy", { locale: es });
 
-  // Optimización CPU (Problema 3): Pre-agrupar conteo de videos por fecha y cuenta en O(videos), recalculado SOLO si cambia 'videos'
+  // Optimización CPU (Problema 3): Pre-agrupar conteo de videos por fecha y cuenta en O(videos), recalculado SOLO si cambia 'videos' o 'accounts'
   const videosCountByDateAndAccount = useMemo(() => {
     const map = new Map<string, Record<string, number>>();
+    const accountMap = new Map(accounts.map((a) => [a.id, a]));
     for (const v of videos) {
       if (v.estado === 'CANCELADO' || !v.cuenta_id) continue;
       try {
@@ -799,13 +800,15 @@ function ScheduleModalDialog() {
           counts = {};
           map.set(vDateStr, counts);
         }
-        counts[v.cuenta_id] = (counts[v.cuenta_id] || 0) + 1;
+        const acc = accountMap.get(v.cuenta_id) || accounts.find(a => a.username.trim().replace(/^@/, '').toLowerCase() === (v.cuenta_id || '').trim().replace(/^@/, '').toLowerCase());
+        const resolvedAccId = acc?.id || v.cuenta_id;
+        counts[resolvedAccId] = (counts[resolvedAccId] || 0) + 1;
       } catch {
         // Ignorar fechas inválidas
       }
     }
     return map;
-  }, [videos]);
+  }, [videos, accounts]);
 
   const accountQuotaStats = useMemo(() => {
     const targetDateStr = currentFecha || (scheduleModalDate ? format(scheduleModalDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));

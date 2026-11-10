@@ -200,9 +200,7 @@ export default function CalendarPage() {
                               setSelectedAccountId(null);
                             } else {
                               setSelectedPlatform(plat.id);
-                              if (selectedAccount && selectedAccount.plataforma.toLowerCase() !== plat.id.toLowerCase()) {
-                                setSelectedAccountId(null);
-                              }
+                              setSelectedAccountId(null);
                             }
                           }}
                           className={cn(
@@ -253,7 +251,7 @@ export default function CalendarPage() {
                             key={acc.id}
                             onClick={() => {
                               setSelectedAccountId(acc.id);
-                              setSelectedPlatform(acc.plataforma);
+                              setSelectedPlatform(null);
                               setIsDropdownOpen(false);
                             }}
                             className={cn(
