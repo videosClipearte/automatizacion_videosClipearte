@@ -207,7 +207,7 @@ export default function IntegrationsPage() {
       return;
     }
 
-    const testMsg = `🚀 <b>Prueba de Conexión AutoPublish</b>\n━━━━━━━━━━━━━━━━━━━━\n✅ Bot enlazado correctamente desde Vercel/Supabase.\n🕒 <b>Hora:</b> ${new Date().toLocaleTimeString()}`;
+    const testMsg = `🚀 <b>AutoPublish</b> · ✅ Bot enlazado · 🕒 ${new Date().toLocaleTimeString()}`;
     const res = await sendTelegramMessage(telegramToken, targetChat, testMsg);
 
     setTestingTelegram(false);
@@ -837,7 +837,7 @@ END $$;`;
         </div>
         <button
           onClick={handleSaveAll}
-          className="px-5 py-2 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+          className="px-5 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-xs font-bold text-white shadow-lg shadow-orange-500/20 active:scale-95 transition-all hover:brightness-110"
         >
           Guardar Todas las Integraciones
         </button>
@@ -847,35 +847,35 @@ END $$;`;
         <motion.div
           initial={{ opacity: 0, y: -5 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2 shadow-sm"
+          className="p-3.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-200 text-xs flex items-center gap-2 shadow-sm"
         >
-          <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+          <CheckCircle2 size={15} className="text-orange-400 shrink-0" />
           <span>Todas las claves de API, base de datos y credenciales han sido guardadas y sincronizadas.</span>
         </motion.div>
       )}
 
       {/* ── CARD 1: BASE DE DATOS SUPABASE (NUEVA INTEGRACIÓN) ── */}
       <GlassCard>
-        <div className="flex items-center justify-between pb-4 border-b border-[var(--border)] mb-4">
+        <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 shrink-0">
               <Database size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white">Base de Datos Supabase (PostgreSQL)</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 font-semibold">
                   Almacenamiento y Scraping
                 </span>
               </div>
-              <p className="text-[11px] text-[var(--text-muted)]">
+              <p className="text-[11px] text-zinc-400">
                 Gestión y guardado de cuentas, publicaciones programadas y métricas extraídas por el scraper
               </p>
             </div>
           </div>
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border ${
             supabaseConnected
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              ? 'bg-orange-500/10 border-orange-500/20 text-orange-400'
               : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
           }`}>
             {supabaseConnected ? <CheckCircle size={12} /> : <XCircle size={12} />}
@@ -885,7 +885,7 @@ END $$;`;
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            <label className="text-xs font-semibold text-zinc-300 block mb-1">
               Project URL de Supabase
             </label>
             <input
@@ -897,7 +897,7 @@ END $$;`;
                 setSupabaseUrl(cleaned);
               }}
               placeholder="https://tuproyecto.supabase.co"
-              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent"
+              className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111]"
             />
             <p className="mt-1 text-[10px] text-amber-400/70">
               Solo la URL base, sin <code className="bg-amber-900/30 px-1 rounded">/rest/v1/</code> al final
@@ -905,7 +905,7 @@ END $$;`;
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            <label className="text-xs font-semibold text-zinc-300 block mb-1">
               Anon Key / Public API Key
             </label>
             <div className="relative">
@@ -914,12 +914,12 @@ END $$;`;
                 value={supabaseKey}
                 onChange={(e) => setSupabaseKey(e.target.value)}
                 placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                className="w-full glass rounded-xl px-3 py-2 pr-9 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent font-mono"
+                className="w-full rounded-xl px-3 py-2 pr-9 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111] font-mono"
               />
               <button
                 type="button"
                 onClick={() => setShowSupabaseKey(!showSupabaseKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
               >
                 {showSupabaseKey ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
@@ -927,13 +927,13 @@ END $$;`;
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-[var(--border)]">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/10">
           <button
             type="button"
             onClick={handleCopySql}
-            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl glass border border-[var(--border)] text-xs text-[var(--text-secondary)] hover:text-white transition-colors"
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/10 text-xs text-zinc-300 hover:text-white hover:bg-white/5 transition-colors"
           >
-            {copiedSql ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            {copiedSql ? <Check size={12} className="text-orange-400" /> : <Copy size={12} />}
             <span>{copiedSql ? '¡SQL Copiado!' : 'Copiar Script SQL de Tablas'}</span>
           </button>
 
@@ -942,7 +942,7 @@ END $$;`;
               type="button"
               onClick={handleSaveSupabase}
               disabled={savingSupabase}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl glass border border-emerald-500/30 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/10 transition-all"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl border border-orange-500/30 text-xs font-semibold text-orange-400 hover:bg-orange-500/10 transition-all"
             >
               {savingSupabase ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
               <span>Actualizar y Guardar Supabase</span>
@@ -952,7 +952,7 @@ END $$;`;
               type="button"
               onClick={handleTestSupabase}
               disabled={testingSupabase}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold hover:bg-emerald-500/30 transition-all disabled:opacity-50"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500/20 border border-orange-500/40 text-orange-200 text-xs font-bold hover:bg-orange-500/30 transition-all disabled:opacity-50"
             >
               {testingSupabase ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
               <span>Probar Conexión Supabase</span>
@@ -962,7 +962,7 @@ END $$;`;
               type="button"
               onClick={handleSyncFromSupabase}
               disabled={syncingFromSupabase}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all disabled:opacity-50 shadow-sm"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs font-bold hover:bg-amber-500/30 transition-all disabled:opacity-50 shadow-sm"
               title="Carga los valores guardados en la tabla de Supabase y rellena automáticamente Telegram, Gemini y Google Drive"
             >
               {syncingFromSupabase ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={13} />}
@@ -974,7 +974,7 @@ END $$;`;
         {supabaseFeedback && (
           <div className={`mt-3 p-2.5 rounded-xl border text-xs ${
             supabaseFeedback.success
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+              ? 'bg-orange-500/10 border-orange-500/20 text-orange-200'
               : 'bg-red-500/10 border-red-500/20 text-red-300'
           }`}>
             {supabaseFeedback.msg}
@@ -1003,7 +1003,7 @@ END $$;`;
           </div>
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border ${
             telegramConnected
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              ? 'bg-orange-500/10 border-orange-500/20 text-orange-400'
               : 'bg-red-500/10 border-red-500/20 text-red-400'
           }`}>
             {telegramConnected ? <CheckCircle size={12} /> : <XCircle size={12} />}
@@ -1169,10 +1169,10 @@ END $$;`;
             <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)] flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-cyan-400">/metas</span>
-                  <span className="text-[10px] text-[var(--text-muted)]">o /faltantes</span>
+                  <span className="font-mono text-xs font-bold text-orange-400">/metas</span>
+                  <span className="text-[10px] text-zinc-400">o /faltantes</span>
                 </div>
-                <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
+                <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
                   Reporta cuántos videos faltan publicar hoy en cada red social para cumplir la cuota diaria.
                 </p>
               </div>
@@ -1180,20 +1180,20 @@ END $$;`;
                 type="button"
                 onClick={() => handleSimulateCommand('/metas')}
                 disabled={simulatingCmd !== null}
-                className="mt-2 text-[10px] font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 rounded-md py-1 px-2 hover:bg-cyan-500/20 transition-all flex items-center justify-center gap-1"
+                className="mt-2 text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-md py-1 px-2 hover:bg-orange-500/20 transition-all flex items-center justify-center gap-1"
               >
                 {simulatingCmd === '/metas' ? <Loader2 size={10} className="animate-spin" /> : '🧪'}
                 <span>Probar respuesta /metas</span>
               </button>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-[var(--border)] flex flex-col justify-between">
+            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/10 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-emerald-400">/siguiente</span>
-                  <span className="text-[10px] text-[var(--text-muted)]">o /proximo</span>
+                  <span className="font-mono text-xs font-bold text-orange-400">/siguiente</span>
+                  <span className="text-[10px] text-zinc-400">o /proximo</span>
                 </div>
-                <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-relaxed">
+                <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
                   Envía la ficha del próximo video con link de Drive y su descripción aislada en 2 mensajes.
                 </p>
               </div>
@@ -1201,7 +1201,7 @@ END $$;`;
                 type="button"
                 onClick={() => handleSimulateCommand('/siguiente')}
                 disabled={simulatingCmd !== null}
-                className="mt-2 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md py-1 px-2 hover:bg-emerald-500/20 transition-all flex items-center justify-center gap-1"
+                className="mt-2 text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-md py-1 px-2 hover:bg-orange-500/20 transition-all flex items-center justify-center gap-1"
               >
                 {simulatingCmd === '/siguiente' ? <Loader2 size={10} className="animate-spin" /> : '🧪'}
                 <span>Probar respuesta /siguiente</span>
@@ -1210,16 +1210,16 @@ END $$;`;
           </div>
 
           {commandTestOutput && (
-            <div className="mt-2.5 p-3 rounded-xl bg-white/[0.03] border border-blue-500/30 text-xs">
+            <div className="mt-2.5 p-3 rounded-xl bg-white/[0.03] border border-orange-500/30 text-xs">
               <div className="flex items-center justify-between mb-1 pb-1 border-b border-white/[0.06]">
-                <span className="font-bold text-blue-400 flex items-center gap-1">
+                <span className="font-bold text-orange-400 flex items-center gap-1">
                   <span>🤖 Respuesta simulada de:</span>
                   <code className="text-white font-mono bg-white/10 px-1 rounded">{commandTestOutput.cmd}</code>
                 </span>
                 <button
                   type="button"
                   onClick={() => setCommandTestOutput(null)}
-                  className="text-[10px] text-[var(--text-muted)] hover:text-white"
+                  className="text-[10px] text-zinc-400 hover:text-white"
                 >
                   Cerrar
                 </button>
@@ -1234,7 +1234,7 @@ END $$;`;
             <div
               className={`mt-2.5 p-2 rounded-xl border text-[11px] leading-relaxed ${
                 webhookFeedback.success
-                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                  ? 'bg-orange-500/10 border-orange-500/25 text-orange-200'
                   : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
               }`}
             >
@@ -1246,7 +1246,7 @@ END $$;`;
 
       {/* ── CARD 3: GOOGLE GEMINI IA ── */}
       <GlassCard>
-        <div className="flex items-center justify-between pb-4 border-b border-[var(--border)] mb-4">
+        <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
               <Zap size={20} />
@@ -1258,12 +1258,12 @@ END $$;`;
                   Generación de Copys
                 </span>
               </div>
-              <p className="text-[11px] text-[var(--text-muted)]">Redacción automática de descripciones y hashtags con IA</p>
+              <p className="text-[11px] text-zinc-400">Redacción automática de descripciones y hashtags con IA</p>
             </div>
           </div>
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border ${
             geminiConnected
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              ? 'bg-orange-500/10 border-orange-500/20 text-orange-400'
               : 'bg-red-500/10 border-red-500/20 text-red-400'
           }`}>
             {geminiConnected ? <CheckCircle size={12} /> : <XCircle size={12} />}
@@ -1377,24 +1377,24 @@ END $$;`;
 
       {/* ── CARD 4: GOOGLE DRIVE API ── */}
       <GlassCard>
-        <div className="flex items-center justify-between pb-4 border-b border-[var(--border)] mb-4">
+        <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 shrink-0">
               <HardDrive size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white">Google Drive API</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 font-semibold">
                   Almacenamiento de Videos
                 </span>
               </div>
-              <p className="text-[11px] text-[var(--text-muted)]">Repositorio central de videos MP4 para Playwright</p>
+              <p className="text-[11px] text-zinc-400">Repositorio central de videos MP4 para Playwright</p>
             </div>
           </div>
           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border ${
             driveConnected
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              ? 'bg-orange-500/10 border-orange-500/20 text-orange-400'
               : 'bg-red-500/10 border-red-500/20 text-red-400'
           }`}>
             {driveConnected ? <CheckCircle size={12} /> : <XCircle size={12} />}
@@ -1409,13 +1409,13 @@ END $$;`;
               <span>⚠️ Requisito de Google Cloud (Evitar Error 401: invalid_client / no registered origin)</span>
             </span>
           </div>
-          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
             Google exige que registres el dominio exacto de tu aplicación para autorizar la conexión con Google Drive.
           </p>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 rounded-lg bg-black/40 border border-amber-500/20">
             <div className="min-w-0">
-              <span className="text-[10px] text-[var(--text-muted)] block">Tu Origen actual para agregar en Google Cloud:</span>
-              <span className="text-xs font-mono font-bold text-cyan-300 truncate block">
+              <span className="text-[10px] text-zinc-400 block">Tu Origen actual para agregar en Google Cloud:</span>
+              <span className="text-xs font-mono font-bold text-orange-300 truncate block">
                 {currentOrigin || 'https://automatizacion-videos-clipearte.vercel.app'}
               </span>
             </div>
@@ -1435,7 +1435,7 @@ END $$;`;
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            <label className="text-xs font-semibold text-zinc-300 block mb-1">
               Client ID (OAuth 2.0)
             </label>
             <input
@@ -1443,12 +1443,12 @@ END $$;`;
               value={driveClientId}
               onChange={(e) => setDriveClientId(e.target.value)}
               placeholder="xxxx.apps.googleusercontent.com"
-              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent"
+              className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111]"
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            <label className="text-xs font-semibold text-zinc-300 block mb-1">
               Client Secret
             </label>
             <div className="relative">
@@ -1457,12 +1457,12 @@ END $$;`;
                 value={driveClientSecret}
                 onChange={(e) => setDriveClientSecret(e.target.value)}
                 placeholder="GOCSPX-..."
-                className="w-full glass rounded-xl px-3 py-2 pr-9 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent font-mono"
+                className="w-full rounded-xl px-3 py-2 pr-9 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111] font-mono"
               />
               <button
                 type="button"
                 onClick={() => setShowDriveSecret(!showDriveSecret)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
               >
                 {showDriveSecret ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
@@ -1470,7 +1470,7 @@ END $$;`;
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            <label className="text-xs font-semibold text-zinc-300 block mb-1">
               ID de Carpeta Destino
             </label>
             <input
@@ -1478,16 +1478,16 @@ END $$;`;
               value={driveFolderId}
               onChange={(e) => setDriveFolderId(e.target.value)}
               placeholder="1BxiMVs0XRA..."
-              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent font-mono"
+              className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111] font-mono"
             />
           </div>
         </div>
 
         {/* Política de Eliminación y Retención en Google Drive */}
-        <div className="p-3.5 rounded-xl border border-cyan-500/20 bg-cyan-950/20 mb-4 space-y-3">
+        <div className="p-3.5 rounded-xl border border-orange-500/20 bg-orange-950/20 mb-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Trash2 size={15} className="text-cyan-400" />
+              <Trash2 size={15} className="text-orange-400" />
               <span className="text-xs font-bold text-white">
                 Eliminación Automática de Drive tras Confirmación y Monetización
               </span>
@@ -1499,19 +1499,19 @@ END $$;`;
                 onChange={(e) => setDriveAutoDelete(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+              <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
             </label>
           </div>
 
-          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-            Cuando una publicación ha sido <strong className="text-white">confirmada como publicada</strong> y además ha sido <strong className="text-emerald-300">monetizada en Clipearte</strong>, el archivo de video se eliminará automáticamente de Google Drive después de los días configurados (por defecto <strong className="text-cyan-300">5 días</strong>) para aprovechar mejor el espacio disponible.
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
+            Cuando una publicación ha sido <strong className="text-white">confirmada como publicada</strong> y además ha sido <strong className="text-orange-300">monetizada en Clipearte</strong>, el archivo de video se eliminará automáticamente de Google Drive después de los días configurados (por defecto <strong className="text-orange-300">5 días</strong>) para aprovechar mejor el espacio disponible.
           </p>
 
           {driveAutoDelete && (
-            <div className="space-y-2.5 pt-2 border-t border-cyan-500/15">
+            <div className="space-y-2.5 pt-2 border-t border-orange-500/15">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                  <Clock size={13} className="text-cyan-400" />
+                <div className="flex items-center gap-1.5 text-xs text-zinc-300">
+                  <Clock size={13} className="text-orange-400" />
                   <span>Días después de confirmada y monetizada para eliminar de Drive:</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1524,9 +1524,9 @@ END $$;`;
                       const days = Math.max(1, Math.min(90, Number(e.target.value) || 5));
                       setDriveRetentionHours(days * 24);
                     }}
-                    className="w-20 glass rounded-xl px-3 py-1.5 text-xs text-cyan-300 border border-cyan-500/30 focus:border-cyan-400 outline-none bg-[var(--bg-elevated)] font-bold text-center"
+                    className="w-20 rounded-xl px-3 py-1.5 text-xs text-orange-300 border border-orange-500/30 focus:border-orange-400 outline-none bg-[#121111] font-bold text-center"
                   />
-                  <span className="text-xs text-cyan-300 font-semibold">días</span>
+                  <span className="text-xs text-orange-300 font-semibold">días</span>
                 </div>
               </div>
 
@@ -1547,8 +1547,8 @@ END $$;`;
                       onClick={() => setDriveRetentionHours(preset.days * 24)}
                       className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border ${
                         isActive
-                          ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200 font-bold'
-                          : 'bg-white/5 border-white/10 text-[var(--text-muted)] hover:text-white hover:bg-white/10'
+                          ? 'bg-orange-500/25 border-orange-400/60 text-orange-200 font-bold'
+                          : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
                       }`}
                     >
                       {preset.label}
@@ -1560,13 +1560,13 @@ END $$;`;
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-[var(--border)]">
-          <label className="flex items-center gap-2 cursor-pointer text-xs text-[var(--text-secondary)]">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/10">
+          <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
             <input
               type="checkbox"
               checked={driveAutoDownload}
               onChange={(e) => setDriveAutoDownload(e.target.checked)}
-              className="rounded accent-cyan-500 w-4 h-4 cursor-pointer"
+              className="rounded accent-orange-500 w-4 h-4 cursor-pointer"
             />
             <span>Descargar videos a caché local para Playwright</span>
           </label>
@@ -1576,7 +1576,7 @@ END $$;`;
               type="button"
               onClick={handleSaveDrive}
               disabled={savingDrive}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl glass border border-cyan-500/30 text-xs font-semibold text-cyan-400 hover:bg-cyan-500/10 transition-all"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl border border-orange-500/30 text-xs font-semibold text-orange-400 hover:bg-orange-500/10 transition-all"
             >
               {savingDrive ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
               <span>Actualizar Drive</span>
@@ -1586,7 +1586,7 @@ END $$;`;
               type="button"
               onClick={handleConnectDriveOAuth}
               disabled={connectingDriveOAuth}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/25 transition-all disabled:opacity-50"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-orange-500/15 border border-orange-500/30 text-xs font-semibold text-orange-300 hover:bg-orange-500/25 transition-all disabled:opacity-50"
             >
               {connectingDriveOAuth ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
               <span>{driveOAuthToken ? 'Re-conectar Drive' : 'Conectar Google Drive'}</span>
@@ -1596,7 +1596,7 @@ END $$;`;
               type="button"
               onClick={handleTestDrive}
               disabled={testingDrive}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all disabled:opacity-50"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-orange-500/20 border border-orange-500/40 text-orange-200 text-xs font-bold hover:bg-orange-500/30 transition-all disabled:opacity-50"
             >
               {testingDrive ? <Loader2 size={12} className="animate-spin" /> : <FolderCheck size={12} />}
               <span>Comprobar Carpeta</span>
@@ -1607,7 +1607,7 @@ END $$;`;
         {driveFeedback && (
           <div className={`mt-3 p-2.5 rounded-xl border text-xs ${
             driveFeedback.success
-              ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-300'
+              ? 'bg-orange-500/10 border-orange-500/20 text-orange-200'
               : 'bg-red-500/10 border-red-500/20 text-red-300'
           }`}>
             {driveFeedback.msg}
@@ -1708,7 +1708,7 @@ END $$;`;
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 text-xs font-semibold transition-all"
                 title="Rellena Client ID y Client Secret con los mismos valores de Google Drive"
               >
-                <Copy size={12} className="text-cyan-400" />
+                <Copy size={12} className="text-orange-400" />
                 <span>Usar las mismas credenciales de Drive</span>
               </button>
             )}
@@ -1729,7 +1729,7 @@ END $$;`;
           {youtubeFeedback && (
             <div className={`p-2.5 rounded-xl border text-xs ${
               youtubeFeedback.success
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                ? 'bg-orange-500/10 border-orange-500/20 text-orange-200'
                 : 'bg-red-500/10 border-red-500/20 text-red-300'
             }`}>
               {youtubeFeedback.msg}
@@ -1751,8 +1751,8 @@ END $$;`;
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
                     clipearteActivo
-                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                      : 'bg-slate-500/15 text-slate-300 border-slate-500/30'
+                      ? 'bg-orange-500/15 text-orange-300 border-orange-500/30'
+                      : 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30'
                   }`}
                 >
                   {clipearteActivo ? 'Sistema ACTIVO' : 'Sistema INACTIVO (Apagado)'}
@@ -1849,15 +1849,15 @@ END $$;`;
                 min="1"
                 value={clipearteVistasYoutube}
                 onChange={(e) => setClipearteVistasYoutube(Math.max(1, Number(e.target.value) || 1000))}
-                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#0d1422] border border-white/15 focus:border-red-500/60 focus:outline-none font-mono text-white"
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#121111] border border-white/15 focus:border-red-500/60 focus:outline-none font-mono text-white"
               />
-              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              <p className="text-[10px] text-zinc-400 mt-1">
                 Por defecto: <b>1,000 vistas</b> para auto-monetizar Shorts de YouTube.
               </p>
             </div>
 
             <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10">
-              <label className="text-xs font-bold text-cyan-300 block mb-1">
+              <label className="text-xs font-bold text-orange-300 block mb-1">
                 Vistas Mínimas en Otras Redes
               </label>
               <input
@@ -1865,9 +1865,9 @@ END $$;`;
                 min="1"
                 value={clipearteVistasOtras}
                 onChange={(e) => setClipearteVistasOtras(Math.max(1, Number(e.target.value) || 700))}
-                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#0d1422] border border-white/15 focus:border-cyan-500/60 focus:outline-none font-mono text-white"
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#121111] border border-white/15 focus:border-orange-500/60 focus:outline-none font-mono text-white"
               />
-              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              <p className="text-[10px] text-zinc-400 mt-1">
                 Por defecto: <b>700 vistas</b> para TikTok, Instagram o Facebook.
               </p>
             </div>
@@ -1881,9 +1881,9 @@ END $$;`;
                 min="1"
                 value={clipearteHorasLimite}
                 onChange={(e) => setClipearteHorasLimite(Math.max(1, Number(e.target.value) || 48))}
-                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#0d1422] border border-white/15 focus:border-amber-500/60 focus:outline-none font-mono text-white"
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-[#121111] border border-white/15 focus:border-amber-500/60 focus:outline-none font-mono text-white"
               />
-              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              <p className="text-[10px] text-zinc-400 mt-1">
                 Si pasa este tiempo sin llegar a las vistas, se monetiza con el botón manual.
               </p>
             </div>
@@ -1894,7 +1894,7 @@ END $$;`;
               type="button"
               onClick={handleSaveClipearte}
               disabled={savingClipearte}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass border border-rose-500/30 text-xs font-semibold text-rose-300 hover:bg-rose-500/10 transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-orange-500/30 text-xs font-semibold text-orange-300 hover:bg-orange-500/10 transition-all disabled:opacity-50"
             >
               {savingClipearte ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
               <span>Guardar Configuración Clipearte</span>
@@ -1904,7 +1904,7 @@ END $$;`;
               type="button"
               onClick={handleTestClipearte}
               disabled={testingClipearte}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 hover:bg-rose-500/30 text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500/20 border border-orange-500/40 text-orange-200 hover:bg-orange-500/30 text-xs font-bold transition-all disabled:opacity-50 shadow-sm"
             >
               {testingClipearte ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
               <span>Probar Conexión con Clipearte</span>
@@ -1915,7 +1915,7 @@ END $$;`;
             <div
               className={`p-2.5 rounded-xl border text-xs ${
                 clipearteFeedback.success
-                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                  ? 'bg-orange-500/10 border-orange-500/20 text-orange-200'
                   : 'bg-red-500/10 border-red-500/20 text-red-300'
               }`}
             >

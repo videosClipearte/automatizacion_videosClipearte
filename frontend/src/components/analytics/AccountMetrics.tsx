@@ -6,7 +6,7 @@ import { Eye, DollarSign, ChevronDown, Check, Globe, Send, Play, BarChart2 } fro
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { formatViews, calcGanancias, getPlatformColor } from '@/lib/utils';
+import { formatViews, calcGanancias, getEffectiveRpm, getPlatformColor } from '@/lib/utils';
 
 const STATUS_COLORS: Record<string, string> = {
   PROGRAMADO: '#a78bfa',
@@ -49,7 +49,7 @@ export function AccountMetrics() {
   // Earnings from all campaigns associated
   const totalEarnings = accountVideos.reduce((sum, v) => {
     const camp = campaigns.find(c => c.id === v.campana_id);
-    const rate = camp?.tasa_pago_por_mil_vistas ?? 0;
+    const rate = getEffectiveRpm(camp, account?.plataforma);
     return sum + parseFloat(calcGanancias(v.vistas_obtenidas, rate));
   }, 0);
 
@@ -81,14 +81,14 @@ export function AccountMetrics() {
       <div>
         {/* Título ubicado estrictamente ENCIMA del selector para evitar colisiones */}
         <div className="flex items-center gap-2 pb-2">
-          <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 shrink-0">
             <BarChart2 size={14} />
           </div>
           <div>
             <h3 className="text-sm font-bold text-white tracking-wide">
               Métricas por Cuenta
             </h3>
-            <p className="text-[10px] text-[var(--text-muted)]">Rendimiento por red social</p>
+            <p className="text-[10px] text-zinc-400">Rendimiento por red social</p>
           </div>
         </div>
 
@@ -97,7 +97,7 @@ export function AccountMetrics() {
           <button
             type="button"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-xl glass border border-[var(--border)] hover:border-emerald-500/40 text-xs text-white transition-all shadow-sm active:scale-[0.99]"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-white/10 hover:border-orange-500/40 text-xs text-white transition-all shadow-sm active:scale-[0.99] bg-[#121111]"
           >
             <div className="flex items-center gap-2.5 truncate">
               <div
@@ -109,14 +109,14 @@ export function AccountMetrics() {
               <span className="font-semibold text-white truncate text-xs">
                 @{account?.username ?? 'Seleccionar cuenta'}
               </span>
-              <span className="text-[10px] text-[var(--text-muted)] capitalize">
+              <span className="text-[10px] text-zinc-400 capitalize">
                 ({account?.plataforma})
               </span>
             </div>
             <ChevronDown
               size={13}
-              className={`text-[var(--text-muted)] transition-transform duration-200 shrink-0 ${
-                isDropdownOpen ? 'rotate-180 text-emerald-400' : ''
+              className={`text-zinc-400 transition-transform duration-200 shrink-0 ${
+                isDropdownOpen ? 'rotate-180 text-orange-400' : ''
               }`}
             />
           </button>
@@ -129,10 +129,10 @@ export function AccountMetrics() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 4, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute left-0 right-0 mt-1.5 glass-strong border border-[var(--border-strong)] rounded-xl shadow-2xl p-1 z-50 backdrop-blur-xl"
+                className="absolute left-0 right-0 mt-1.5 border border-white/10 rounded-xl shadow-2xl p-1 z-50 backdrop-blur-xl bg-[#161414]/95"
               >
-                <div className="px-2 py-1 border-b border-[var(--border)] mb-1">
-                  <p className="text-[9px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                <div className="px-2 py-1 border-b border-white/10 mb-1">
+                  <p className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">
                     Seleccionar Cuenta de Redes
                   </p>
                 </div>
@@ -154,8 +154,8 @@ export function AccountMetrics() {
                         }}
                         className={`w-full flex items-center justify-between p-2 rounded-lg text-xs transition-all ${
                           isSelected
-                            ? 'bg-emerald-500/15 border border-emerald-500/30 text-white'
-                            : 'hover:bg-white/5 text-[var(--text-secondary)] hover:text-white border border-transparent'
+                            ? 'bg-orange-500/15 border border-orange-500/30 text-white'
+                            : 'hover:bg-white/5 text-zinc-300 hover:text-white border border-transparent'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -166,13 +166,13 @@ export function AccountMetrics() {
                             <Icon size={12} style={{ color }} />
                           </div>
                           <span className="font-semibold text-white truncate text-xs">@{acc.username}</span>
-                          <span className="text-[10px] text-[var(--text-muted)] capitalize">({acc.plataforma})</span>
+                          <span className="text-[10px] text-zinc-400 capitalize">({acc.plataforma})</span>
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-[var(--text-muted)]">{vCount} vids</span>
+                          <span className="text-[10px] text-zinc-400">{vCount} vids</span>
                           {isSelected && (
-                            <Check size={13} className="text-emerald-400 shrink-0" />
+                            <Check size={13} className="text-orange-400 shrink-0" />
                           )}
                         </div>
                       </button>
@@ -194,31 +194,31 @@ export function AccountMetrics() {
             }}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-medium text-[var(--text-muted)]">Vistas</span>
+              <span className="text-[10px] font-medium text-zinc-400">Vistas</span>
               <Eye size={11} style={{ color: platformColor }} />
             </div>
             <p className="text-lg font-black text-white tracking-tight leading-tight">
               {formatViews(totalViews)}
             </p>
-            <p className="text-[9px] text-[var(--text-muted)]">Totales reales</p>
+            <p className="text-[9px] text-zinc-400">Totales reales</p>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 shadow-sm">
+          <div className="p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/25 shadow-sm">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-medium text-[var(--text-muted)]">Ganancias</span>
-              <DollarSign size={11} className="text-emerald-400" />
+              <span className="text-[10px] font-medium text-zinc-400">Ganancias</span>
+              <DollarSign size={11} className="text-orange-400" />
             </div>
-            <p className="text-lg font-black gradient-text tracking-tight leading-tight">
+            <p className="text-lg font-black text-orange-400 tracking-tight leading-tight">
               ${totalEarnings.toFixed(2)}
             </p>
-            <p className="text-[9px] text-[var(--text-muted)]">Estimadas RPM</p>
+            <p className="text-[9px] text-zinc-400">Estimadas RPM</p>
           </div>
         </div>
 
         {/* Mini status pills */}
-        <div className="grid grid-cols-3 gap-1 py-1.5 px-2 rounded-lg bg-white/[0.02] border border-[var(--border)] text-center mb-2">
+        <div className="grid grid-cols-3 gap-1 py-1.5 px-2 rounded-lg bg-white/[0.02] border border-white/10 text-center mb-2">
           <div>
-            <p className="text-[11px] font-bold text-emerald-400 font-mono">{totalPublicados}</p>
+            <p className="text-[11px] font-bold text-orange-400 font-mono">{totalPublicados}</p>
             <p className="text-[8px] text-[var(--text-muted)] uppercase tracking-wider">Publicados</p>
           </div>
           <div className="border-x border-[var(--border)]">

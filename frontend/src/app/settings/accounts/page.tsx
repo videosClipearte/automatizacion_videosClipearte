@@ -390,7 +390,7 @@ export default function AccountsPage() {
             setShowAddForm(!showAddForm);
             setEditingAccountId(null);
           }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl btn-gradient text-xs font-semibold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl btn-gradient text-xs font-semibold shadow-lg shadow-orange-500/20 active:scale-95 transition-all"
         >
           {showAddForm ? <X size={14} /> : <Plus size={14} />}
           <span>{showAddForm ? 'Cerrar' : 'Nueva Cuenta'}</span>
@@ -401,9 +401,9 @@ export default function AccountsPage() {
         <motion.div
           initial={{ opacity: 0, y: -5 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2 shadow-sm"
+          className="p-3.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs flex items-center gap-2 shadow-sm"
         >
-          <Check size={14} className="shrink-0 text-emerald-400" />
+          <Check size={14} className="shrink-0 text-orange-400" />
           <span>{feedback}</span>
         </motion.div>
       )}
@@ -419,7 +419,7 @@ export default function AccountsPage() {
           >
             <GlassCard>
               <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-                <Sparkles size={14} className="text-emerald-400" />
+                <Sparkles size={14} className="text-orange-400" />
                 <span>Vincular Nueva Cuenta y Configurar Meta Diaria</span>
               </h3>
               <form onSubmit={handleCreateAccount} className="space-y-4">
@@ -433,7 +433,7 @@ export default function AccountsPage() {
                       value={newUsername}
                       onChange={(e) => setNewUsername(e.target.value)}
                       placeholder="ej: mi_marca"
-                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent placeholder:text-[var(--text-muted)]"
+                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-orange-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)]"
                       required
                     />
                   </div>
@@ -445,18 +445,18 @@ export default function AccountsPage() {
                     <select
                       value={newPlatform}
                       onChange={(e) => setNewPlatform(e.target.value as Platform)}
-                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent"
+                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-orange-500/60 outline-none bg-transparent"
                     >
-                      <option value="instagram" className="bg-[#12121e]">Instagram</option>
-                      <option value="tiktok" className="bg-[#12121e]">TikTok</option>
-                      <option value="facebook" className="bg-[#12121e]">Facebook</option>
-                      <option value="youtube" className="bg-[#12121e]">YouTube</option>
+                      <option value="instagram" className="bg-[#161414]">Instagram</option>
+                      <option value="tiktok" className="bg-[#161414]">TikTok</option>
+                      <option value="facebook" className="bg-[#161414]">Facebook</option>
+                      <option value="youtube" className="bg-[#161414]">YouTube</option>
                     </select>
                   </div>
 
                   <div>
                     <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5 mb-1.5">
-                      <Target size={12} className="text-emerald-400" />
+                      <Target size={12} className="text-orange-400" />
                       <span>Meta Diaria (Videos/día)</span>
                     </label>
                     <input
@@ -465,7 +465,7 @@ export default function AccountsPage() {
                       max="30"
                       value={newTargetPerDay}
                       onChange={(e) => setNewTargetPerDay(Number(e.target.value))}
-                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent"
+                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-orange-500/60 outline-none bg-transparent"
                       required
                     />
                   </div>
@@ -479,7 +479,7 @@ export default function AccountsPage() {
                       value={newProfileUrl}
                       onChange={(e) => setNewProfileUrl(e.target.value)}
                       placeholder="https://..."
-                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent placeholder:text-[var(--text-muted)]"
+                      className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-orange-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)]"
                     />
                   </div>
                 </div>
@@ -490,7 +490,7 @@ export default function AccountsPage() {
                       type="checkbox"
                       checked={newActivo}
                       onChange={(e) => setNewActivo(e.target.checked)}
-                      className="rounded accent-emerald-500 w-4 h-4 cursor-pointer"
+                      className="rounded accent-orange-500 w-4 h-4 cursor-pointer"
                     />
                     <span>Sesión de Playwright activa para publicación</span>
                   </label>
@@ -505,7 +505,7 @@ export default function AccountsPage() {
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-1.5 rounded-xl btn-gradient text-xs font-bold shadow-md shadow-emerald-500/20"
+                      className="px-5 py-1.5 rounded-xl btn-gradient text-xs font-bold shadow-md shadow-orange-500/20"
                     >
                       Guardar Cuenta
                     </button>
@@ -546,7 +546,7 @@ export default function AccountsPage() {
                   <div className="space-y-3 p-1">
                     <div className="flex items-center justify-between pb-2 border-b border-[var(--border)]">
                       <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <Edit3 size={13} className="text-cyan-400" />
+                        <Edit3 size={13} className="text-orange-400" />
                         <span>Editando Cuenta y Meta: @{account.username}</span>
                       </span>
                       <button
@@ -566,7 +566,7 @@ export default function AccountsPage() {
                           type="text"
                           value={editUsername}
                           onChange={(e) => setEditUsername(e.target.value)}
-                          className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent"
+                          className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-[var(--border)] focus:border-orange-500/60 outline-none bg-transparent"
                         />
                       </div>
 
@@ -577,18 +577,18 @@ export default function AccountsPage() {
                         <select
                           value={editPlatform}
                           onChange={(e) => setEditPlatform(e.target.value as Platform)}
-                          className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent"
+                          className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-[var(--border)] focus:border-orange-500/60 outline-none bg-transparent"
                         >
-                          <option value="instagram" className="bg-[#12121e]">Instagram</option>
-                          <option value="tiktok" className="bg-[#12121e]">TikTok</option>
-                          <option value="facebook" className="bg-[#12121e]">Facebook</option>
-                          <option value="youtube" className="bg-[#12121e]">YouTube</option>
+                          <option value="instagram" className="bg-[#161414]">Instagram</option>
+                          <option value="tiktok" className="bg-[#161414]">TikTok</option>
+                          <option value="facebook" className="bg-[#161414]">Facebook</option>
+                          <option value="youtube" className="bg-[#161414]">YouTube</option>
                         </select>
                       </div>
 
                       <div>
                         <label className="text-[11px] font-semibold text-[var(--text-secondary)] flex items-center gap-1 mb-1">
-                          <Target size={11} className="text-emerald-400" />
+                          <Target size={11} className="text-orange-400" />
                           <span>Meta Diaria (Videos/día)</span>
                         </label>
                         <input
@@ -597,7 +597,7 @@ export default function AccountsPage() {
                           max="30"
                           value={editTargetPerDay}
                           onChange={(e) => setEditTargetPerDay(Number(e.target.value))}
-                          className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent font-bold text-emerald-400"
+                          className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-[var(--border)] focus:border-orange-500/60 outline-none bg-transparent font-bold text-orange-400"
                         />
                       </div>
 
@@ -609,7 +609,7 @@ export default function AccountsPage() {
                           type="url"
                           value={editProfileUrl}
                           onChange={(e) => setEditProfileUrl(e.target.value)}
-                          className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent"
+                          className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-[var(--border)] focus:border-orange-500/60 outline-none bg-transparent"
                         />
                       </div>
                     </div>
@@ -620,7 +620,7 @@ export default function AccountsPage() {
                           type="checkbox"
                           checked={editActivo}
                           onChange={(e) => setEditActivo(e.target.checked)}
-                          className="rounded accent-emerald-500 w-4 h-4 cursor-pointer"
+                          className="rounded accent-orange-500 w-4 h-4 cursor-pointer"
                         />
                         <span>Sesión activa</span>
                       </label>
@@ -669,7 +669,7 @@ export default function AccountsPage() {
                             title="Clic para cambiar estado de sesión"
                             className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
                               account.activo
-                                ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
+                                ? 'bg-orange-500/10 border-orange-500/25 text-orange-400'
                                 : 'bg-red-500/10 border-red-500/25 text-red-400'
                             }`}
                           >
@@ -680,7 +680,7 @@ export default function AccountsPage() {
 
                         {/* Meta Diaria Progress */}
                         <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs">
-                          <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                          <div className="flex items-center gap-1.5 text-orange-400 font-semibold">
                             <Target size={13} />
                             <span>Meta: {targetCount} videos/día</span>
                           </div>
@@ -688,7 +688,7 @@ export default function AccountsPage() {
                           <div className="flex items-center gap-2">
                             <div className="w-24 h-1.5 rounded-full bg-white/10 overflow-hidden">
                               <div
-                                className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all"
+                                className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all"
                                 style={{ width: `${percent}%` }}
                               />
                             </div>
@@ -702,7 +702,7 @@ export default function AccountsPage() {
                               (Faltan {missingCount} video{missingCount > 1 ? 's' : ''})
                             </span>
                           ) : (
-                            <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                            <span className="text-[11px] text-orange-400 font-semibold flex items-center gap-1">
                               <Check size={11} /> Meta cumplida
                             </span>
                           )}
@@ -739,12 +739,12 @@ export default function AccountsPage() {
                                 onClick={() => handleTestRenewToken(account)}
                                 disabled={testingAccountId === account.id}
                                 title="Probar renovación de token con Google ahora mismo"
-                                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold hover:bg-emerald-500/25 transition-all disabled:opacity-50"
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 text-[10px] font-bold hover:bg-orange-500/25 transition-all disabled:opacity-50"
                               >
                                 {testingAccountId === account.id ? (
-                                  <Loader2 size={11} className="animate-spin text-emerald-400" />
+                                  <Loader2 size={11} className="animate-spin text-orange-400" />
                                 ) : (
-                                  <RefreshCw size={11} className="text-emerald-400" />
+                                  <RefreshCw size={11} className="text-orange-400" />
                                 )}
                                 <span>{testingAccountId === account.id ? 'Renovando…' : 'Probar Renovación'}</span>
                               </button>
@@ -794,7 +794,7 @@ export default function AccountsPage() {
                       <button
                         onClick={() => handleStartEdit(account)}
                         title="Editar cuenta y meta diaria"
-                        className="w-8 h-8 rounded-xl glass border border-[var(--border)] flex items-center justify-center text-[var(--text-secondary)] hover:text-white hover:border-cyan-500/40 transition-colors"
+                        className="w-8 h-8 rounded-xl border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white hover:border-orange-500/40 transition-colors"
                       >
                         <Edit3 size={13} />
                       </button>
@@ -863,31 +863,31 @@ export default function AccountsPage() {
                 {/* Instrucciones principales */}
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
                   <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Sparkles size={12} className="text-cyan-400" />
+                    <Sparkles size={12} className="text-orange-400" />
                     Cómo obtener los tokens (con scopes correctos):
                   </p>
                   <ol className="text-[11px] text-[var(--text-muted)] space-y-1.5 list-decimal list-inside leading-relaxed">
-                    <li>Ve a <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline hover:text-cyan-300">developers.google.com/oauthplayground</a></li>
+                    <li>Ve a <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noopener noreferrer" className="text-orange-400 underline hover:text-orange-300">developers.google.com/oauthplayground</a></li>
                     <li>En el paso 1 (Select &amp; authorize APIs), selecciona <strong className="text-white">ESTOS TRES scopes</strong> de YouTube Data API v3:
                       <div className="mt-1 ml-3 space-y-0.5">
                         <div className="flex items-center gap-1">
-                          <span className="text-emerald-400">✓</span>
-                          <code className="text-emerald-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube.upload</code>
+                          <span className="text-orange-400">✓</span>
+                          <code className="text-orange-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube.upload</code>
                           <span className="text-amber-300 font-bold">(OBLIGATORIO para subir videos)</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-emerald-400">✓</span>
-                          <code className="text-emerald-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube</code>
+                          <span className="text-orange-400">✓</span>
+                          <code className="text-orange-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube</code>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-emerald-400">✓</span>
-                          <code className="text-emerald-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube.readonly</code>
+                          <span className="text-orange-400">✓</span>
+                          <code className="text-orange-300 bg-black/40 px-1 rounded text-[10px]">.../auth/youtube.readonly</code>
                         </div>
                       </div>
                     </li>
                     <li>Haz click en <strong className="text-white">Authorize APIs</strong> → inicia sesión con Google → acepta todos los permisos</li>
                     <li>En el paso 2, haz click en <strong className="text-white">Exchange authorization code for tokens</strong></li>
-                    <li>Copia el <code className="text-amber-300 bg-black/40 px-1 rounded">refresh_token</code> (no expira) y el <code className="text-cyan-300 bg-black/40 px-1 rounded">access_token</code> y pégalos abajo</li>
+                    <li>Copia el <code className="text-amber-300 bg-black/40 px-1 rounded">refresh_token</code> (no expira) y el <code className="text-orange-300 bg-black/40 px-1 rounded">access_token</code> y pégalos abajo</li>
                   </ol>
                 </div>
               </div>
@@ -908,7 +908,7 @@ export default function AccountsPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-cyan-300 block mb-1.5">
+                  <label className="text-[11px] font-bold text-orange-300 block mb-1.5">
                     Access Token <span className="text-[var(--text-muted)] font-normal">(opcional — expira en 1 hora)</span>
                   </label>
                   <AutoResizeTextarea
@@ -917,7 +917,7 @@ export default function AccountsPage() {
                     value={manualAccessToken}
                     onChange={e => setManualAccessToken(e.target.value)}
                     placeholder="ya29..."
-                    className="glass rounded-xl px-3 py-2 text-xs text-white border border-cyan-500/30 focus:border-cyan-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] font-mono"
+                    className="glass rounded-xl px-3 py-2 text-xs text-white border border-orange-500/30 focus:border-orange-500/60 outline-none bg-transparent placeholder:text-[var(--text-muted)] font-mono"
                   />
                 </div>
 
@@ -926,7 +926,7 @@ export default function AccountsPage() {
                   <div className="flex items-center justify-between">
                     <label className="text-[11px] font-bold text-white flex items-center gap-1.5">
                       <span>Credenciales de Google Cloud</span>
-                      <span className="text-[10px] text-emerald-400 font-normal">(Para renovación automática cada hora)</span>
+                      <span className="text-[10px] text-orange-400 font-normal">(Para renovación automática cada hora)</span>
                     </label>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -937,7 +937,7 @@ export default function AccountsPage() {
                         value={manualClientId}
                         onChange={e => setManualClientId(e.target.value)}
                         placeholder="...apps.googleusercontent.com"
-                        className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-white/10 focus:border-red-500/50 outline-none bg-transparent placeholder:text-slate-600 font-mono text-[11px]"
+                        className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-transparent placeholder:text-slate-600 font-mono text-[11px]"
                       />
                     </div>
                     <div>
@@ -947,7 +947,7 @@ export default function AccountsPage() {
                         value={manualClientSecret}
                         onChange={e => setManualClientSecret(e.target.value)}
                         placeholder="GOCSPX-..."
-                        className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-white/10 focus:border-red-500/50 outline-none bg-transparent placeholder:text-slate-600 font-mono text-[11px]"
+                        className="w-full glass rounded-xl px-3 py-1.5 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-transparent placeholder:text-slate-600 font-mono text-[11px]"
                       />
                     </div>
                   </div>
@@ -963,12 +963,12 @@ export default function AccountsPage() {
                   onClick={handleTestModalToken}
                   disabled={testingModalToken || !manualRefreshToken.trim()}
                   title="Prueba si el Refresh Token y Credenciales de Google son válidos antes de guardar"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/35 hover:bg-emerald-500/25 text-emerald-300 text-xs font-bold transition-all disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500/15 border border-orange-500/35 hover:bg-orange-500/25 text-orange-300 text-xs font-bold transition-all disabled:opacity-50"
                 >
                   {testingModalToken ? (
-                    <Loader2 size={12} className="animate-spin text-emerald-400" />
+                    <Loader2 size={12} className="animate-spin text-orange-400" />
                   ) : (
-                    <RefreshCw size={12} className="text-emerald-400" />
+                    <RefreshCw size={12} className="text-orange-400" />
                   )}
                   <span>{testingModalToken ? 'Probando con Google…' : '🧪 Probar con Google'}</span>
                 </button>

@@ -3,6 +3,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { createNotification } from './notificationService';
 import { getCachedConfig, loadAppConfig } from './appConfigService';
 import { getLocalMonetizadosMap } from './clipearteService';
+import { compressVideoForStorage } from './videoCompressorService';
 
 export interface DriveConfig {
   clientId: string;
@@ -276,23 +277,38 @@ export async function uploadVideoToGoogleDrive(
   onProgress?: (progressPercent: number) => void,
   maxAttempts = 3,
   customFileName?: string
-): Promise<{ success: boolean; fileId?: string; fileUrl?: string; error?: string }> {
+): Promise<{ success: boolean; fileId?: string; fileUrl?: string; error?: string; savedBytes?: number; savedPercent?: number }> {
+  let fileToUpload = file;
+  let savedBytes = 0;
+  let savedPercent = 0;
+
+  if (isVideoFile(file)) {
+    try {
+      const compRes = await compressVideoForStorage(file);
+      fileToUpload = compRes.file;
+      savedBytes = compRes.savedBytes;
+      savedPercent = compRes.savedPercent;
+    } catch (compErr) {
+      console.warn('[DriveService] No se pudo comprimir video antes de subir, usando original:', compErr);
+    }
+  }
+
   let lastError = 'Fallo desconocido al subir a Drive';
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       if (attempt > 1) {
-        console.log(`[DriveService] Reintentando subida de "${file.name}" a Google Drive (intento ${attempt}/${maxAttempts})...`);
+        console.log(`[DriveService] Reintentando subida de "${fileToUpload.name}" a Google Drive (intento ${attempt}/${maxAttempts})...`);
         // Pausa exponencial entre reintentos (2s, 4s)
         await new Promise((r) => setTimeout(r, attempt * 2000));
       }
 
-      const res = await uploadSingleAttempt(file, folderId, accessToken, onProgress, customFileName);
+      const res = await uploadSingleAttempt(fileToUpload, folderId, accessToken, onProgress, customFileName);
       if (res.success) {
-        return res;
+        return { ...res, savedBytes, savedPercent };
       }
       lastError = res.error || lastError;
-      console.warn(`[DriveService] Intento ${attempt}/${maxAttempts} falló para "${file.name}": ${lastError}`);
+      console.warn(`[DriveService] Intento ${attempt}/${maxAttempts} falló para "${fileToUpload.name}": ${lastError}`);
     } catch (err: any) {
       lastError = err?.message || lastError;
       console.warn(`[DriveService] Excepción en intento ${attempt}/${maxAttempts}: ${lastError}`);
@@ -524,10 +540,14 @@ export async function startBackgroundDriveUpload(params: StartBackgroundUploadPa
         }
       }
 
+      const savingsNote =
+        uploadRes.savedBytes && uploadRes.savedBytes > 0
+          ? ` (comprimido sin pérdida visual: -${uploadRes.savedPercent}% / -${(uploadRes.savedBytes / 1048576).toFixed(2)} MB)`
+          : '';
       createNotification({
         tipo: 'success',
         titulo: 'Video subido a Google Drive',
-        mensaje: `"${videoTitle}" se subió a Google Drive exitosamente.`,
+        mensaje: `"${videoTitle}" se subió a Google Drive exitosamente${savingsNote}.`,
         cuenta_id: cuentaId,
         origen: 'drive',
       });

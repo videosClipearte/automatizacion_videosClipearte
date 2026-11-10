@@ -256,7 +256,7 @@ export default function AlertsSettingsPage() {
     }
 
     // 3. Construir reporte consolidado para todas las cuentas
-    let reportBody = `📊 <b>REPORTE DIARIO DE CUOTAS Y PUBLICACIONES FALTANTES</b>\n━━━━━━━━━━━━━━━━━━━━\n📅 <b>Fecha:</b> ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}\n\n`;
+    let reportBody = `📊 <b>Metas de hoy · ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</b>\n`;
 
     let totalTarget = 0;
     let totalPublished = 0;
@@ -274,21 +274,11 @@ export default function AlertsSettingsPage() {
       totalPublished += pubCount;
       if (missing > 0) anyMissing = true;
 
-      reportBody += `👤 <b>@${acc.username}</b> (<i>${acc.plataforma.toUpperCase()}</i>):\n`;
-      reportBody += `• Publicados hoy: <b>${pubCount}/${target}</b>\n`;
-      if (missing > 0) {
-        reportBody += `• ⚠️ Faltan: <b>${missing} video(s)</b> por subir/programar.\n\n`;
-      } else {
-        reportBody += `• ✅ ¡Meta del día cumplida!\n\n`;
-      }
+      reportBody += `${missing > 0 ? '⚠️' : '✅'} @${acc.username} (${acc.plataforma.toUpperCase()}): <b>${pubCount}/${target}</b>${missing > 0 ? ` · faltan <b>${missing}</b>` : ''}\n`;
     });
 
-    reportBody += `━━━━━━━━━━━━━━━━━━━━\n📈 <b>Progreso Global:</b> ${totalPublished}/${totalTarget} videos (${Math.round((totalPublished / (totalTarget || 1)) * 100)}%)\n`;
-    if (anyMissing) {
-      reportBody += `⏰ <i>Recuerden subir el contenido pendiente antes de las 23:59.</i>`;
-    } else {
-      reportBody += `🎉 <i>¡Todas las cuentas cumplieron sus metas estimadas de hoy!</i>`;
-    }
+    reportBody += `\n📈 <b>Global:</b> ${totalPublished}/${totalTarget} (${Math.round((totalPublished / (totalTarget || 1)) * 100)}%)`;
+    reportBody += anyMissing ? ` · ⏰ <i>Sube lo pendiente antes de las 23:59.</i>` : ` · 🎉 <i>¡Metas cumplidas!</i>`;
 
     const res = await sendTelegramMessage(botToken, targetChat, reportBody);
     setSendingDailyReport(false);
@@ -319,9 +309,9 @@ export default function AlertsSettingsPage() {
         <motion.div
           initial={{ opacity: 0, y: -5 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2"
+          className="p-3.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-200 text-xs flex items-center gap-2"
         >
-          <CheckCircle2 size={15} className="text-emerald-400" />
+          <CheckCircle2 size={15} className="text-orange-400" />
           <span>Configuración de intervalos guardada correctamente en el sistema.</span>
         </motion.div>
       )}
@@ -330,13 +320,13 @@ export default function AlertsSettingsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* CARD 1: Avisos a Grupos de Telegram */}
         <GlassCard>
-          <div className="flex items-center gap-3 mb-5 pb-3 border-b border-[var(--border)]">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+          <div className="flex items-center gap-3 mb-5 pb-3 border-b border-white/10">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
               <Send size={18} />
             </div>
             <div>
               <h3 className="text-sm font-bold text-white">Tiempos y Tolerancia de Alertas</h3>
-              <p className="text-[11px] text-[var(--text-muted)]">Frecuencia y reintentos ante retrasos</p>
+              <p className="text-[11px] text-zinc-400">Frecuencia y reintentos ante retrasos</p>
             </div>
           </div>
 
@@ -344,10 +334,10 @@ export default function AlertsSettingsPage() {
             {/* Tolerancia inicial */}
             <div>
               <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                <label className="text-xs font-semibold text-zinc-300">
                   Margen de Tolerancia Inicial
                 </label>
-                <span className="text-xs font-bold text-cyan-400">
+                <span className="text-xs font-bold text-orange-400">
                   {toleranceMinutes >= 60 ? `${toleranceMinutes / 60} h (${toleranceMinutes} min)` : `${toleranceMinutes} minutos`}
                 </span>
               </div>
@@ -358,9 +348,9 @@ export default function AlertsSettingsPage() {
                 step="15"
                 value={toleranceMinutes}
                 onChange={(e) => setToleranceMinutes(Number(e.target.value))}
-                className="w-full accent-cyan-500 cursor-pointer"
+                className="w-full accent-orange-500 cursor-pointer"
               />
-              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              <p className="text-[10px] text-zinc-400 mt-1">
                 Tiempo de espera tras la hora programada antes de lanzar el 1er aviso al grupo de Telegram.
               </p>
             </div>
@@ -368,25 +358,25 @@ export default function AlertsSettingsPage() {
             {/* Intervalo de reintento de avisos */}
             <div>
               <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                <label className="text-xs font-semibold text-zinc-300">
                   Frecuencia de Repetición de Avisos
                 </label>
-                <span className="text-xs font-bold text-blue-400">
+                <span className="text-xs font-bold text-orange-400">
                   Cada {retryIntervalMinutes} min
                 </span>
               </div>
               <select
                 value={retryIntervalMinutes}
                 onChange={(e) => setRetryIntervalMinutes(Number(e.target.value))}
-                className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent"
+                className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111]"
               >
-                <option value="15" className="bg-[#12121e]">Cada 15 minutos</option>
-                <option value="30" className="bg-[#12121e]">Cada 30 minutos</option>
-                <option value="45" className="bg-[#12121e]">Cada 45 minutos (Recomendado)</option>
-                <option value="60" className="bg-[#12121e]">Cada 1 hora</option>
-                <option value="120" className="bg-[#12121e]">Cada 2 horas</option>
+                <option value="15" className="bg-[#121111]">Cada 15 minutos</option>
+                <option value="30" className="bg-[#121111]">Cada 30 minutos</option>
+                <option value="45" className="bg-[#121111]">Cada 45 minutos (Recomendado)</option>
+                <option value="60" className="bg-[#121111]">Cada 1 hora</option>
+                <option value="120" className="bg-[#121111]">Cada 2 horas</option>
               </select>
-              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              <p className="text-[10px] text-zinc-400 mt-1">
                 Tiempo entre recordatorios sucesivos al grupo de Telegram si el video sigue sin publicarse.
               </p>
             </div>
@@ -433,24 +423,24 @@ export default function AlertsSettingsPage() {
                   type="checkbox"
                   checked={quietHoursEnabled}
                   onChange={(e) => setQuietHoursEnabled(e.target.checked)}
-                  className="rounded accent-emerald-500 w-4 h-4 cursor-pointer"
+                  className="rounded accent-orange-500 w-4 h-4 cursor-pointer"
                 />
               </div>
               {quietHoursEnabled && (
-                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[var(--border)]">
-                  <span className="text-[11px] text-[var(--text-muted)]">Silenciar desde:</span>
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/10">
+                  <span className="text-[11px] text-zinc-400">Silenciar desde:</span>
                   <input
                     type="time"
                     value={quietStart}
                     onChange={(e) => setQuietStart(e.target.value)}
-                    className="glass px-2 py-1 rounded-lg text-xs text-white border border-[var(--border)] bg-transparent"
+                    className="px-2 py-1 rounded-lg text-xs text-white border border-white/10 bg-[#121111]"
                   />
-                  <span className="text-[11px] text-[var(--text-muted)]">hasta:</span>
+                  <span className="text-[11px] text-zinc-400">hasta:</span>
                   <input
                     type="time"
                     value={quietEnd}
                     onChange={(e) => setQuietEnd(e.target.value)}
-                    className="glass px-2 py-1 rounded-lg text-xs text-white border border-[var(--border)] bg-transparent"
+                    className="px-2 py-1 rounded-lg text-xs text-white border border-white/10 bg-[#121111]"
                   />
                 </div>
               )}
@@ -460,61 +450,61 @@ export default function AlertsSettingsPage() {
 
         {/* CARD 2: Scraper Silencioso (Headless Post Inspector) */}
         <GlassCard>
-          <div className="flex items-center gap-3 mb-5 pb-3 border-b border-[var(--border)]">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+          <div className="flex items-center gap-3 mb-5 pb-3 border-b border-white/10">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
               <EyeOff size={18} />
             </div>
             <div>
               <h3 className="text-sm font-bold text-white">Scraper Silencioso (Headless)</h3>
-              <p className="text-[11px] text-[var(--text-muted)]">Solo extracción de métricas sin abrir web</p>
+              <p className="text-[11px] text-zinc-400">Solo extracción de métricas sin abrir web</p>
             </div>
           </div>
 
           <div className="space-y-4">
-            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-start gap-2.5">
-              <ShieldCheck size={16} className="text-emerald-400 shrink-0 mt-0.5" />
-              <p className="text-[11px] text-emerald-300 leading-relaxed">
-                <strong>Modo Silencioso Garantizado:</strong> El scraper se ejecuta exclusivamente en segundo plano. Realiza llamadas HTTP en modo <code className="bg-emerald-950/60 px-1 py-0.5 rounded text-[10px]">headless: true</code> para obtener datos (vistas, likes, estado). <strong>No abre ventanas de navegador ni emuladores visibles.</strong>
+            <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/25 flex items-start gap-2.5">
+              <ShieldCheck size={16} className="text-orange-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-orange-200 leading-relaxed">
+                <strong>Modo Silencioso Garantizado:</strong> El scraper se ejecuta exclusivamente en segundo plano. Realiza llamadas HTTP en modo <code className="bg-orange-950/60 px-1 py-0.5 rounded text-[10px] text-orange-300">headless: true</code> para obtener datos (vistas, likes, estado). <strong>No abre ventanas de navegador ni emuladores visibles.</strong>
               </p>
             </div>
 
             <div>
               <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                <label className="text-xs font-semibold text-zinc-300">
                   Frecuencia de Verificación de Publicación
                 </label>
-                <span className="text-xs font-bold text-emerald-400">
+                <span className="text-xs font-bold text-orange-400">
                   Cada {scraperIntervalMinutes} min
                 </span>
               </div>
               <select
                 value={scraperIntervalMinutes}
                 onChange={(e) => setScraperIntervalMinutes(Number(e.target.value))}
-                className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent"
+                className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111]"
               >
-                <option value="2" className="bg-[#12121e]">Cada 2 minutos (Ultra rápido)</option>
-                <option value="5" className="bg-[#12121e]">Cada 5 minutos (Recomendado)</option>
-                <option value="10" className="bg-[#12121e]">Cada 10 minutos</option>
-                <option value="15" className="bg-[#12121e]">Cada 15 minutos</option>
+                <option value="2" className="bg-[#121111]">Cada 2 minutos (Ultra rápido)</option>
+                <option value="5" className="bg-[#121111]">Cada 5 minutos (Recomendado)</option>
+                <option value="10" className="bg-[#121111]">Cada 10 minutos</option>
+                <option value="15" className="bg-[#121111]">Cada 15 minutos</option>
               </select>
             </div>
 
-            <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-[var(--border)]">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/10">
               <div>
                 <p className="text-xs font-semibold text-white">Modo Headless Estricto</p>
-                <p className="text-[10px] text-[var(--text-muted)]">Garantiza que ninguna ventana de Chrome o Firefox sea visible</p>
+                <p className="text-[10px] text-zinc-400">Garantiza que ninguna ventana de Chrome o Firefox sea visible</p>
               </div>
               <input
                 type="checkbox"
                 checked={headlessMode}
                 onChange={(e) => setHeadlessMode(e.target.checked)}
-                className="rounded accent-emerald-500 w-4 h-4 cursor-pointer"
+                className="rounded accent-orange-500 w-4 h-4 cursor-pointer"
               />
             </div>
 
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                <label className="text-xs font-semibold text-zinc-300">
                   Timeout de Respuesta por Post
                 </label>
                 <span className="text-xs font-bold text-white">{timeoutSeconds} seg</span>
@@ -526,7 +516,7 @@ export default function AlertsSettingsPage() {
                 step="5"
                 value={timeoutSeconds}
                 onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
-                className="w-full accent-emerald-500 cursor-pointer"
+                className="w-full accent-orange-500 cursor-pointer"
               />
             </div>
 
@@ -535,7 +525,7 @@ export default function AlertsSettingsPage() {
                 type="button"
                 onClick={handleTestScraper}
                 disabled={isTestingScraper}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-bold transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-orange-500/30 bg-orange-500/15 hover:bg-orange-500/25 text-orange-400 text-xs font-bold transition-all disabled:opacity-50"
               >
                 {isTestingScraper ? (
                   <><Loader2 size={13} className="animate-spin" /> Extrayendo datos en segundo plano...</>
@@ -548,7 +538,7 @@ export default function AlertsSettingsPage() {
                 <motion.div
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mt-2.5 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300"
+                  className="mt-2.5 p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-[11px] text-orange-200"
                 >
                   {scraperTestResult}
                 </motion.div>
@@ -560,14 +550,14 @@ export default function AlertsSettingsPage() {
 
       {/* CARD 3: AVISOS DE METAS DIARIAS DE PUBLICACIÓN A TELEGRAM (NUEVA SECCIÓN) */}
       <GlassCard>
-        <div className="flex items-center justify-between pb-3 mb-4 border-b border-[var(--border)]">
+        <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
               <Target size={18} />
             </div>
             <div>
               <h3 className="text-sm font-bold text-white">Avisos de Metas Diarias a Grupos de Telegram</h3>
-              <p className="text-[11px] text-[var(--text-muted)]">
+              <p className="text-[11px] text-zinc-400">
                 Notifica cuántos videos faltan publicar para cumplir la cantidad estimada en cada cuenta de red
               </p>
             </div>
@@ -578,14 +568,14 @@ export default function AlertsSettingsPage() {
               type="checkbox"
               checked={dailyQuotaAlertEnabled}
               onChange={(e) => setDailyQuotaAlertEnabled(e.target.checked)}
-              className="rounded accent-cyan-500 w-4 h-4 cursor-pointer"
+              className="rounded accent-orange-500 w-4 h-4 cursor-pointer"
             />
             <span className="text-xs font-semibold text-white">Activar aviso diario</span>
           </label>
         </div>
 
         <div className="mb-4">
-          <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+          <label className="text-xs font-semibold text-zinc-300 block mb-1">
             Hora de despacho del reporte diario al grupo
           </label>
           {/* Input y botón en la misma fila, misma altura */}
@@ -594,13 +584,13 @@ export default function AlertsSettingsPage() {
               type="time"
               value={dailyQuotaAlertHour}
               onChange={(e) => setDailyQuotaAlertHour(e.target.value)}
-              className="w-full h-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-cyan-500/50 outline-none bg-transparent"
+              className="w-full h-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111]"
             />
             <button
               type="button"
               onClick={handleSendDailyQuotaReport}
               disabled={sendingDailyReport}
-              className="w-full h-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all shadow-md disabled:opacity-50"
+              className="w-full h-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-orange-500/20 border border-orange-500/40 text-orange-200 text-xs font-bold hover:bg-orange-500/30 transition-all shadow-md disabled:opacity-50"
             >
               {sendingDailyReport ? (
                 <><Loader2 size={13} className="animate-spin" /> Despachando reporte a Telegram...</>
@@ -609,7 +599,7 @@ export default function AlertsSettingsPage() {
               )}
             </button>
           </div>
-          <p className="text-[10px] text-[var(--text-muted)] mt-1 sm:max-w-[50%] sm:pr-2">
+          <p className="text-[10px] text-zinc-400 mt-1 sm:max-w-[50%] sm:pr-2">
             Hora a la que el bot revisará cuántos videos faltan en cada cuenta y enviará el resumen al grupo.
           </p>
         </div>
@@ -619,13 +609,13 @@ export default function AlertsSettingsPage() {
             className={`p-3 rounded-xl text-xs flex items-center gap-2.5 border ${
               dailyReportFeedback.startsWith('⚠️')
                 ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-orange-500/10 border-orange-500/30 text-orange-200'
             }`}
           >
             {dailyReportFeedback.startsWith('⚠️') ? (
               <AlertTriangle size={15} className="shrink-0 text-amber-400" />
             ) : (
-              <CheckCircle2 size={15} className="shrink-0 text-emerald-400" />
+              <CheckCircle2 size={15} className="shrink-0 text-orange-400" />
             )}
             <span>{dailyReportFeedback}</span>
           </div>
@@ -634,14 +624,14 @@ export default function AlertsSettingsPage() {
 
       {/* CARD 3.5: Vistas para Auto-Monetizar en Clipearte */}
       <GlassCard>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[var(--border)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-white/10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
               <Target size={20} />
             </div>
             <div>
               <h3 className="text-sm font-bold text-white">Vistas para Auto-Monetizar Clips (Clipearte)</h3>
-              <p className="text-[11px] text-[var(--text-muted)]">
+              <p className="text-[11px] text-zinc-400">
                 Configura las vistas a las que debe llegar cada publicación para monetizarse automáticamente en clipearte.com
               </p>
             </div>
@@ -662,7 +652,7 @@ export default function AlertsSettingsPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-3">
           <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            <label className="text-xs font-semibold text-zinc-300 block mb-1">
               Vistas Mínimas en YouTube
             </label>
             <input
@@ -670,15 +660,15 @@ export default function AlertsSettingsPage() {
               min="1"
               value={clipearteVistasYoutube}
               onChange={(e) => setClipearteVistasYoutube(Math.max(1, Number(e.target.value) || 1000))}
-              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-rose-500/50 outline-none bg-transparent font-mono"
+              className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-rose-500/50 outline-none bg-[#121111] font-mono"
             />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+            <p className="text-[10px] text-zinc-400 mt-1">
               Por defecto: 1,000 vistas en Shorts de YouTube.
             </p>
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            <label className="text-xs font-semibold text-zinc-300 block mb-1">
               Vistas Mínimas en Otras Redes
             </label>
             <input
@@ -686,15 +676,15 @@ export default function AlertsSettingsPage() {
               min="1"
               value={clipearteVistasOtras}
               onChange={(e) => setClipearteVistasOtras(Math.max(1, Number(e.target.value) || 700))}
-              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-rose-500/50 outline-none bg-transparent font-mono"
+              className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111] font-mono"
             />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+            <p className="text-[10px] text-zinc-400 mt-1">
               Por defecto: 700 vistas en TikTok, Instagram o Facebook.
             </p>
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1">
+            <label className="text-xs font-semibold text-zinc-300 block mb-1">
               Tiempo Máximo Auto (Horas)
             </label>
             <input
@@ -702,14 +692,14 @@ export default function AlertsSettingsPage() {
               min="1"
               value={clipearteHorasLimite}
               onChange={(e) => setClipearteHorasLimite(Math.max(1, Number(e.target.value) || 48))}
-              className="w-full glass rounded-xl px-3 py-2 text-xs text-white border border-[var(--border)] focus:border-rose-500/50 outline-none bg-transparent font-mono"
+              className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-amber-500/50 outline-none bg-[#121111] font-mono"
             />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+            <p className="text-[10px] text-zinc-400 mt-1">
               Pasado este tiempo sin llegar a la meta, usa el botón "Monetizar Clip" manual.
             </p>
           </div>
         </div>
-        <p className="text-[11px] text-[var(--text-muted)]">
+        <p className="text-[11px] text-zinc-400">
           💡 Nota: Los videos ya publicados de hoy o antes mientras el sistema estaba apagado nunca se subirán automáticamente. Configura tu correo y contraseña de Clipearte en la pestaña <b>Integraciones API</b>.
         </p>
       </GlassCard>
@@ -717,21 +707,21 @@ export default function AlertsSettingsPage() {
       {/* CARD 4: Plantilla de Mensaje a Telegram */}
       <GlassCard>
         <h3 className="text-sm font-bold text-white mb-2">Plantilla del Mensaje de Aviso al Grupo de Telegram (Retrasos)</h3>
-        <p className="text-xs text-[var(--text-muted)] mb-3">
-          Puedes usar etiquetas dinámicas: <code className="text-cyan-400">{`{video_titulo}`}</code>, <code className="text-cyan-400">{`{cuenta}`}</code>, <code className="text-cyan-400">{`{hora_programada}`}</code>, <code className="text-cyan-400">{`{minutos_retraso}`}</code>.
+        <p className="text-xs text-zinc-400 mb-3">
+          Puedes usar etiquetas dinámicas: <code className="text-orange-400">{`{video_titulo}`}</code>, <code className="text-orange-400">{`{cuenta}`}</code>, <code className="text-orange-400">{`{hora_programada}`}</code>, <code className="text-orange-400">{`{minutos_retraso}`}</code>.
         </p>
         <AutoResizeTextarea
           minHeight={80}
           maxHeight={260}
           value={telegramTemplate}
           onChange={(e) => setTelegramTemplate(e.target.value)}
-          className="glass rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-transparent leading-relaxed"
+          className="rounded-xl p-3 text-xs text-white border border-white/10 focus:border-orange-500/50 outline-none bg-[#121111] leading-relaxed w-full"
         />
         <div className="mt-4 flex justify-end">
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-6 py-2.5 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
+            className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-xs font-bold text-white shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 hover:brightness-110"
           >
             {isSaving ? <Loader2 size={14} className="animate-spin" /> : null}
             <span>{isSaving ? 'Guardando...' : 'Guardar Configuración de Intervalos'}</span>

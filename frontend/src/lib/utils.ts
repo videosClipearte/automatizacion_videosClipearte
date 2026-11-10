@@ -28,6 +28,21 @@ export function calcGanancias(vistas: number, tasaPorMil: number): string {
   return ((vistas / 1000) * tasaPorMil).toFixed(2);
 }
 
+export function getEffectiveRpm(
+  campaign?: { tasa_pago_por_mil_vistas?: number; reglas_por_red?: any } | null,
+  platform?: string | null
+): number {
+  if (!campaign) return 0;
+  if (platform && campaign.reglas_por_red?.rpm_por_red) {
+    const key = platform.toLowerCase();
+    const custom = campaign.reglas_por_red.rpm_por_red[key];
+    if (typeof custom === 'number' && custom > 0) {
+      return custom;
+    }
+  }
+  return Number(campaign.tasa_pago_por_mil_vistas) || 0;
+}
+
 export function formatViews(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;

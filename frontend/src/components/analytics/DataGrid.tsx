@@ -6,7 +6,7 @@ import { Search, ChevronLeft, ChevronRight, ExternalLink, Edit3 } from 'lucide-r
 import { useAppStore } from '@/store/useAppStore';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { formatDate, formatViews, calcGanancias } from '@/lib/utils';
+import { formatDate, formatViews, calcGanancias, getEffectiveRpm } from '@/lib/utils';
 
 const PAGE_SIZE = 6;
 
@@ -41,7 +41,7 @@ export function DataGrid() {
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Buscar videos..."
-            className="w-full glass rounded-xl pl-8 pr-3 py-2 text-xs text-white border border-[var(--border)] focus:border-emerald-500/40 outline-none bg-transparent placeholder:text-[var(--text-muted)]"
+            className="w-full rounded-xl pl-8 pr-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/40 outline-none bg-[#121111] placeholder:text-zinc-500"
           />
         </div>
         <div className="flex gap-1">
@@ -51,8 +51,8 @@ export function DataGrid() {
               onClick={() => { setStatusFilter(s); setPage(1); }}
               className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all ${
                 statusFilter === s
-                  ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] glass border border-[var(--border)]'
+                  ? 'bg-orange-500/20 border border-orange-500/30 text-orange-400'
+                  : 'text-zinc-400 hover:text-white border border-white/10 bg-white/5'
               }`}
             >
               {s === 'ALL' ? 'Todos' : s === 'PROGRAMADO' ? 'Prog.' : s === 'ENVIADO' ? 'Env.' : s === 'PUBLICADO' ? 'Pub.' : 'Error'}
@@ -84,7 +84,8 @@ export function DataGrid() {
               paginated.map((video, i) => {
                 const account  = accounts.find(a => a.id === video.cuenta_id);
                 const campaign = campaigns.find(c => c.id === video.campana_id);
-                const earnings = calcGanancias(video.vistas_obtenidas, campaign?.tasa_pago_por_mil_vistas ?? 0);
+                const rate = getEffectiveRpm(campaign, account?.plataforma);
+                const earnings = calcGanancias(video.vistas_obtenidas, rate);
                 const done = video.estado === 'PUBLICADO' || video.estado === 'CANCELADO';
 
                 return (
@@ -140,9 +141,9 @@ export function DataGrid() {
                     {/* Earnings */}
                     <td className="px-3 py-3 font-mono">
                       {parseFloat(earnings) > 0 || video.estado === 'PUBLICADO' ? (
-                        <span className="text-emerald-400 font-bold">${earnings}</span>
+                        <span className="text-orange-400 font-bold">${earnings}</span>
                       ) : (
-                        <span className="text-[var(--text-muted)]">—</span>
+                        <span className="text-zinc-500">—</span>
                       )}
                     </td>
 
@@ -151,11 +152,11 @@ export function DataGrid() {
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => setSelectedVideoId(video.id)}
-                          className="w-6 h-6 rounded-lg glass border border-[var(--border)] flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors"
+                          className="w-6 h-6 rounded-lg border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
                         >
                           <ExternalLink size={10} />
                         </button>
-                        <button className="w-6 h-6 rounded-lg glass border border-[var(--border)] flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-colors">
+                        <button className="w-6 h-6 rounded-lg border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
                           <Edit3 size={10} />
                         </button>
                       </div>
@@ -171,14 +172,14 @@ export function DataGrid() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-3">
-          <span className="text-[10px] text-[var(--text-muted)]">
+          <span className="text-[10px] text-zinc-400">
             {filtered.length} videos · Página {page} de {totalPages}
           </span>
           <div className="flex gap-1">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="w-7 h-7 rounded-lg glass border border-[var(--border)] flex items-center justify-center text-[var(--text-secondary)] hover:text-white disabled:opacity-30 transition-colors"
+              className="w-7 h-7 rounded-lg border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 transition-colors"
             >
               <ChevronLeft size={12} />
             </button>
@@ -188,8 +189,8 @@ export function DataGrid() {
                 onClick={() => setPage(p)}
                 className={`w-7 h-7 rounded-lg text-[11px] font-semibold transition-all ${
                   page === p
-                    ? 'bg-gradient-to-r from-emerald-500/30 to-cyan-500/30 border border-emerald-500/30 text-white'
-                    : 'glass border border-[var(--border)] text-[var(--text-muted)] hover:text-white'
+                    ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold'
+                    : 'border border-white/10 text-zinc-400 hover:text-white'
                 }`}
               >
                 {p}

@@ -282,28 +282,20 @@ async function handleCallbackQuery(
 
     // 5. Actualizar el mensaje de la encuesta para mostrar claramente que el estado sigue ENVIADO esperando el enlace
     const confirmedText = [
-      `⏳ <b>PUBLICACIÓN EN ESPERA DE ENLACE</b>`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `🎬 <b>Video:</b> <b>${safeTitle}</b>`,
-      `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)${horaProg ? ` · ⏰ ${horaProg}` : ''}`,
-      ``,
-      `📈 <b>Estado en App:</b> <b>ENVIADO</b> ⏳`,
-      `💡 <i>Para confirmarlo como <b>PUBLICADO</b>, envía el enlace directo del reel publicado en este chat.</i>`,
+      `⏳ <b>Esperando enlace</b> · ENVIADO`,
+      `🎬 <b>${safeTitle}</b>`,
+      `👤 @${safeAccount} (${safePlatform})${horaProg ? ` · ⏰ ${horaProg}` : ''}`,
+      `💡 <i>Envía el enlace del reel para pasarlo a PUBLICADO.</i>`,
     ].join('\n');
 
     await editTelegramMessage(botToken, chatId, messageId, confirmedText);
 
     // 6. Enviar mensaje citando la encuesta del video (reply_to) con mención explícita y código ref
     const promptText = [
-      `🔗 <b>ENVIAR ENLACE DEL REEL</b>`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `🎬 <b>Video a confirmar:</b> <b>${safeTitle}</b>`,
-      `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)`,
-      ``,
-      `💡 <i>Pega aquí el enlace directo del reel publicado (Instagram o TikTok) correspondiente a <b>"${safeTitle}"</b>.</i>`,
-      `<i>Al recibir la URL, el sistema actualizará el estado a <b>PUBLICADO</b> ✅ y comenzará a rastrear reproducciones.</i>`,
-      ``,
-      `📌 <i>ID de seguimiento: <code>ref:${publicacionId}</code></i>`,
+      `🔗 <b>Pega el enlace del reel</b>`,
+      `🎬 <b>${safeTitle}</b>`,
+      `👤 @${safeAccount} (${safePlatform})`,
+      `📌 <code>ref:${publicacionId}</code>`,
     ].join('\n');
 
     await sendTelegramMessage(botToken, chatId, promptText, 'HTML', {
@@ -349,12 +341,10 @@ async function handleCallbackQuery(
 
     // El video queda en estado ENVIADO (no cambia a PUBLICADO)
     const rejectedText = [
-      `❌ <b>PUBLICACIÓN NO CONFIRMADA</b>`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `🎬 <b>Video:</b> <b>${safeTitle}</b>`,
-      `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)`,
-      ``,
-      `⚠️ <i>El video permanece en estado <b>ENVIADO</b>. Podrás confirmarlo manualmente desde la aplicación web en el calendario.</i>`,
+      `❌ <b>No confirmada</b> · sigue ENVIADO`,
+      `🎬 <b>${safeTitle}</b>`,
+      `👤 @${safeAccount} (${safePlatform})`,
+      `⚠️ <i>Confírmala manualmente desde el calendario.</i>`,
     ].join('\n');
 
     await editTelegramMessage(botToken, chatId, messageId, rejectedText);
@@ -524,21 +514,14 @@ async function handleLinkConfirmation({
   const safePlatform = escapeHtml((video?.cuentas?.plataforma || 'red').toUpperCase());
 
   const statsLine = scraped
-    ? `📊 <b>Métricas extraídas del scraper:</b>\n` +
-      `• 👁️ Reproducciones: <b>${metrics.vistas.toLocaleString()}</b>\n` +
-      `• ❤️ Me gusta: <b>${metrics.likes.toLocaleString()}</b>\n` +
-      `• 💬 Comentarios: <b>${metrics.comentarios.toLocaleString()}</b>\n` +
-      `<i>Datos enlazados al Monitor del Scraper y gráficas de Analíticas.</i>`
-    : `📊 <i>Enlace guardado y enlazado. Si el post es reciente, las métricas se actualizarán automáticamente desde el Monitor del Scraper.</i>`;
+    ? `📊 👁️ ${metrics.vistas.toLocaleString()} · ❤️ ${metrics.likes.toLocaleString()} · 💬 ${metrics.comentarios.toLocaleString()}`
+    : `📊 <i>Métricas pendientes (se actualizan solas).</i>`;
 
   const successMsg = [
-    `🎉 <b>REEL ENLAZADO Y CONFIRMADO EXITOSAMENTE</b>`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `🎬 <b>Video confirmado:</b> <b>${safeTitle}</b>`,
-    `👤 <b>Cuenta:</b> @${safeAccount} (<b>${safePlatform}</b>)`,
-    `🔗 <b>Link verificado:</b> ${escapeHtml(url.trim())}`,
-    `📈 <b>Estado:</b> <b>PUBLICADO</b> ✅`,
-    ``,
+    `🎉 <b>Confirmado · PUBLICADO</b> ✅`,
+    `🎬 <b>${safeTitle}</b>`,
+    `👤 @${safeAccount} (${safePlatform})`,
+    `🔗 ${escapeHtml(url.trim())}`,
     statsLine,
   ].join('\n');
 
@@ -563,22 +546,12 @@ async function sendHelpMenu(
 ) {
   const noteHeader = extraNote ? `⚠️ <i>${escapeHtml(extraNote)}</i>\n\n` : '';
   const helpText = `
-${noteHeader}🤖 <b>COMANDOS DISPONIBLES EN AUTOPUBLISH</b>
-━━━━━━━━━━━━━━━━━━━━
-📋 <b>/porconfirmar</b> o <b>/pendientes</b>
-Muestra los videos enviados pendientes por confirmar con su enlace del reel en Telegram.
-
-📅 <b>/hoy</b> o <b>/programados</b>
-Muestra todos los videos programados para el día de hoy (fecha/hora, campaña, título y cuenta. <i>Sin enlaces ni descripciones</i>).
-
-📊 <b>/metas</b> o <b>/faltantes</b>
-Muestra la cantidad de videos que faltan por publicar hoy en cada red social para cumplir la cuota diaria establecida.
-
-🎬 <b>/siguiente</b> o <b>/proximo</b>
-Envía el próximo video programado con su ficha, enlace directo de Google Drive y su descripción aislada lista para copiar.
-
-ℹ️ <b>/ayuda</b>
-Muestra esta lista de comandos.
+${noteHeader}🤖 <b>Comandos</b>
+📋 <b>/porconfirmar</b> · <b>/pendientes</b> — enviados sin confirmar
+📅 <b>/hoy</b> · <b>/programados</b> — programados de hoy
+📊 <b>/metas</b> · <b>/faltantes</b> — videos que faltan hoy por red
+🎬 <b>/siguiente</b> · <b>/proximo</b> — próximo video con Drive y copy
+ℹ️ <b>/ayuda</b> — esta lista
 `.trim();
 
   return await sendTelegramMessage(botToken, chatId, helpText, 'HTML', {
@@ -618,18 +591,14 @@ async function handleCommandHoy(
     const todayFormatted = formatLocalDate(new Date()).split(' ')[0];
 
     if (todayVideos.length === 0) {
-      const emptyMsg = `
-📅 <b>VIDEOS PROGRAMADOS PARA HOY (${todayFormatted})</b>
-━━━━━━━━━━━━━━━━━━━━
-ℹ️ No hay videos programados para hoy en ninguna cuenta del sistema.
-`.trim();
+      const emptyMsg = `📅 <b>Hoy (${todayFormatted})</b> · ℹ️ Sin videos programados.`;
       return await sendTelegramMessage(botToken, chatId, emptyMsg, 'HTML', {
         reply_to_message_id: replyToId,
         message_thread_id: threadId,
       });
     }
 
-    let text = `📅 <b>VIDEOS PROGRAMADOS PARA HOY (${todayFormatted})</b>\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    let text = `📅 <b>Programados hoy (${todayFormatted}) · ${todayVideos.length}</b>\n\n`;
 
     todayVideos.forEach((vid: any, idx: number) => {
       const acc = cuentas?.find((c: any) => c.id === vid.cuenta_id);
@@ -646,12 +615,9 @@ async function handleCommandHoy(
           : `⚙️ ${vid.estado}`;
 
       text += `<b>${idx + 1}. 🎬 ${escapeHtml(vid.titulo)}</b>\n`;
-      text += `   👤 <b>Cuenta:</b> @${escapeHtml(acc?.username || 'cuenta')} (<b>${escapeHtml((acc?.plataforma || 'red').toUpperCase())}</b>)\n`;
-      text += `   🎯 <b>Campaña:</b> ${escapeHtml(camp?.nombre || 'General')}\n`;
-      text += `   🕒 <b>Hora:</b> ${hora} | ${statusBadge}\n\n`;
+      text += `👤 @${escapeHtml(acc?.username || 'cuenta')} (${escapeHtml((acc?.plataforma || 'red').toUpperCase())}) · 🎯 ${escapeHtml(camp?.nombre || 'General')}\n`;
+      text += `🕒 ${hora} · ${statusBadge}\n\n`;
     });
-
-    text += `━━━━━━━━━━━━━━━━━━━━\n📊 <b>Total hoy:</b> ${todayVideos.length} video(s)`;
 
     return await sendTelegramMessage(botToken, chatId, text.trim(), 'HTML', {
       reply_to_message_id: replyToId,
@@ -697,7 +663,7 @@ async function handleCommandMetas(
 
     const todayStr = formatLocalDate(new Date()).split(' ')[0];
 
-    let reportBody = `📊 <b>VIDEOS FALTANTES POR RED SOCIAL (METAS DE HOY)</b>\n━━━━━━━━━━━━━━━━━━━━\n📅 <b>Fecha:</b> ${todayStr}\n\n`;
+    let reportBody = `📊 <b>Metas de hoy (${todayStr})</b>\n`;
 
     let totalTarget = 0;
     let totalPublished = 0;
@@ -715,21 +681,11 @@ async function handleCommandMetas(
       totalPublished += pubCount;
       if (missing > 0) anyMissing = true;
 
-      reportBody += `👤 <b>@${escapeHtml(acc.username)}</b> (<i>${escapeHtml((acc.plataforma || 'red').toUpperCase())}</i>):\n`;
-      reportBody += `• Publicados hoy: <b>${pubCount}/${target}</b>\n`;
-      if (missing > 0) {
-        reportBody += `• ⚠️ <b>Faltan: ${missing} video(s)</b> por subir/publicar.\n\n`;
-      } else {
-        reportBody += `• ✅ ¡Meta del día cumplida!\n\n`;
-      }
+      reportBody += `${missing > 0 ? '⚠️' : '✅'} @${escapeHtml(acc.username)} (${escapeHtml((acc.plataforma || 'red').toUpperCase())}): <b>${pubCount}/${target}</b>${missing > 0 ? ` · faltan <b>${missing}</b>` : ''}\n`;
     });
 
-    reportBody += `━━━━━━━━━━━━━━━━━━━━\n📈 <b>Progreso Global:</b> ${totalPublished}/${totalTarget} videos (${Math.round((totalPublished / (totalTarget || 1)) * 100)}%)\n`;
-    if (anyMissing) {
-      reportBody += `⏰ <i>Recuerden subir el contenido pendiente antes de las 23:59.</i>`;
-    } else {
-      reportBody += `🎉 <i>¡Todas las cuentas cumplieron sus metas estimadas de hoy!</i>`;
-    }
+    reportBody += `\n📈 <b>Global:</b> ${totalPublished}/${totalTarget} (${Math.round((totalPublished / (totalTarget || 1)) * 100)}%)`;
+    reportBody += anyMissing ? ` · ⏰ <i>Sube lo pendiente antes de las 23:59.</i>` : ` · 🎉 <i>¡Metas cumplidas!</i>`;
 
     return await sendTelegramMessage(botToken, chatId, reportBody.trim(), 'HTML', {
       reply_to_message_id: replyToId,
@@ -769,11 +725,7 @@ async function handleCommandSiguiente(
     }
 
     if (!vids || vids.length === 0) {
-      const noVidMsg = `
-ℹ️ <b>PRÓXIMA PUBLICACIÓN PROGRAMADA</b>
-━━━━━━━━━━━━━━━━━━━━
-No hay ninguna publicación programada pendiente en el calendario.
-`.trim();
+      const noVidMsg = `ℹ️ <b>Próxima publicación</b> · Ninguna pendiente en el calendario.`;
       return await sendTelegramMessage(botToken, chatId, noVidMsg, 'HTML', {
         reply_to_message_id: replyToId,
         message_thread_id: threadId,
@@ -797,23 +749,18 @@ No hay ninguna publicación programada pendiente en el calendario.
         : '<i>(Enlace de Google Drive no registrado)</i>';
 
     const campaignSection = campaign?.nombre
-      ? `🎯 <b>Campaña:</b> ${escapeHtml(campaign.nombre)}\n`
+      ? ` · 🎯 ${escapeHtml(campaign.nombre)}`
       : '';
 
     const horaFormatted = formatLocalDate(video.programado_para);
 
-    // Mensaje 1: Ficha técnica con link de Google Drive
+    // Mensaje 1: Ficha compacta con link de Google Drive
     const msg1 = `
-🚀 <b>PRÓXIMA PUBLICACIÓN PROGRAMADA</b>
-━━━━━━━━━━━━━━━━━━━━
-👤 <b>Cuenta:</b> @${escapeHtml(account?.username || 'cuenta')} (<b>${escapeHtml((account?.plataforma || 'red').toUpperCase())}</b>)
-${campaignSection}🕒 <b>Hora programada:</b> ${horaFormatted}
-🎬 <b>Título:</b> ${escapeHtml(video.titulo)}
-
-📁 <b>Video en Google Drive:</b>
-${driveUrlText}
-
-📝 <i>A continuación se envía el copy aprobado listo para copiar y pegar.</i>
+🚀 <b>Próxima publicación</b>
+🎬 <b>${escapeHtml(video.titulo)}</b>
+👤 @${escapeHtml(account?.username || 'cuenta')} (${escapeHtml((account?.plataforma || 'red').toUpperCase())})${campaignSection}
+🕒 ${horaFormatted}
+📁 ${driveUrlText}
 `.trim();
 
     // Mensaje 2: Descripción / Copy 100% limpio para copiar y pegar directamente sin cabeceras
@@ -906,13 +853,7 @@ async function handleCommandPorConfirmar(
     });
 
     if (unconfirmedVideos.length === 0) {
-      const allGoodMsg = [
-        `🎉 <b>¡TODO AL DÍA! NO HAY VIDEOS PENDIENTES POR CONFIRMAR</b>`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `Todos los videos despachados han sido confirmados con su enlace de Reel.`,
-        ``,
-        `💡 <i>Usa <b>/hoy</b> para consultar los programados del día o <b>/metas</b> para ver el avance diario.</i>`,
-      ].join('\n');
+      const allGoodMsg = `🎉 <b>Todo al día</b> · No hay videos por confirmar. <i>(/hoy · /metas)</i>`;
 
       return await sendTelegramMessage(botToken, chatId, allGoodMsg, 'HTML', {
         reply_to_message_id: replyToId,
@@ -924,11 +865,7 @@ async function handleCommandPorConfirmar(
     const displayedVideos = unconfirmedVideos.slice(0, maxItems);
     const remainingCount = unconfirmedVideos.length - maxItems;
 
-    let text = [
-      `📋 <b>VIDEOS PENDIENTES POR CONFIRMAR (${unconfirmedVideos.length})</b>`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `<i>Los siguientes videos ya fueron enviados y están a la espera de su enlace de reel:</i>\n`,
-    ].join('\n');
+    let text = `📋 <b>Por confirmar (${unconfirmedVideos.length})</b>\n\n`;
 
     displayedVideos.forEach((vid: any, idx: number) => {
       const acc = cuentas?.find((c: any) => c.id === vid.cuenta_id);
@@ -937,36 +874,26 @@ async function handleCommandPorConfirmar(
 
       const horaProg = vid.programado_para ? formatLocalDate(vid.programado_para) : 'Sin fecha';
       const confStatus = conf?.estado === 'ESPERANDO_LINK'
-        ? '⏳ <b>Esperando enlace del Reel</b> (voto "Sí" en encuesta)'
+        ? '⏳ Esperando enlace'
         : conf?.estado === 'PENDIENTE'
-        ? '❓ <b>Encuesta pendiente de voto</b>'
-        : '📤 <b>Enviado a redes</b> (pendiente de enlace)';
+        ? '❓ Encuesta sin voto'
+        : '📤 Enviado, sin enlace';
 
       text += `<b>${idx + 1}. 🎬 ${escapeHtml(vid.titulo)}</b>\n`;
-      text += `   👤 <b>Cuenta:</b> @${escapeHtml(acc?.username || 'cuenta')} (<b>${escapeHtml((acc?.plataforma || 'red').toUpperCase())}</b>)\n`;
-      if (camp?.nombre) {
-        text += `   🎯 <b>Campaña:</b> ${escapeHtml(camp.nombre)}\n`;
-      }
-      text += `   🕒 <b>Programado:</b> ${horaProg}\n`;
-      text += `   📌 <b>Estado:</b> ${confStatus}\n`;
+      text += `👤 @${escapeHtml(acc?.username || 'cuenta')} (${escapeHtml((acc?.plataforma || 'red').toUpperCase())})${camp?.nombre ? ` · 🎯 ${escapeHtml(camp.nombre)}` : ''}\n`;
+      text += `🕒 ${horaProg} · ${confStatus}`;
       if (vid.drive_file_url && vid.drive_file_url.startsWith('http')) {
-        text += `   📁 <a href="${escapeHtml(vid.drive_file_url)}">Ver video en Drive</a>\n`;
+        text += ` · 📁 <a href="${escapeHtml(vid.drive_file_url)}">Drive</a>`;
       }
-      text += `   🔑 <b>Código ref:</b> <code>ref:${vid.id}</code>\n\n`;
+      text += `\n🔑 <code>ref:${vid.id}</code>\n\n`;
     });
 
     if (remainingCount > 0) {
-      text += `<i>... y ${remainingCount} video(s) más pendientes por confirmar.</i>\n\n`;
+      text += `<i>... y ${remainingCount} más.</i>\n\n`;
     }
 
     const sampleRef = unconfirmedVideos[0]?.id ? `ref:${unconfirmedVideos[0].id}` : 'ref:ID';
-    text += [
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `💡 <b>¿Cómo confirmar cualquiera de estos videos?</b>`,
-      `1. Copia la URL del reel publicado en Instagram o TikTok.`,
-      `2. Responde a la encuesta del video pegando el enlace, o envíalo directamente en este chat junto a su código:`,
-      `   <code>https://instagram.com/reel/... ${sampleRef}</code>`,
-    ].join('\n');
+    text += `💡 <i>Responde a la encuesta con el enlace del reel, o envía:</i> <code>https://instagram.com/reel/... ${sampleRef}</code>`;
 
     return await sendTelegramMessage(botToken, chatId, text.trim(), 'HTML', {
       reply_to_message_id: replyToId,

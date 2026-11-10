@@ -132,12 +132,12 @@ export function ChartsSection() {
               <button
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg glass border border-[var(--border)] hover:border-emerald-500/40 text-[11px] text-white transition-all"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-white/10 hover:border-orange-500/40 text-[11px] text-white transition-all bg-[#121111]"
               >
                 <span className="font-semibold truncate max-w-[90px]">
                   @{selectedAccount?.username}
                 </span>
-                <ChevronDown size={11} className={`text-[var(--text-muted)] transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown size={11} className={`text-zinc-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
               <AnimatePresence>
@@ -147,7 +147,7 @@ export function ChartsSection() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, scale: 0.95 }}
                     transition={{ duration: 0.12 }}
-                    className="absolute right-0 mt-1.5 w-52 glass-strong border border-[var(--border-strong)] rounded-xl shadow-2xl p-1 z-50 backdrop-blur-xl"
+                    className="absolute right-0 mt-1.5 w-52 border border-white/10 rounded-xl shadow-2xl p-1 z-50 backdrop-blur-xl bg-[#161414]/95"
                   >
                     {accounts.map((acc) => {
                       const Icon = PLATFORM_ICONS[acc.plataforma] ?? Send;
@@ -163,15 +163,15 @@ export function ChartsSection() {
                           }}
                           className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${
                             isSelected
-                              ? 'bg-emerald-500/15 text-white border border-emerald-500/30'
-                              : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-white border border-transparent'
+                              ? 'bg-orange-500/15 text-white border border-orange-500/30'
+                              : 'text-zinc-300 hover:bg-white/5 hover:text-white border border-transparent'
                           }`}
                         >
                           <span className="flex items-center gap-2 truncate">
                             <Icon size={12} style={{ color }} />
                             <span className="font-semibold truncate">@{acc.username}</span>
                           </span>
-                          {isSelected && <Check size={12} className="text-emerald-400 shrink-0 ml-1" />}
+                          {isSelected && <Check size={12} className="text-orange-400 shrink-0 ml-1" />}
                         </button>
                       );
                     })}
@@ -182,18 +182,18 @@ export function ChartsSection() {
           </div>
 
           {/* Mini KPI Bar */}
-          <div className="grid grid-cols-3 gap-2 py-1.5 px-2 rounded-lg bg-white/[0.02] border border-[var(--border)] mb-2 text-center">
+          <div className="grid grid-cols-3 gap-2 py-1.5 px-2 rounded-lg bg-white/[0.02] border border-white/10 mb-2 text-center">
             <div>
               <p className="text-[11px] font-bold text-white font-mono">{formatViews(totalAccountViews)}</p>
-              <p className="text-[9px] text-[var(--text-muted)]">Vistas</p>
+              <p className="text-[9px] text-zinc-400">Vistas</p>
             </div>
-            <div className="border-x border-[var(--border)]">
-              <p className="text-[11px] font-bold text-emerald-400 font-mono">{publishedVideosCount}</p>
-              <p className="text-[9px] text-[var(--text-muted)]">Publicados</p>
+            <div className="border-x border-white/10">
+              <p className="text-[11px] font-bold text-orange-400 font-mono">{publishedVideosCount}</p>
+              <p className="text-[9px] text-zinc-400">Publicados</p>
             </div>
             <div>
-              <p className="text-[11px] font-bold text-cyan-400 font-mono">{formatViews(avgViewsPerVideo)}</p>
-              <p className="text-[9px] text-[var(--text-muted)]">Promedio</p>
+              <p className="text-[11px] font-bold text-amber-400 font-mono">{formatViews(avgViewsPerVideo)}</p>
+              <p className="text-[9px] text-zinc-400">Promedio</p>
             </div>
           </div>
         </div>
@@ -210,7 +210,7 @@ export function ChartsSection() {
                   </linearGradient>
                   <linearGradient id="viewsLineGrad" x1="0" y1="0" x2="1" y2="0">
                     <stop offset="0%"   stopColor={platformColor} />
-                    <stop offset="100%" stopColor="#06b6d4" />
+                    <stop offset="100%" stopColor="#f97316" />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -234,7 +234,7 @@ export function ChartsSection() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-white/[0.02] border border-dashed border-[var(--border)] text-[9px] text-[var(--text-muted)]">
+            <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-white/[0.02] border border-dashed border-white/10 text-[9px] text-zinc-400">
               <AlertCircle size={11} className="text-amber-400 shrink-0" />
               <span>Sin vistas registradas aún en @{selectedAccount?.username}. Al confirmar videos subirá la curva.</span>
             </div>
@@ -247,9 +247,9 @@ export function ChartsSection() {
         <div className="flex items-center justify-between mb-2 shrink-0">
           <div>
             <h3 className="text-sm font-bold text-white">Videos por Cuenta</h3>
-            <p className="text-[10px] text-[var(--text-muted)]">Distribución de estados por plataforma</p>
+            <p className="text-[10px] text-zinc-400">Distribución de estados por plataforma</p>
           </div>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 font-semibold">
             Todas
           </span>
         </div>

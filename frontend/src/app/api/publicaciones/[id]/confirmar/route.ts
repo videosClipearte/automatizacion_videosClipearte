@@ -48,13 +48,9 @@ export async function POST(
       if (botToken && groupChatId) {
         const now = new Date();
         const msg = [
-          `✅ <b>PUBLICACIÓN CONFIRMADA MANUALMENTE</b>`,
-          `━━━━━━━━━━━━━━━━━━━━`,
-          `🕒 <b>Confirmado a las:</b> ${format(now, 'HH:mm')} UTC`,
-          postUrlPublica ? `🔗 <b>URL del post:</b> ${postUrlPublica}` : '',
-          result.metrics.vistas > 0 ? `👁️ <b>Vistas detectadas:</b> ${result.metrics.vistas.toLocaleString()}` : '',
-          ``,
-          `👍 <i>Estado actualizado a <b>PUBLICADO</b> y registrado en Analíticas.</i>`,
+          `✅ <b>Confirmada manualmente · PUBLICADO</b> · ${format(now, 'HH:mm')} UTC`,
+          postUrlPublica ? `🔗 ${postUrlPublica}` : '',
+          result.metrics.vistas > 0 ? `👁️ ${result.metrics.vistas.toLocaleString()} vistas` : '',
         ].filter(Boolean).join('\n');
 
         await sendTelegramMessage(botToken, groupChatId, msg);

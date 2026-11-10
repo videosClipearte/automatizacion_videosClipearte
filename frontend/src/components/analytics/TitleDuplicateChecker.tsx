@@ -20,7 +20,7 @@ const PLATFORM_ICONS: Record<string, React.ElementType> = {
 };
 
 const STATUS_BADGES: Record<string, { label: string; color: string; bg: string }> = {
-  PUBLICADO: { label: 'Publicado', color: 'text-emerald-400', bg: 'bg-emerald-500/15 border-emerald-500/30' },
+  PUBLICADO: { label: 'Publicado', color: 'text-orange-400', bg: 'bg-orange-500/15 border-orange-500/30' },
   ENVIADO: { label: 'Enviado', color: 'text-blue-400', bg: 'bg-blue-500/15 border-blue-500/30' },
   PROGRAMADO: { label: 'Programado', color: 'text-purple-400', bg: 'bg-purple-500/15 border-purple-500/30' },
   VERIFICACION_PENDIENTE: { label: 'En verificación', color: 'text-amber-400', bg: 'bg-amber-500/15 border-amber-500/30' },
@@ -337,7 +337,7 @@ export function TitleDuplicateChecker() {
                       href={analysis.exactMatch.post_url_publica}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-1 rounded-lg text-cyan-400 hover:text-white"
+                      className="p-1 rounded-lg text-orange-400 hover:text-white"
                       title="Ver publicación"
                     >
                       <ExternalLink size={14} />
@@ -374,7 +374,7 @@ export function TitleDuplicateChecker() {
                 <div key={v.id} className="p-2.5 rounded-xl bg-black/30 border border-amber-500/20 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold text-white truncate text-xs">{v.titulo}</p>
-                    <p className="text-[10px] text-[var(--text-muted)]">
+                    <p className="text-[10px] text-zinc-400">
                       {v.publicado_en
                         ? `Publicado: ${format(new Date(v.publicado_en), 'dd/MM/yyyy')}`
                         : `Programado: ${format(new Date(v.programado_para), 'dd/MM/yyyy')}`}
@@ -393,16 +393,16 @@ export function TitleDuplicateChecker() {
           <motion.div
             key="avail"
             initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-            className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs mb-4 flex items-center gap-3"
+            className="p-3.5 rounded-2xl bg-orange-500/10 border border-orange-500/30 text-xs mb-4 flex items-center gap-3"
           >
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-400 shrink-0">
               <ShieldCheck size={18} />
             </div>
             <div>
-              <p className="font-bold text-emerald-300 text-sm">
+              <p className="font-bold text-orange-300 text-sm">
                 ¡TÍTULO DISPONIBLE!
               </p>
-              <p className="text-[11px] text-emerald-200/80">
+              <p className="text-[11px] text-orange-200/80">
                 No se ha enviado ni publicado este título en{' '}
                 <b className="text-white">
                   {targetAccountId === 'all' ? 'ninguna cuenta' : `@${currentAccount?.username || 'esta cuenta'}`}

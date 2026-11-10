@@ -506,9 +506,9 @@ export function ScraperMonitor() {
   return (
     <GlassCard className="p-5 w-full space-y-4">
       {/* ── 1. Encabezado principal ── */}
-      <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b border-[var(--border)]">
+      <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b border-white/10">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 shrink-0">
             <Film size={16} />
           </div>
           <div>
@@ -527,7 +527,7 @@ export function ScraperMonitor() {
                 {selectedAccount?.plataforma?.toUpperCase()}
               </span>
             </div>
-            <p className="text-[10px] text-[var(--text-muted)]">
+            <p className="text-[10px] text-zinc-400">
               Datos extraídos directamente desde el perfil oficial de la red social
             </p>
           </div>
@@ -537,7 +537,7 @@ export function ScraperMonitor() {
           type="button"
           onClick={handleInspectSocialProfile}
           disabled={probing}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-bold hover:bg-cyan-500/25 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs font-bold hover:bg-orange-500/25 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
         >
           {probing ? (
             <><Loader2 size={13} className="animate-spin" /><span>Consultando red social...</span></>
@@ -549,7 +549,7 @@ export function ScraperMonitor() {
 
       {/* ── 2. Tarjeta de Datos Reales Extraídos del Perfil de la Red Social ── */}
       {profileData && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-cyan-500/10 via-emerald-500/5 to-purple-500/5 border border-cyan-500/25">
+        <div className="p-4 rounded-2xl bg-orange-500/5 border border-orange-500/20">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             {/* Info de cuenta */}
             <div className="flex items-center gap-3 min-w-0">
@@ -558,7 +558,7 @@ export function ScraperMonitor() {
                 <img
                   src={profileData.avatarUrl}
                   alt={selectedAccount?.username}
-                  className="w-12 h-12 rounded-xl object-cover border border-cyan-500/40 shadow-md shrink-0"
+                  className="w-12 h-12 rounded-xl object-cover border border-orange-500/40 shadow-md shrink-0"
                 />
               ) : (
                 <div
@@ -573,25 +573,25 @@ export function ScraperMonitor() {
                   <h4 className="font-bold text-white text-sm truncate">
                     {profileData.nickname || selectedAccount?.username}
                   </h4>
-                  <span className="text-xs text-[var(--text-muted)]">
+                  <span className="text-xs text-zinc-400">
                     @{selectedAccount?.username.replace(/^@/, '')}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">
                     HTTP {profileData.httpStatus || 200} OK
                   </span>
                 </div>
                 {profileData.bio && (
-                  <p className="text-[11px] text-[var(--text-secondary)] line-clamp-1 mt-0.5 italic">
+                  <p className="text-[11px] text-zinc-300 line-clamp-1 mt-0.5 italic">
                     «{profileData.bio}»
                   </p>
                 )}
-                <div className="flex items-center gap-1 text-[10px] text-cyan-400 mt-1">
+                <div className="flex items-center gap-1 text-[10px] text-orange-400 mt-1">
                   <Globe size={10} />
                   <a
                     href={profileData.profileUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline hover:text-cyan-300 flex items-center gap-0.5"
+                    className="underline hover:text-orange-300 flex items-center gap-0.5"
                   >
                     <span>{profileData.profileUrl}</span>
                     <ExternalLink size={9} />
@@ -603,18 +603,18 @@ export function ScraperMonitor() {
             {/* Métricas reales extraídas */}
             <div className="grid grid-cols-3 gap-2 shrink-0 text-center">
               <div className="px-3 py-2 rounded-xl bg-black/30 border border-white/5">
-                <p className="text-base font-black text-cyan-300 font-mono">
+                <p className="text-base font-black text-orange-400 font-mono">
                   {profileData.videoCount}
                 </p>
-                <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">
+                <p className="text-[9px] text-zinc-400 uppercase tracking-wider">
                   Reels en Perfil
                 </p>
               </div>
               <div className="px-3 py-2 rounded-xl bg-black/30 border border-white/5">
-                <p className="text-base font-black text-emerald-300 font-mono">
+                <p className="text-base font-black text-amber-400 font-mono">
                   {profileData.heartCount}
                 </p>
-                <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">
+                <p className="text-[9px] text-zinc-400 uppercase tracking-wider">
                   Me Gusta
                 </p>
               </div>
@@ -632,14 +632,14 @@ export function ScraperMonitor() {
       )}
 
       {/* ── 3. Extractor de Reel por URL Directa (Para enlazar con link 100% funcional) ── */}
-      <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-[var(--border)] space-y-2.5">
+      <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
         <div className="flex items-center gap-2">
-          <Link2 size={13} className="text-cyan-400" />
+          <Link2 size={13} className="text-orange-400" />
           <h4 className="text-xs font-bold text-white">
             Inspeccionar y Enlazar Reel por URL de la Red Social
           </h4>
         </div>
-        <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+        <p className="text-[11px] text-zinc-400 leading-relaxed">
           Pega el enlace directo del Reel o TikTok publicado. El scraper extraerá las vistas reales, el copy del post y dejará un enlace verificado que sí abre el video.
         </p>
 
@@ -649,7 +649,7 @@ export function ScraperMonitor() {
             value={manualReelUrl}
             onChange={(e) => setManualReelUrl(e.target.value)}
             placeholder="URL del Reel (ej. https://www.tiktok.com/@cuenta/video/73... o https://instagram.com/reel/...)"
-            className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-[var(--border)] text-xs text-white placeholder-[var(--text-muted)] focus:outline-none focus:border-cyan-500/50"
+            className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500/50"
             required
           />
 
@@ -657,7 +657,7 @@ export function ScraperMonitor() {
             <select
               value={targetVideoId}
               onChange={(e) => setTargetVideoId(e.target.value)}
-              className="px-2.5 py-2 rounded-xl bg-black/50 border border-[var(--border)] text-xs text-white focus:outline-none focus:border-cyan-500/50 max-w-xs"
+              className="px-2.5 py-2 rounded-xl bg-[#121111] border border-white/10 text-xs text-white focus:outline-none focus:border-orange-500/50 max-w-xs"
             >
               <option value="">Vincular a video (opcional)</option>
               {accountVideos.map((v) => (
@@ -671,7 +671,7 @@ export function ScraperMonitor() {
           <button
             type="submit"
             disabled={extractingReel}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-500/30 transition-all active:scale-95 disabled:opacity-50 shrink-0"
+            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500/20 border border-orange-500/40 text-orange-200 text-xs font-bold hover:bg-orange-500/30 transition-all active:scale-95 disabled:opacity-50 shrink-0"
           >
             {extractingReel ? (
               <><Loader2 size={12} className="animate-spin" /><span>Extrayendo...</span></>
@@ -685,11 +685,11 @@ export function ScraperMonitor() {
           <div
             className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${
               reelFeedback.success
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                ? 'bg-orange-500/10 border-orange-500/30 text-orange-200'
                 : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
             }`}
           >
-            {reelFeedback.success ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
+            {reelFeedback.success ? <CheckCircle2 size={14} className="shrink-0 text-orange-400" /> : <AlertCircle size={14} className="shrink-0" />}
             <span>{reelFeedback.msg}</span>
           </div>
         )}
@@ -702,11 +702,11 @@ export function ScraperMonitor() {
             <h4 className="text-xs font-bold text-white tracking-wide uppercase">
               Reels de @{selectedAccount?.username}
             </h4>
-            <span className="text-[10px] text-[var(--text-muted)] font-mono">
+            <span className="text-[10px] text-zinc-400 font-mono">
               ({displayReels.length} en sistema · {profileData?.videoCount || 0} en red social)
             </span>
           </div>
-          <span className="text-[10px] text-cyan-400">
+          <span className="text-[10px] text-orange-400">
             Enlaces verificados a {selectedAccount?.plataforma?.toUpperCase()}
           </span>
         </div>
@@ -720,17 +720,17 @@ export function ScraperMonitor() {
               return (
                 <div
                   key={reel.id}
-                  className="p-4 rounded-2xl bg-white/[0.02] border border-[var(--border)] hover:border-cyan-500/40 transition-all space-y-3 flex flex-col justify-between"
+                  className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-orange-500/40 transition-all space-y-3 flex flex-col justify-between"
                 >
                   <div className="space-y-2">
                     {/* Header del Reel: Posición + Vistas */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold font-mono text-[11px]">
+                        <span className="px-2 py-0.5 rounded-lg bg-orange-500/20 border border-orange-500/40 text-orange-300 font-bold font-mono text-[11px]">
                           Reel #{reel.posicion} {reel.posicion === 1 ? '· Más reciente' : ''}
                         </span>
                         {hasDirectUrl ? (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center gap-1">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/15 border border-orange-500/30 text-orange-400 flex items-center gap-1">
                             <CheckCircle2 size={10} /> Link Verificado
                           </span>
                         ) : (
@@ -742,7 +742,7 @@ export function ScraperMonitor() {
 
                       {/* Contador de vistas interactivo */}
                       {isEditingThis ? (
-                        <div className="flex items-center gap-1 bg-black/50 p-0.5 rounded-lg border border-cyan-500/40">
+                        <div className="flex items-center gap-1 bg-black/50 p-0.5 rounded-lg border border-orange-500/40">
                           <input
                             type="number"
                             min="0"
@@ -760,7 +760,7 @@ export function ScraperMonitor() {
                             type="button"
                             onClick={() => handleSaveViews(reel.id)}
                             disabled={savingViewsId === reel.id}
-                            className="p-1 rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all"
+                            className="p-1 rounded bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-all"
                             title="Guardar vistas"
                           >
                             <Check size={11} />
@@ -781,12 +781,12 @@ export function ScraperMonitor() {
                             setEditingReelId(reel.id);
                             setEditViewsInput(reel.vistas > 0 ? reel.vistas.toString() : '');
                           }}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-white font-mono text-xs font-bold transition-all group shrink-0"
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-white font-mono text-xs font-bold transition-all group shrink-0"
                           title="Haga clic para editar o ingresar las vistas reales de este reel"
                         >
-                          <Eye size={12} className="text-cyan-400" />
-                          <span className="text-cyan-200">{formatViews(reel.vistas)} vistas</span>
-                          <Edit3 size={10} className="text-cyan-400 opacity-60 group-hover:opacity-100 transition-opacity ml-0.5" />
+                          <Eye size={12} className="text-orange-400" />
+                          <span className="text-orange-300">{formatViews(reel.vistas)} vistas</span>
+                          <Edit3 size={10} className="text-orange-400 opacity-60 group-hover:opacity-100 transition-opacity ml-0.5" />
                         </button>
                       )}
                     </div>
@@ -794,14 +794,14 @@ export function ScraperMonitor() {
                     {/* Campaña de origen */}
                     <div className="flex items-center gap-1.5 text-[10px]">
                       <Tag size={10} className="text-purple-400" />
-                      <span className="text-[var(--text-muted)]">Campaña:</span>
+                      <span className="text-zinc-400">Campaña:</span>
                       <span className="font-semibold text-purple-300">{reel.campaignName}</span>
                     </div>
 
                     {/* Título del Reel */}
                     <div>
                       <h4 className="font-bold text-white text-xs line-clamp-1">{reel.titulo}</h4>
-                      <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)] mt-1">
+                      <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-1">
                         <Clock size={10} />
                         <span>{format(reel.fecha, "dd 'de' MMMM, yyyy", { locale: es })}</span>
                       </div>
@@ -813,7 +813,7 @@ export function ScraperMonitor() {
                         href={reel.postUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-semibold transition-all hover:text-white"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/30 text-orange-300 text-xs font-semibold transition-all hover:text-white"
                       >
                         <Globe size={11} />
                         <span>Abrir Reel en {selectedAccount?.plataforma?.toUpperCase()}</span>
@@ -876,7 +876,7 @@ export function ScraperMonitor() {
             </span>
           </div>
           {trackedReels.length > 0 && (
-            <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+            <span className="text-[10px] text-orange-400 flex items-center gap-1">
               <CheckCircle2 size={10} /> Guardados en base de datos
             </span>
           )}
@@ -890,7 +890,7 @@ export function ScraperMonitor() {
               Pegar URLs de TikTok/Instagram (hasta 10, una por línea)
             </p>
           </div>
-          <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
             Ve al perfil en TikTok, copia la URL de cada reel y pégalos aquí. El sistema intentará
             extraer las métricas automáticamente y los guardará permanentemente.
           </p>
@@ -901,10 +901,10 @@ export function ScraperMonitor() {
               onChange={(e) => setBulkUrlsInput(e.target.value)}
               placeholder={`https://www.tiktok.com/@cuenta/video/7XXXXXXXXXXXXXXXXX\nhttps://www.tiktok.com/@cuenta/video/7XXXXXXXXXXXXXXXXX\n...`}
               rows={4}
-              className="w-full px-3 py-2.5 rounded-xl bg-black/40 border border-violet-500/20 text-xs text-white placeholder-[var(--text-muted)] focus:outline-none focus:border-violet-500/50 resize-none font-mono leading-relaxed"
+              className="w-full px-3 py-2.5 rounded-xl bg-black/40 border border-violet-500/20 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500/50 resize-none font-mono leading-relaxed"
             />
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-[10px] text-[var(--text-muted)]">
+              <span className="text-[10px] text-zinc-400">
                 {bulkUrlsInput.split('\n').filter((l) => l.trim().startsWith('http')).length} URLs detectadas
               </span>
               <button
@@ -924,11 +924,11 @@ export function ScraperMonitor() {
           {importFeedback && (
             <div className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${
               importFeedback.success
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                ? 'bg-orange-500/10 border-orange-500/30 text-orange-200'
                 : 'bg-red-500/10 border-red-500/30 text-red-300'
             }`}>
               {importFeedback.success
-                ? <CheckCircle2 size={13} className="shrink-0" />
+                ? <CheckCircle2 size={13} className="shrink-0 text-orange-400" />
                 : <AlertCircle size={13} className="shrink-0" />}
               <span>{importFeedback.msg}</span>
             </div>

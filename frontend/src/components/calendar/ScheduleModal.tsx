@@ -998,7 +998,7 @@ function ScheduleModalDialog() {
         onDragOver={handleModalDragOver}
         onDragLeave={handleModalDragLeave}
         onDrop={handleModalDrop}
-        className="relative z-10 w-full max-w-xl bg-[#0b0f19] rounded-3xl border border-emerald-500/30 shadow-2xl overflow-hidden h-[90vh] max-h-[820px] flex flex-col will-change-transform"
+        className="relative z-10 w-full max-w-xl bg-[#161414] rounded-3xl border border-white/10 shadow-2xl overflow-hidden h-[90vh] max-h-[820px] flex flex-col will-change-transform"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Overlay cuando se arrastra archivo sobre el modal de programación */}
@@ -1010,7 +1010,7 @@ function ScheduleModalDialog() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center border-2 border-dashed rounded-3xl m-2 pointer-events-none"
               style={{
-                borderColor: modalDragHover === 'image' ? '#f472b6' : '#10b981',
+                borderColor: modalDragHover === 'image' ? '#f472b6' : '#f97316',
               }}
             >
               {modalDragHover === 'image' ? (
@@ -1027,13 +1027,13 @@ function ScheduleModalDialog() {
                 </>
               ) : (
                 <>
-                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center mb-2.5 text-emerald-300">
+                  <div className="w-14 h-14 rounded-2xl bg-orange-500/20 border border-orange-400/40 flex items-center justify-center mb-2.5 text-orange-400">
                     <FileVideo size={28} className="animate-bounce" />
                   </div>
                   <h4 className="text-sm font-bold text-white mb-1">
                     ¡Soltar video para esta publicación!
                   </h4>
-                  <p className="text-[11px] text-emerald-200/80 max-w-xs">
+                  <p className="text-[11px] text-orange-200/80 max-w-xs">
                     Se cargará el video y su título para completar la programación.
                   </p>
                 </>
@@ -1048,9 +1048,6 @@ function ScheduleModalDialog() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-base font-bold text-white">Configurar Publicación</h2>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase tracking-wider">
-                      Paso 2 de 2
-                    </span>
                   </div>
                   <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                     Arrastra el video a cualquier parte de la pantalla o usa el área de abajo
@@ -1068,9 +1065,9 @@ function ScheduleModalDialog() {
 
               {/* Aviso Fecha programada: dentro del header, debajo del título y subtítulo */}
               {displayDateStr && (
-                <div className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20 flex items-center justify-between gap-2">
+                <div className="p-2.5 rounded-xl bg-[#1e1b1b] border border-white/10 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs">
-                    <Calendar size={13} className="text-emerald-400 shrink-0" />
+                    <Calendar size={13} className="text-orange-400 shrink-0" />
                     <div>
                       <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
                         Fecha programada: 
@@ -1081,7 +1078,7 @@ function ScheduleModalDialog() {
                     </div>
                   </div>
                   {videoFile && (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-orange-500/15 text-orange-400 border border-orange-500/25 flex items-center gap-1">
                       <CheckCircle2 size={11} /> Cargado
                     </span>
                   )}
@@ -1094,19 +1091,19 @@ function ScheduleModalDialog() {
               {/* Dropzone Video */}
               {videoFile ? (
                 /* Video cargado: card compacta con botón X para eliminar */
-                <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-3 space-y-2">
+                <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-3 space-y-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400 shrink-0">
                       <FileVideo size={18} />
                     </div>
                     <div className="text-left min-w-0 flex-1">
                       <p className="text-xs font-bold text-white truncate">{videoFile.name}</p>
-                      <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
+                      <p className="text-[10px] text-orange-400 font-mono mt-0.5">
                         {(videoFile.size / (1024 * 1024)).toFixed(2)} MB • HD
                       </p>
                     </div>
                     {/* Botón cambiar */}
-                    <label className="text-[10px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer">
+                    <label className="text-[10px] text-orange-400 hover:text-orange-300 underline cursor-pointer">
                       Cambiar
                       <input
                         type="file"
@@ -1130,15 +1127,15 @@ function ScheduleModalDialog() {
                   </div>
 
                   {/* Estado del video */}
-                  <div className="p-2 rounded-lg bg-black/30 border border-emerald-500/15 flex items-center justify-between gap-2 text-[10px]">
+                  <div className="p-2 rounded-lg bg-black/30 border border-white/10 flex items-center justify-between gap-2 text-[10px]">
                     {extractingAudio ? (
                       <div className="flex items-center gap-1.5 text-amber-300 font-medium">
                         <Loader2 size={11} className="animate-spin text-amber-400" />
                         <span>Extrayendo audio para análisis IA...</span>
                       </div>
                     ) : extractedAudio ? (
-                      <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">
-                        <Sparkles size={11} className="text-cyan-400" />
+                      <div className="flex items-center gap-1.5 text-orange-300 font-semibold">
+                        <Sparkles size={11} className="text-orange-400" />
                         <span>Audio listo: {extractedAudio.durationSeconds}s — IA usará subtítulos</span>
                       </div>
                     ) : (
@@ -1159,12 +1156,12 @@ function ScheduleModalDialog() {
                   className={cn(
                     'rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-colors',
                     isDragActive
-                      ? 'border-emerald-400 bg-emerald-500/15'
-                      : 'border-[var(--border-strong)] hover:border-emerald-500/40 hover:bg-white/[0.02]'
+                      ? 'border-orange-400 bg-orange-500/15'
+                      : 'border-white/10 hover:border-orange-500/40 hover:bg-white/[0.02]'
                   )}
                 >
                   <input {...getInputProps()} />
-                  <Upload size={20} className={cn('mx-auto mb-2', isDragActive ? 'text-emerald-400' : 'text-[var(--text-muted)]')} />
+                  <Upload size={20} className={cn('mx-auto mb-2', isDragActive ? 'text-orange-400' : 'text-[var(--text-muted)]')} />
                   <p className="text-xs font-semibold text-white">
                     {isDragActive ? '¡Suelta el video aquí!' : 'Arrastra o selecciona el archivo de video'}
                   </p>
@@ -1178,10 +1175,10 @@ function ScheduleModalDialog() {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                        <FileVideo size={13} className="text-cyan-400" />
+                        <FileVideo size={13} className="text-orange-400" />
                         <span>Nombre / Título del Archivo de Video</span>
                       </label>
-                      <span className="text-[10px] text-cyan-400 font-mono flex items-center gap-1">
+                      <span className="text-[10px] text-orange-400 font-mono flex items-center gap-1">
                         <ShieldCheck size={11} />
                         Anti-Duplicados en tiempo real
                       </span>
@@ -1191,7 +1188,7 @@ function ScheduleModalDialog() {
                       value={videoTitle}
                       onChange={(e) => setVideoTitle(e.target.value)}
                       placeholder="Título o nombre del archivo del video..."
-                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-[var(--border)] focus:border-cyan-400/60 outline-none bg-[#0d1422] transition-colors hover:border-cyan-500/30"
+                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] transition-colors hover:border-orange-500/30"
                     />
                     <p className="text-[10px] text-[var(--text-muted)] mt-1">
                       Nombre o tema del archivo de video. El sistema verifica si este archivo ya existe o se ha publicado con anterioridad.
@@ -1269,14 +1266,14 @@ function ScheduleModalDialog() {
                       )}
 
                       {duplicateAnalysis.status === 'available' && (
-                        <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/25 text-xs flex items-center justify-between gap-2 text-emerald-300">
+                        <div className="p-2.5 rounded-xl bg-orange-950/20 border border-orange-500/30 text-xs flex items-center justify-between gap-2 text-orange-300">
                           <div className="flex items-center gap-2 text-[11px]">
-                            <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
+                            <ShieldCheck size={15} className="text-orange-400 shrink-0" />
                             <span className="font-medium">
                               <b>Verificador Anti-Duplicados:</b> Nombre de archivo no registrado anteriormente. Disponible.
                             </span>
                           </div>
-                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30 font-semibold uppercase">
                             Disponible
                           </span>
                         </div>
@@ -1308,14 +1305,14 @@ function ScheduleModalDialog() {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                        <FileVideo size={13} className="text-cyan-400" />
+                        <FileVideo size={13} className="text-orange-400" />
                         <span>Nombre del archivo del video</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30 font-mono">
                           Archivo / Anti-Duplicados
                         </span>
                       </label>
                       {videoFile && (
-                        <span className="text-[10px] text-cyan-400 font-mono truncate max-w-[200px]" title={videoFile.name}>
+                        <span className="text-[10px] text-orange-400 font-mono truncate max-w-[200px]" title={videoFile.name}>
                           {videoFile.name}
                         </span>
                       )}
@@ -1325,7 +1322,7 @@ function ScheduleModalDialog() {
                       value={videoTitle}
                       onChange={(e) => setVideoTitle(e.target.value)}
                       placeholder="Nombre o archivo del video (ej. MiVideoOriginal_01)..."
-                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-cyan-500/40 focus:border-cyan-400 outline-none bg-black/50 transition-colors hover:border-cyan-400/70"
+                      className="w-full rounded-xl px-3 py-2.5 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] transition-colors hover:border-orange-500/30"
                     />
                     <p className="text-[10px] text-[var(--text-muted)]">
                       Único campo que comprueba si ya existe un nombre de archivo igual en los videos programados anteriormente (no se subirá como título a YouTube).
@@ -1336,7 +1333,7 @@ function ScheduleModalDialog() {
                   {videoTitle.trim() && (
                     <div className="space-y-2 pt-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-cyan-400 font-mono flex items-center gap-1">
+                        <span className="text-[10px] text-orange-400 font-mono flex items-center gap-1">
                           <ShieldCheck size={11} />
                           Verificador Anti-Duplicados (Solo Nombre del Archivo)
                         </span>
@@ -1409,14 +1406,14 @@ function ScheduleModalDialog() {
                       )}
 
                       {duplicateAnalysis.status === 'available' && (
-                        <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/25 text-xs flex items-center justify-between gap-2 text-emerald-300">
+                        <div className="p-2.5 rounded-xl bg-orange-950/20 border border-orange-500/30 text-xs flex items-center justify-between gap-2 text-orange-300">
                           <div className="flex items-center gap-2 text-[11px]">
-                            <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
+                            <ShieldCheck size={15} className="text-orange-400 shrink-0" />
                             <span className="font-medium">
                               <b>Verificador Anti-Duplicados:</b> Nombre de archivo disponible (no existe en videos anteriores).
                             </span>
                           </div>
-                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30 font-semibold uppercase">
                             Disponible
                           </span>
                         </div>
@@ -1463,7 +1460,7 @@ function ScheduleModalDialog() {
                         <span>Miniatura Personalizada para YouTube (Opcional)</span>
                       </label>
                       {thumbnailFile && (
-                        <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                        <span className="text-[10px] text-orange-400 font-semibold flex items-center gap-1">
                           <CheckCircle2 size={11} /> {(thumbnailFile.size / 1024).toFixed(0)} KB
                         </span>
                       )}
@@ -1533,13 +1530,13 @@ function ScheduleModalDialog() {
 
               {/* Sub-card: Estado de Google Drive */}
               {videoFile && (
-                <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 text-xs space-y-2">
+                <div className="p-3 rounded-xl bg-[#1e1b1b] border border-white/10 text-xs space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <HardDrive size={14} className="text-cyan-400" />
+                      <HardDrive size={14} className="text-orange-400" />
                       <span className="font-semibold text-white">Google Drive:</span>
                       {folderIdConfigured ? (
-                        <span className="text-[11px] text-cyan-300 font-mono truncate max-w-[150px]">
+                        <span className="text-[11px] text-orange-300 font-mono truncate max-w-[150px]">
                           Carpeta ID: {folderIdConfigured}
                         </span>
                       ) : (
@@ -1548,7 +1545,7 @@ function ScheduleModalDialog() {
                     </div>
 
                     {driveToken ? (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold flex items-center gap-1">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30 font-semibold flex items-center gap-1">
                         <Check size={10} /> Conectado
                       </span>
                     ) : (
@@ -1556,7 +1553,7 @@ function ScheduleModalDialog() {
                         type="button"
                         onClick={handleConnectDrive}
                         disabled={connectingDrive}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 text-[10px] font-bold transition-all disabled:opacity-50"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-500/20 border border-orange-500/40 text-orange-300 hover:bg-orange-500/30 text-[10px] font-bold transition-all disabled:opacity-50"
                       >
                         {connectingDrive ? (
                           <Loader2 size={11} className="animate-spin" />
@@ -1571,13 +1568,13 @@ function ScheduleModalDialog() {
                   {/* Barra de progreso de subida a Drive */}
                   {uploadingDrive && (
                     <div className="space-y-1 pt-1">
-                      <div className="flex justify-between text-[10px] text-cyan-300">
+                      <div className="flex justify-between text-[10px] text-orange-300">
                         <span>Subiendo archivo a Google Drive...</span>
                         <span>{uploadProgress}%</span>
                       </div>
-                      <div className="w-full h-1.5 bg-cyan-950 rounded-full overflow-hidden border border-cyan-500/30">
+                      <div className="w-full h-1.5 bg-[#121111] rounded-full overflow-hidden border border-orange-500/30">
                         <div
-                          className="h-full bg-cyan-400 transition-all duration-200"
+                          className="h-full bg-gradient-to-r from-orange-500 to-amber-500 transition-all duration-200"
                           style={{ width: `${uploadProgress}%` }}
                         />
                       </div>
@@ -1585,7 +1582,7 @@ function ScheduleModalDialog() {
                   )}
 
                   {driveSuccessUrl && (
-                    <p className="text-[10px] text-emerald-400 truncate">
+                    <p className="text-[10px] text-orange-400 truncate">
                       ✅ Subido con éxito: {driveSuccessUrl}
                     </p>
                   )}
@@ -1613,8 +1610,8 @@ function ScheduleModalDialog() {
                   )}
 
                   {/* Campo para ingresar enlace de Google Drive manualmente */}
-                  <div className="pt-2 border-t border-cyan-500/20">
-                    <label className="text-[11px] font-semibold text-cyan-300 block mb-1">
+                  <div className="pt-2 border-t border-white/10">
+                    <label className="text-[11px] font-semibold text-orange-300 block mb-1">
                       O pega el enlace de Google Drive manualmente:
                     </label>
                     <input
@@ -1622,7 +1619,7 @@ function ScheduleModalDialog() {
                       value={manualDriveUrl}
                       onChange={(e) => setManualDriveUrl(e.target.value)}
                       placeholder="https://drive.google.com/file/d/.../view"
-                      className="w-full rounded-lg px-2.5 py-2 text-xs text-white border border-cyan-500/30 focus:border-cyan-400/60 outline-none bg-[#0d1422] font-mono transition-colors hover:border-cyan-500/40"
+                      className="w-full rounded-lg px-2.5 py-2 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] font-mono transition-colors hover:border-orange-500/30"
                     />
                     <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                       Si pegas el enlace aquí, se usará directamente sin requerir inicio de sesión en Google.
@@ -1655,9 +1652,9 @@ function ScheduleModalDialog() {
                         }
                       }
                     }}
-                    className="w-full rounded-xl px-3 py-2 text-xs text-white bg-[#0d1422] border border-[var(--border)] focus:border-emerald-500/50 outline-none"
+                    className="w-full rounded-xl px-3 py-2 text-xs text-white bg-[#121111] border border-white/10 focus:border-orange-500/60 outline-none"
                   >
-                    <option value="" className="bg-[#0d0d1a]">
+                    <option value="" className="bg-[#161414]">
                       Seleccionar cuenta...
                     </option>
                     {filteredAccounts
@@ -1669,13 +1666,13 @@ function ScheduleModalDialog() {
                             : ` — ✅ Meta cumplida (${stat.count}/${stat.target})`
                           : '';
                         return (
-                          <option key={a.id} value={a.id} className="bg-[#0d0d1a]">
+                          <option key={a.id} value={a.id} className="bg-[#161414]">
                             @{a.username} ({a.plataforma}){suffix}
                           </option>
                         );
                       })}
                     {selectedCampanaId && filteredAccounts.length === 0 && (
-                      <option value="" disabled className="bg-[#0d0d1a] text-red-400">
+                      <option value="" disabled className="bg-[#161414] text-red-400">
                         Sin cuentas enlazadas a esta campaña
                       </option>
                     )}
@@ -1691,15 +1688,15 @@ function ScheduleModalDialog() {
                   </label>
                   <select
                     {...register('campana_id')}
-                    className="w-full rounded-xl px-3 py-2 text-xs text-white bg-[#0d1422] border border-[var(--border)] focus:border-emerald-500/50 outline-none"
+                    className="w-full rounded-xl px-3 py-2 text-xs text-white bg-[#121111] border border-white/10 focus:border-orange-500/60 outline-none"
                   >
-                    <option value="" className="bg-[#0d0d1a]">
+                    <option value="" className="bg-[#161414]">
                       Seleccionar campaña...
                     </option>
                     {campaigns
                       .filter((c) => c.activo)
                       .map((c) => (
-                        <option key={c.id} value={c.id} className="bg-[#0d0d1a]">
+                        <option key={c.id} value={c.id} className="bg-[#161414]">
                           {c.nombre}
                         </option>
                       ))}
@@ -1742,7 +1739,7 @@ function ScheduleModalDialog() {
                     type="button"
                     onClick={handleGenerateAI}
                     disabled={generatingAI || extractingAudio}
-                    className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-400 hover:from-emerald-500/30 hover:to-cyan-500/30 transition-all disabled:opacity-50"
+                    className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-gradient-to-r from-orange-500/20 to-orange-600/20 border border-orange-500/30 text-orange-400 hover:from-orange-500/30 hover:to-orange-600/30 transition-all disabled:opacity-50"
                   >
                     {generatingAI || extractingAudio ? (
                       <RefreshCw size={10} className="animate-spin" />
@@ -1766,32 +1763,32 @@ function ScheduleModalDialog() {
                   minHeight={76}
                   maxHeight={320}
                   placeholder="El copy se generará respetando las reglas de la campaña y la red social seleccionada..."
-                  className="rounded-xl p-3 text-xs text-white border border-[var(--border)] focus:border-emerald-500/50 outline-none bg-[#0d1422] leading-relaxed placeholder:text-[var(--text-muted)]"
+                  className="rounded-xl p-3 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] leading-relaxed placeholder:text-[var(--text-muted)]"
                 />
                 {aiFeedback && (
-                  <p className="text-[10px] text-cyan-300 mt-1 leading-snug">{aiFeedback}</p>
+                  <p className="text-[10px] text-orange-300 mt-1 leading-snug">{aiFeedback}</p>
                 )}
 
                 {/* Subtítulos y Diálogo extraídos en JSON */}
                 {extractedSubtitles && (
-                  <div className="mt-2.5 p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 text-xs space-y-2">
+                  <div className="mt-2.5 p-3 rounded-xl bg-orange-950/20 border border-orange-500/30 text-xs space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-purple-300 font-bold text-[11px]">
-                        <FileText size={13} className="text-cyan-400" />
+                      <div className="flex items-center gap-1.5 text-orange-300 font-bold text-[11px]">
+                        <FileText size={13} className="text-orange-400" />
                         <span>Subtítulos y Diálogo Extraídos en JSON</span>
                       </div>
                       <button
                         type="button"
                         onClick={() => setShowSubtitlesJson(!showSubtitlesJson)}
-                        className="text-[10px] font-semibold text-cyan-300 hover:text-white underline"
+                        className="text-[10px] font-semibold text-orange-400 hover:text-white underline"
                       >
                         {showSubtitlesJson ? 'Ocultar JSON' : 'Ver JSON'}
                       </button>
                     </div>
 
                     {extractedSubtitles.gancho_inicial && (
-                      <div className="p-2 rounded-lg bg-black/40 border border-purple-500/20 text-[11px]">
-                        <span className="text-[9px] text-purple-400 font-bold uppercase tracking-wider block">
+                      <div className="p-2 rounded-lg bg-black/40 border border-orange-500/20 text-[11px]">
+                        <span className="text-[9px] text-orange-400 font-bold uppercase tracking-wider block">
                           Gancho Inicial Detectado:
                         </span>
                         <p className="text-white italic mt-0.5">"{extractedSubtitles.gancho_inicial}"</p>
@@ -1800,12 +1797,12 @@ function ScheduleModalDialog() {
 
                     {extractedSubtitles.tema_principal && (
                       <p className="text-[11px] text-[var(--text-secondary)]">
-                        <b className="text-purple-300">Tema:</b> {extractedSubtitles.tema_principal}
+                        <b className="text-orange-300">Tema:</b> {extractedSubtitles.tema_principal}
                       </p>
                     )}
 
                     {showSubtitlesJson && (
-                      <pre className="text-[10px] font-mono text-purple-200 bg-black/70 p-2.5 rounded-lg overflow-x-auto max-h-36 overflow-y-auto border border-purple-500/20">
+                      <pre className="text-[10px] font-mono text-orange-200 bg-black/70 p-2.5 rounded-lg overflow-x-auto max-h-36 overflow-y-auto border border-orange-500/20">
                         {JSON.stringify(extractedSubtitles, null, 2)}
                       </pre>
                     )}
@@ -1818,7 +1815,7 @@ function ScheduleModalDialog() {
               </div>
 
               {/* Auto reprogramación */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-[var(--border)]">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/10">
                 <div>
                   <p className="text-xs font-semibold text-white">Auto-reprogramación</p>
                   <p className="text-[10px] text-[var(--text-muted)]">
@@ -1828,23 +1825,18 @@ function ScheduleModalDialog() {
                 <input
                   type="checkbox"
                   {...register('auto_reprogramacion')}
-                  className="rounded accent-emerald-500 w-4 h-4 cursor-pointer"
+                  className="rounded accent-orange-500 w-4 h-4 cursor-pointer"
                 />
               </div>
 
             </form>
 
             {/* ── Footer de Configurar Publicación ── */}
-            <div className="px-5 py-3 border-t border-white/[0.08] bg-[#090d18] space-y-2.5 shrink-0">
+            <div className="px-5 py-3 border-t border-white/[0.08] bg-[#161414] space-y-2.5 shrink-0">
               {/* Tarjeta de Videos del día (si hay cuenta seleccionada) */}
               {selectedAccountStat && (
                 <div
-                  className={cn(
-                    'p-2.5 rounded-xl border text-xs space-y-1.5 transition-all',
-                    selectedAccountStat.missing > 0
-                      ? 'bg-gradient-to-r from-amber-950/35 via-[#0e1626] to-[#0a101d] border-amber-500/30'
-                      : 'bg-gradient-to-r from-emerald-950/35 via-[#0e1626] to-[#0a101d] border-emerald-500/30'
-                  )}
+                  className="p-2.5 rounded-xl border border-orange-500/30 bg-gradient-to-r from-orange-950/25 via-[#1e1b1b] to-[#161414] text-xs space-y-1.5 transition-all"
                 >
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2 min-w-0">
@@ -1853,7 +1845,7 @@ function ScheduleModalDialog() {
                           'w-6 h-6 rounded-lg border flex items-center justify-center shrink-0',
                           selectedAccountStat.missing > 0
                             ? 'bg-amber-500/15 border-amber-500/25 text-amber-400'
-                            : 'bg-emerald-500/15 border-emerald-500/25 text-emerald-400'
+                            : 'bg-orange-500/15 border-orange-500/25 text-orange-400'
                         )}
                       >
                         {getPlatformIcon(selectedAccountStat.account.plataforma)}
@@ -1873,10 +1865,10 @@ function ScheduleModalDialog() {
                       </div>
                     </div>
                     <div className="text-right shrink-0 flex items-center gap-2">
-                      <span className={cn('text-xs font-mono font-bold', selectedAccountStat.missing > 0 ? 'text-amber-400' : 'text-emerald-400')}>
+                      <span className={cn('text-xs font-mono font-bold', selectedAccountStat.missing > 0 ? 'text-amber-400' : 'text-orange-400')}>
                         {selectedAccountStat.count} / {selectedAccountStat.target} videos
                       </span>
-                      <span className={cn('text-[9px] font-semibold px-2 py-0.5 rounded-full border', selectedAccountStat.missing > 0 ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30')}>
+                      <span className={cn('text-[9px] font-semibold px-2 py-0.5 rounded-full border', selectedAccountStat.missing > 0 ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-orange-500/15 text-orange-400 border-orange-500/30')}>
                         {selectedAccountStat.missing > 0 ? `Faltan ${selectedAccountStat.missing}` : 'Meta lista'}
                       </span>
                     </div>
@@ -1884,7 +1876,7 @@ function ScheduleModalDialog() {
                   <div className="space-y-0.5">
                     <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                       <div
-                        className={cn('h-full rounded-full transition-all duration-500', selectedAccountStat.missing > 0 ? 'bg-gradient-to-r from-amber-500 to-amber-400' : 'bg-gradient-to-r from-emerald-500 to-cyan-400')}
+                        className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-orange-500 to-amber-500"
                         style={{ width: `${Math.min(100, Math.round((selectedAccountStat.count / (selectedAccountStat.target || 1)) * 100))}%` }}
                       />
                     </div>
@@ -1902,7 +1894,7 @@ function ScheduleModalDialog() {
                   type="button"
                   onClick={handleAttemptClose}
                   disabled={uploadingDrive}
-                  className="px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs text-[var(--text-muted)] hover:text-white transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -1910,7 +1902,7 @@ function ScheduleModalDialog() {
                   type="submit"
                   form="schedule-modal-form"
                   disabled={uploadingDrive || isScheduling}
-                  className="px-6 py-2 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  className="px-6 py-2 rounded-xl btn-gradient text-xs font-bold shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {isScheduling ? (
                     <>
@@ -1946,7 +1938,7 @@ function ScheduleModalDialog() {
                   animate={{ scale: 1, opacity: 1, y: 0 }}
                   exit={{ scale: 0.94, opacity: 0, y: 10 }}
                   transition={{ duration: 0.16, ease: 'easeOut' }}
-                  className="w-full max-w-md rounded-2xl bg-[#0f172a] border border-amber-500/40 p-5 shadow-2xl space-y-4 will-change-transform"
+                  className="w-full max-w-md rounded-2xl bg-[#161414] border border-amber-500/40 p-5 shadow-2xl space-y-4 will-change-transform"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-start gap-3.5">
@@ -1959,7 +1951,7 @@ function ScheduleModalDialog() {
                         Tienes un video cargado listo para programar y subir a Drive:
                       </p>
                       <div className="p-2 rounded-lg bg-black/40 border border-white/10 flex items-center gap-2">
-                        <FileVideo size={14} className="text-emerald-400 shrink-0" />
+                        <FileVideo size={14} className="text-orange-400 shrink-0" />
                         <span className="text-xs font-semibold text-white truncate">
                           {videoFile?.name}
                         </span>

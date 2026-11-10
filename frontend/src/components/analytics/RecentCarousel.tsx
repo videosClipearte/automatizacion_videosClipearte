@@ -36,11 +36,11 @@ export function RecentCarousel() {
       {/* Header with Title and Scroll Controls */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+          <div className="w-6 h-6 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
             <Clock size={13} />
           </div>
           <h3 className="text-sm font-bold text-white">Publicaciones Recientes</h3>
-          <span className="text-xs text-[var(--text-muted)] font-mono ml-1">
+          <span className="text-xs text-zinc-400 font-mono ml-1">
             ({sorted.length} videos)
           </span>
         </div>
@@ -49,14 +49,14 @@ export function RecentCarousel() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => scroll('left')}
-            className="w-7 h-7 rounded-lg glass border border-[var(--border)] hover:border-emerald-500/30 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-all active:scale-95"
+            className="w-7 h-7 rounded-lg border border-white/10 hover:border-orange-500/30 flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-95 bg-white/5"
             title="Desplazar hacia la izquierda"
           >
             <ChevronLeft size={14} />
           </button>
           <button
             onClick={() => scroll('right')}
-            className="w-7 h-7 rounded-lg glass border border-[var(--border)] hover:border-emerald-500/30 flex items-center justify-center text-[var(--text-secondary)] hover:text-white transition-all active:scale-95"
+            className="w-7 h-7 rounded-lg border border-white/10 hover:border-orange-500/30 flex items-center justify-center text-zinc-400 hover:text-white transition-all active:scale-95 bg-white/5"
             title="Desplazar hacia la derecha"
           >
             <ChevronRight size={14} />
@@ -70,19 +70,19 @@ export function RecentCarousel() {
         className="flex gap-3 overflow-x-auto pb-3 pt-1 scroll-smooth"
         style={{
           scrollbarWidth: 'thin',
-          scrollbarColor: 'rgba(16, 185, 129, 0.4) rgba(255, 255, 255, 0.04)',
+          scrollbarColor: 'rgba(249, 115, 22, 0.4) rgba(255, 255, 255, 0.04)',
         }}
       >
         {sorted.map((video, i) => {
           const account = accounts.find(a => a.id === video.cuenta_id);
-          const platformColor = account ? getPlatformColor(account.plataforma) : '#10b981';
+          const platformColor = account ? getPlatformColor(account.plataforma) : '#f97316';
           const isDone = video.estado === 'PUBLICADO';
 
           return (
             <div
               key={video.id}
               onClick={() => setSelectedVideoId(video.id)}
-              className="shrink-0 w-44 p-2.5 rounded-2xl glass border border-[var(--border)] hover:border-emerald-500/40 hover:bg-white/[0.04] transition-all duration-200 cursor-pointer group shadow-sm flex flex-col active:scale-98 will-change-transform"
+              className="shrink-0 w-44 p-2.5 rounded-2xl border border-white/10 hover:border-orange-500/40 hover:bg-white/[0.04] transition-all duration-200 cursor-pointer group shadow-sm flex flex-col active:scale-98 will-change-transform bg-[#161414]"
             >
               {/* Thumbnail Container */}
               <div
@@ -110,14 +110,14 @@ export function RecentCarousel() {
               <div className="flex items-center justify-between mb-1">
                 <StatusBadge status={video.estado} className="text-[9px] py-0.5 px-1.5" />
                 {(video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
-                  <span className="text-[9px] font-mono text-emerald-400 font-bold flex items-center gap-0.5">
+                  <span className="text-[9px] font-mono text-orange-400 font-bold flex items-center gap-0.5">
                     <Eye size={10} /> {formatViews(video.vistas_obtenidas || 0)}
                   </span>
                 )}
               </div>
 
               {/* Title & Date */}
-              <p className="text-xs font-semibold text-white truncate leading-snug group-hover:text-emerald-300 transition-colors">
+              <p className="text-xs font-semibold text-white truncate leading-snug group-hover:text-orange-300 transition-colors">
                 {video.titulo}
               </p>
               <div className="flex items-center justify-between mt-1 text-[10px] text-[var(--text-muted)]">

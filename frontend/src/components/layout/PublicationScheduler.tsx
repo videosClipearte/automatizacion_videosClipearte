@@ -419,7 +419,7 @@ export function PublicationScheduler() {
                     await sendTelegramMessage(
                       botToken,
                       targetChat,
-                      `✅ <b>Video publicado en YouTube</b>\n\n📺 <b>${video.titulo}</b>\n👤 Canal: @${accountName}\n🔗 ${resData.video_url}`,
+                      `✅ <b>Publicado en YouTube</b>\n📺 <b>${video.titulo}</b> · @${accountName}\n🔗 ${resData.video_url}`,
                       'HTML'
                     );
                   }
@@ -445,7 +445,7 @@ export function PublicationScheduler() {
                     await sendTelegramMessage(
                       botToken,
                       targetChat,
-                      `❌ <b>Fallo en publicación de YouTube</b>\n\n📺 <b>${video.titulo}</b>\n👤 Canal: @${accountName}\n\n🚨 <b>Error:</b> ${resData.error || 'Error desconocido'}\n⏱️ <b>Retraso:</b> ${delayMinutes} min (superó margen de tolerancia de ${toleranciaMinutos} min)`,
+                      `❌ <b>Fallo en YouTube</b> · retraso ${delayMinutes} min (tolerancia ${toleranciaMinutos})\n📺 <b>${video.titulo}</b> · @${accountName}\n🚨 ${resData.error || 'Error desconocido'}`,
                       'HTML'
                     );
                   } else if (delayMinutes < toleranciaMinutos) {
@@ -521,7 +521,7 @@ export function PublicationScheduler() {
           const currentVideos = videosRef.current;
 
           if (botToken && targetChat && currentAccounts.length > 0) {
-            let reportBody = `📊 <b>REPORTE DIARIO DE CUOTAS Y PUBLICACIONES FALTANTES</b>\n━━━━━━━━━━━━━━━━━━━━\n📅 <b>Fecha:</b> ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}\n\n`;
+            let reportBody = `📊 <b>Metas de hoy · ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</b>\n`;
 
             let totalTarget = 0;
             let totalPublished = 0;
@@ -539,21 +539,11 @@ export function PublicationScheduler() {
               totalPublished += pubCount;
               if (missing > 0) anyMissing = true;
 
-              reportBody += `👤 <b>@${acc.username}</b> (<i>${acc.plataforma.toUpperCase()}</i>):\n`;
-              reportBody += `• Publicados hoy: <b>${pubCount}/${target}</b>\n`;
-              if (missing > 0) {
-                reportBody += `• ⚠️ Faltan: <b>${missing} video(s)</b> por subir/programar.\n\n`;
-              } else {
-                reportBody += `• ✅ ¡Meta del día cumplida!\n\n`;
-              }
+              reportBody += `${missing > 0 ? '⚠️' : '✅'} @${acc.username} (${acc.plataforma.toUpperCase()}): <b>${pubCount}/${target}</b>${missing > 0 ? ` · faltan <b>${missing}</b>` : ''}\n`;
             });
 
-            reportBody += `━━━━━━━━━━━━━━━━━━━━\n📈 <b>Progreso Global:</b> ${totalPublished}/${totalTarget} videos (${Math.round((totalPublished / (totalTarget || 1)) * 100)}%)\n`;
-            if (anyMissing) {
-              reportBody += `⏰ <i>Recuerden subir el contenido pendiente antes de las 23:59.</i>`;
-            } else {
-              reportBody += `🎉 <i>¡Todas las cuentas cumplieron sus metas estimadas de hoy!</i>`;
-            }
+            reportBody += `\n📈 <b>Global:</b> ${totalPublished}/${totalTarget} (${Math.round((totalPublished / (totalTarget || 1)) * 100)}%)`;
+            reportBody += anyMissing ? ` · ⏰ <i>Sube lo pendiente antes de las 23:59.</i>` : ` · 🎉 <i>¡Metas cumplidas!</i>`;
 
             await sendTelegramMessage(botToken, targetChat, reportBody);
             console.log(

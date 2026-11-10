@@ -60,7 +60,7 @@ export function CalendarView() {
   const {
     videos, accounts, openScheduleModal,
     setSelectedVideoId, calendarView, setCalendarView,
-    selectedAccountId, setSelectedAccountId, statusFilter, setStatusFilter,
+    selectedAccountId, setSelectedAccountId, selectedPlatform, setSelectedPlatform, statusFilter, setStatusFilter,
   } = useAppStore();
   const driveUploads = useAppStore((s) => s.driveUploads);
 
@@ -298,6 +298,7 @@ export function CalendarView() {
     const vMap = new Map<string, Video[]>();
     const mMap = new Map<string, { scheduled: number; sent: number; published: number }>();
     const seenVideoIds = new Set<string>();
+    const accountMap = new Map(accounts.map((a) => [a.id, a]));
 
     for (const v of videos) {
       if (seenVideoIds.has(v.id)) continue;
@@ -308,6 +309,12 @@ export function CalendarView() {
 
       if (selectedAccountId && selectedAccountId !== 'ALL' && v.cuenta_id !== selectedAccountId) {
         continue;
+      }
+      if (selectedPlatform && selectedPlatform !== 'ALL') {
+        const acc = accountMap.get(v.cuenta_id);
+        if (acc?.plataforma?.toLowerCase() !== selectedPlatform.toLowerCase()) {
+          continue;
+        }
       }
       if (statusFilter && statusFilter !== 'ALL' && v.estado !== statusFilter) {
         continue;
@@ -337,7 +344,7 @@ export function CalendarView() {
     }
 
     return { videosByDayMap: vMap, metricsByDayMap: mMap };
-  }, [videos, selectedAccountId, statusFilter]);
+  }, [videos, selectedAccountId, selectedPlatform, statusFilter, accounts]);
 
   const getVideosForDay = useCallback((day: Date) => {
     const dayKey = format(day, 'yyyy-MM-dd');
@@ -498,8 +505,8 @@ export function CalendarView() {
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="absolute top-2 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl glass-strong border border-cyan-400/50 shadow-2xl backdrop-blur-xl flex items-center gap-2.5 text-xs text-white pointer-events-none"
-            style={{ boxShadow: '0 10px 40px rgba(6,182,212,0.25)' }}
+            className="absolute top-2 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl glass-strong border border-orange-500/50 shadow-2xl backdrop-blur-xl flex items-center gap-2.5 text-xs text-white pointer-events-none"
+            style={{ boxShadow: '0 10px 40px rgba(249,115,22,0.25)' }}
           >
             {globalDragType === 'image' ? (
               <>
@@ -512,18 +519,17 @@ export function CalendarView() {
               </>
             ) : (
               <>
-                <div className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
+                <div className="w-6 h-6 rounded-lg bg-orange-500/20 border border-orange-400/40 flex items-center justify-center text-orange-300">
                   <FileVideo size={13} />
                 </div>
                 <span>
-                  <strong className="text-cyan-300">Video detectado:</strong> Suéltalo en un día para programarlo, o sobre una publicación para reemplazarla.
+                  <strong className="text-orange-400">Video detectado:</strong> Suéltalo en un día para programarlo, o sobre una publicación para reemplazarla.
                 </span>
               </>
             )}
           </motion.div>
         )}
       </AnimatePresence>
-
 
       {/* Calendar Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 mb-2.5 shrink-0">
@@ -555,7 +561,7 @@ export function CalendarView() {
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
           {/* ── Filtros activos ubicados exactamente al lado de Mes / Semana / Día ── */}
           <AnimatePresence>
-            {Boolean(selectedAccountId || statusFilter) && (
+            {Boolean(selectedAccountId || selectedPlatform || statusFilter) && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -563,18 +569,31 @@ export function CalendarView() {
                 className="flex items-center gap-1.5 flex-wrap"
               >
                 <div className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] font-medium mr-0.5">
-                  <Filter size={11} className="text-emerald-400" />
+                  <Filter size={11} className="text-orange-400" />
                   <span className="hidden md:inline">Filtros:</span>
                 </div>
 
+                {selectedPlatform && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 font-medium text-[11px] shadow-sm capitalize">
+                    <span>Red: {selectedPlatform}</span>
+                    <button
+                      onClick={() => setSelectedPlatform(null)}
+                      className="hover:text-white ml-0.5 text-xs font-bold leading-none p-0.5 rounded hover:bg-orange-500/30 transition-colors"
+                      title="Quitar filtro de red social"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+
                 {selectedAccountId && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-medium text-[11px] shadow-sm">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 font-medium text-[11px] shadow-sm">
                     <span className="truncate max-w-[130px] sm:max-w-[180px]">
                       @{accounts.find(a => a.id === selectedAccountId)?.username || selectedAccountId}
                     </span>
                     <button
                       onClick={() => setSelectedAccountId(null)}
-                      className="hover:text-white ml-0.5 text-xs font-bold leading-none p-0.5 rounded hover:bg-emerald-500/30 transition-colors"
+                      className="hover:text-white ml-0.5 text-xs font-bold leading-none p-0.5 rounded hover:bg-orange-500/30 transition-colors"
                       title="Quitar filtro de cuenta"
                     >
                       ×
@@ -583,11 +602,11 @@ export function CalendarView() {
                 )}
 
                 {statusFilter && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-medium text-[11px] shadow-sm">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 font-medium text-[11px] shadow-sm">
                     <span>{statusFilter}</span>
                     <button
                       onClick={() => setStatusFilter(null)}
-                      className="hover:text-white ml-0.5 text-xs font-bold leading-none p-0.5 rounded hover:bg-cyan-500/30 transition-colors"
+                      className="hover:text-white ml-0.5 text-xs font-bold leading-none p-0.5 rounded hover:bg-orange-500/30 transition-colors"
                       title="Quitar filtro de estado"
                     >
                       ×
@@ -598,9 +617,10 @@ export function CalendarView() {
                 <button
                   onClick={() => {
                     setSelectedAccountId(null);
+                    setSelectedPlatform(null);
                     setStatusFilter(null);
                   }}
-                  className="text-[11px] text-slate-400 hover:text-white underline font-medium ml-0.5 transition-colors"
+                  className="text-[11px] text-stone-400 hover:text-white underline font-medium ml-0.5 transition-colors cursor-pointer"
                   title="Restablecer todos los filtros"
                 >
                   Limpiar
@@ -616,9 +636,9 @@ export function CalendarView() {
                 key={key}
                 onClick={() => setCalendarView(key)}
                 className={cn(
-                  'flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200',
+                  'flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer',
                   calendarView === key
-                    ? 'bg-gradient-to-r from-emerald-500/30 to-cyan-500/30 text-white border border-emerald-500/30 shadow-sm'
+                    ? 'bg-[#3f2115] text-orange-200 border border-orange-500/40 shadow-sm'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                 )}
               >
@@ -636,16 +656,16 @@ export function CalendarView() {
         {/* ─────────────────── MONTH VIEW ─────────────────── */}
         {calendarView === 'month' && (
           <div className="flex flex-col flex-1 h-full min-h-0">
-            <div className="grid grid-cols-7 mb-1 shrink-0">
+            <div className="grid grid-cols-7 mb-1.5 shrink-0">
               {DAY_NAMES.map(d => (
-                <div key={d} className="text-center text-[10px] font-semibold text-[var(--text-muted)] py-1 uppercase tracking-widest">
+                <div key={d} className="text-center text-[10px] font-bold text-[var(--text-muted)] py-1 uppercase tracking-widest">
                   {d}
                 </div>
               ))}
             </div>
 
             <div
-              className="grid grid-cols-7 gap-px bg-[var(--border)] rounded-2xl overflow-hidden flex-1 min-h-0 shadow-sm"
+              className="grid grid-cols-7 gap-2 sm:gap-2.5 flex-1 min-h-0"
               style={{ gridTemplateRows: `repeat(${Math.ceil(monthDays.length / 7)}, minmax(0, 1fr))` }}
             >
               {monthDays.map((day) => {
@@ -655,6 +675,7 @@ export function CalendarView() {
                 const isCurrentMonth = isSameMonth(day, currentDate);
                 const hasSomething   = dayVideos.length > 0;
                 const isDayTargeted  = dragOverDay === dayKey;
+                const isCurrentDay   = isDayToday(day);
 
                 return (
                   <div
@@ -668,25 +689,30 @@ export function CalendarView() {
                       setCalendarView('day');
                     }}
                     className={cn(
-                      'relative min-h-0 p-1 sm:p-1.5 flex flex-col justify-between transition-all duration-150 group cursor-pointer hover:bg-[var(--bg-card-hover)] hover:ring-1 hover:ring-emerald-500/30 overflow-hidden',
-                      isCurrentMonth ? 'bg-[var(--bg-card)]' : 'bg-[var(--bg-elevated)]',
-                      isDayToday(day) && 'ring-inset ring-2 ring-emerald-500/80 bg-emerald-500/[0.08]',
-                      isDayTargeted && 'ring-2 ring-emerald-400 z-20'
+                      'relative min-h-0 p-1.5 sm:p-2 rounded-2xl border flex flex-col justify-between transition-all duration-150 group cursor-pointer overflow-hidden',
+                      isCurrentDay
+                        ? 'bg-gradient-to-br from-[#f97316] to-[#ea580c] border-orange-400 text-white shadow-xl shadow-orange-500/25 ring-2 ring-orange-400/40 z-10'
+                        : hasSomething
+                          ? 'bg-[#241c19] border-orange-500/20 hover:border-orange-500/40 hover:bg-[#2a201c]'
+                          : isCurrentMonth
+                            ? 'bg-[#1c1919] border-white/[0.06] hover:bg-[#231f1f] hover:border-orange-500/30'
+                            : 'bg-[#151313] border-white/[0.03] text-stone-600',
+                      isDayTargeted && 'ring-2 ring-orange-400 z-20'
                     )}
                     title="Haz clic para ver el cronograma completo de este día"
                   >
                     {/* Contenedor Drop Zone: SOLO visible en el día donde el video está ubicado encima */}
                     {isDayTargeted && (
                       <div
-                        className="absolute inset-1 z-30 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/95 text-white shadow-lg flex flex-col items-center justify-center p-1 text-center pointer-events-none"
+                        className="absolute inset-1 z-30 rounded-xl border-2 border-dashed border-orange-400 bg-orange-950/95 text-white shadow-lg flex flex-col items-center justify-center p-1 text-center pointer-events-none"
                       >
-                        <div className="w-6 h-6 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-0.5 text-emerald-300">
+                        <div className="w-6 h-6 rounded-lg bg-orange-500/25 border border-orange-400/40 flex items-center justify-center mb-0.5 text-orange-300">
                           <Upload size={13} />
                         </div>
                         <span className="text-[10px] font-extrabold text-white leading-tight px-1">
                           {format(day, 'd MMM')}
                         </span>
-                        <span className="text-[8px] text-emerald-300 font-semibold mt-0.5">
+                        <span className="text-[8px] text-orange-300 font-semibold mt-0.5">
                           Soltar para programar
                         </span>
                       </div>
@@ -695,19 +721,19 @@ export function CalendarView() {
                     {/* Day number header */}
                     <div className="flex items-center justify-between mb-0.5 shrink-0">
                       <div className="flex items-center gap-1">
-                        <span className={cn(
-                          'text-[11px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full',
-                          isDayToday(day)
-                            ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 text-white text-[10px] font-extrabold shadow-md ring-2 ring-emerald-400/50'
-                            : isCurrentMonth
+                        {isCurrentDay ? (
+                          <span className="text-[10px] sm:text-xs font-bold text-white bg-black/25 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                            <span>{format(day, 'd')}</span>
+                            <span className="opacity-90">Hoy</span>
+                          </span>
+                        ) : (
+                          <span className={cn(
+                            'text-[11px] sm:text-xs font-semibold px-1 py-0.5',
+                            isCurrentMonth
                               ? 'text-[var(--text-secondary)]'
                               : 'text-[var(--text-muted)]'
-                        )}>
-                          {format(day, 'd')}
-                        </span>
-                        {isDayToday(day) && (
-                          <span className="text-[9px] font-extrabold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.2 rounded-full border border-emerald-500/40 shadow-sm">
-                            Hoy
+                          )}>
+                            {format(day, 'd')}
                           </span>
                         )}
                       </div>
@@ -715,8 +741,13 @@ export function CalendarView() {
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
-                          className="w-4 h-4 sm:w-5 sm:h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/30 transition-all duration-150 active:scale-95 opacity-0 group-hover:opacity-100"
-                          title="Programar para este día"
+                          className={cn(
+                            "w-4 h-4 sm:w-5 sm:h-5 rounded-md flex items-center justify-center transition-all duration-150 active:scale-95 opacity-0 group-hover:opacity-100 cursor-pointer",
+                            isCurrentDay
+                              ? "bg-black/30 border border-white/30 text-white hover:bg-black/50 shadow-sm"
+                              : "bg-orange-500/20 border border-orange-500/30 text-orange-300 hover:bg-orange-500/30"
+                          )}
+                          title={isCurrentDay ? "Programar video para hoy" : "Programar para este día"}
                         >
                           <Plus size={10} />
                         </button>
@@ -747,14 +778,14 @@ export function CalendarView() {
                                 isHoverTarget
                                   ? (dragHoverFileType === 'image' || acct?.plataforma === 'youtube'
                                       ? "ring-2 ring-pink-400 bg-pink-950/70 border-pink-400 text-pink-200 z-30 scale-[1.02]"
-                                      : "ring-2 ring-cyan-400 bg-cyan-950/70 border-cyan-400 text-cyan-200 z-30 scale-[1.02]")
+                                      : "ring-2 ring-orange-500 bg-orange-950/70 border-orange-500 text-orange-200 z-30 scale-[1.02]")
                                   : isDriveUploading
-                                  ? "bg-cyan-950/40 border-cyan-500/50 text-cyan-200 shadow-sm shadow-cyan-500/20"
+                                  ? "bg-orange-950/40 border-orange-500/50 text-orange-200 shadow-sm shadow-orange-500/20"
                                   : isDriveError
                                   ? "bg-red-950/30 border-red-500/40 text-red-200"
                                   : isYtUploading
                                   ? "bg-red-500/10 border-red-500/40 text-red-200"
-                                  : "bg-white/[0.04] hover:bg-white/[0.08] border-[var(--border)] hover:border-emerald-500/40 text-white"
+                                  : "bg-white/[0.04] hover:bg-white/[0.08] border-white/10 hover:border-orange-500/40 text-white"
                               )}
                               title={`${video.nombre_archivo || video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${
                                 isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado === 'PUBLICADO' ? `PUBLICADO (${formatViews(video.vistas_obtenidas || 0)} vistas)` : video.estado
@@ -767,8 +798,8 @@ export function CalendarView() {
                               )}
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full shrink-0",
-                                isDriveUploading ? "bg-cyan-400" :
-                                video.estado === 'PUBLICADO' ? "bg-emerald-500" :
+                                isDriveUploading ? "bg-orange-400" :
+                                video.estado === 'PUBLICADO' ? "bg-orange-500" :
                                 isYtUploading ? "bg-red-500" :
                                 video.estado === 'ENVIADO'   ? "bg-blue-400" :
                                 video.estado === 'ERROR_DE_RED' || isDriveError ? "bg-red-400" : "bg-purple-400"
@@ -776,16 +807,16 @@ export function CalendarView() {
                               <span className="shrink-0">{getPlatformIcon(acct?.plataforma)}</span>
                               <span className={cn(
                                 "text-[9px] font-mono font-semibold shrink-0",
-                                isDriveUploading ? "text-cyan-300" : isYtUploading ? "text-red-400" : "text-cyan-400"
+                                isDriveUploading ? "text-orange-300" : isYtUploading ? "text-red-400" : "text-orange-400"
                               )}>
                                 {format(new Date(video.programado_para), 'HH:mm')}
                               </span>
-                              <span className="text-[9px] font-medium truncate flex-1 group-hover/chip:text-emerald-300">
+                              <span className="text-[9px] font-medium truncate flex-1 group-hover/chip:text-orange-300">
                                 {video.nombre_archivo || video.titulo}
                               </span>
                               {isDriveUploading && (
-                                <span className="text-[8px] px-1 py-0 rounded bg-cyan-500/25 text-cyan-200 border border-cyan-400/40 font-bold shrink-0 flex items-center gap-0.5">
-                                  <Loader2 size={8} className="animate-spin text-cyan-300" />
+                                <span className="text-[8px] px-1 py-0 rounded bg-orange-500/25 text-orange-200 border border-orange-400/40 font-bold shrink-0 flex items-center gap-0.5">
+                                  <Loader2 size={8} className="animate-spin text-orange-300" />
                                   {uploadInfo.progress}%
                                 </span>
                               )}
@@ -800,16 +831,16 @@ export function CalendarView() {
                                 </span>
                               )}
                               {!isDriveUploading && !isYtUploading && (video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
-                                <span className="text-[8px] font-mono text-emerald-400 font-bold shrink-0 flex items-center gap-0.5">
+                                <span className="text-[8px] font-mono text-orange-400 font-bold shrink-0 flex items-center gap-0.5">
                                   <Eye size={8} />
                                   {formatViews(video.vistas_obtenidas || 0)}
                                 </span>
                               )}
                               {/* Mini barra de progreso en el borde inferior del chip */}
                               {isDriveUploading && (
-                                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-cyan-950/80">
+                                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-orange-950/80">
                                   <div
-                                    className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300"
+                                    className="h-full bg-gradient-to-r from-orange-400 to-amber-400 transition-all duration-300"
                                     style={{ width: `${uploadInfo.progress}%` }}
                                   />
                                 </div>
@@ -825,7 +856,7 @@ export function CalendarView() {
                               setCurrentDate(day);
                               setCalendarView('day');
                             }}
-                            className="text-[8px] text-emerald-400 font-semibold hover:underline text-left pl-0.5 leading-none shrink-0"
+                            className="text-[8px] text-orange-400 font-semibold hover:underline text-left pl-0.5 leading-none shrink-0"
                           >
                             +{dayVideos.length - 2} más →
                           </button>
@@ -872,50 +903,50 @@ export function CalendarView() {
                       setCalendarView('day');
                     }}
                     className={cn(
-                      'relative flex flex-col rounded-2xl p-2.5 border transition-all min-h-[460px] cursor-pointer hover:border-emerald-500/40 group/col',
+                      'relative flex flex-col rounded-2xl p-2.5 border transition-all min-h-[460px] cursor-pointer hover:border-orange-500/40 group/col',
                       isCurrentDay
-                        ? 'bg-emerald-500/[0.08] border-emerald-500/50 ring-1 ring-emerald-500/40 shadow-sm'
+                        ? 'bg-orange-500/[0.1] border-orange-500/50 ring-1 ring-orange-500/40 shadow-sm'
                         : 'glass border-[var(--border)]',
-                      isDayTargeted && 'ring-2 ring-emerald-400 border-emerald-400 z-20'
+                      isDayTargeted && 'ring-2 ring-orange-400 border-orange-400 z-20'
                     )}
                     title="Haz clic en el día para ver la vista diaria detallada"
                   >
                     {/* Contenedor Drop Zone: SOLO visible en el día de la semana donde el video está ubicado encima */}
                     {isDayTargeted && (
                       <div
-                        className="absolute inset-2 z-30 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-950/95 text-white shadow-xl ring-2 ring-emerald-400/70 flex flex-col items-center justify-center p-3 text-center pointer-events-none"
+                        className="absolute inset-2 z-30 rounded-2xl border-2 border-dashed border-orange-400 bg-orange-950/95 text-white shadow-xl ring-2 ring-orange-400/70 flex flex-col items-center justify-center p-3 text-center pointer-events-none"
                       >
-                        <div className="w-10 h-10 rounded-xl bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center mb-2 shadow-sm text-emerald-300">
+                        <div className="w-10 h-10 rounded-xl bg-orange-500/25 border border-orange-400/40 flex items-center justify-center mb-2 shadow-sm text-orange-300">
                           <Upload size={20} />
                         </div>
                         <p className="text-sm font-bold text-white">¡Soltar video aquí!</p>
-                        <p className="text-xs text-emerald-300 font-semibold capitalize mt-1">
+                        <p className="text-xs text-orange-300 font-semibold capitalize mt-1">
                           {format(day, "EEEE d 'de' MMMM", { locale: es })}
                         </p>
-                        <span className="text-[11px] text-emerald-200/80 mt-1">
+                        <span className="text-[11px] text-orange-200/80 mt-1">
                           Programar en este día
                         </span>
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-[var(--border)] group-hover/col:border-emerald-500/30 transition-colors">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-[var(--border)] group-hover/col:border-orange-500/30 transition-colors">
                       <div>
                         <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                           {format(day, 'EEEE', { locale: es })}
                         </p>
                         <div className="flex items-center gap-1.5">
-                          <p className={cn('text-base font-bold', isCurrentDay ? 'text-emerald-400' : 'text-white')}>
+                          <p className={cn('text-base font-bold', isCurrentDay ? 'text-orange-400' : 'text-white')}>
                             {format(day, 'd MMM')}
                           </p>
                           {isCurrentDay && (
-                            <span className="text-[9px] font-extrabold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded-full border border-emerald-500/40 shadow-sm">
+                            <span className="text-[9px] font-extrabold text-orange-300 bg-orange-500/25 px-1.5 py-0.5 rounded-full border border-orange-500/40 shadow-sm">
                               Hoy
                             </span>
                           )}
                         </div>
                       </div>
                       <button onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
-                        className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/25 transition-colors"
+                        className="w-6 h-6 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 hover:bg-orange-500/25 transition-colors cursor-pointer"
                         title="Programar nuevo video"
                       >
                         <Plus size={12} />
@@ -925,7 +956,7 @@ export function CalendarView() {
                     <div className="flex-1 space-y-2 overflow-y-auto">
                       {dayVideos.length === 0 ? (
                         <div onClick={(e) => { e.stopPropagation(); openScheduleModal(day); }}
-                          className="h-32 rounded-xl border border-dashed border-white/10 hover:border-emerald-500/30 hover:bg-emerald-500/5 flex flex-col items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 cursor-pointer text-center transition-all"
+                          className="h-32 rounded-xl border border-dashed border-white/10 hover:border-orange-500/30 hover:bg-orange-500/5 flex flex-col items-center justify-center text-[var(--text-muted)] hover:text-orange-400 cursor-pointer text-center transition-all"
                         >
                           <Plus size={14} className="mb-1 opacity-50" />
                           <span className="text-[10px] font-medium">Sin videos</span>
@@ -952,14 +983,14 @@ export function CalendarView() {
                                 isHoverTarget
                                   ? (dragHoverFileType === 'image' || acct?.plataforma === 'youtube'
                                       ? "ring-2 ring-pink-400 bg-pink-950/60 border-pink-400 shadow-lg shadow-pink-500/20"
-                                      : "ring-2 ring-cyan-400 bg-cyan-950/60 border-cyan-400 shadow-lg shadow-cyan-500/20")
+                                      : "ring-2 ring-orange-500 bg-orange-950/60 border-orange-500 shadow-lg shadow-orange-500/20")
                                   : isDriveUploading
-                                  ? "bg-cyan-950/30 border-cyan-500/40 hover:border-cyan-400"
-                                  : "glass border-[var(--border)] hover:border-emerald-500/40 hover:bg-white/[0.04]"
+                                  ? "bg-orange-950/30 border-orange-500/40 hover:border-orange-400"
+                                  : "glass border-white/10 hover:border-orange-500/40 hover:bg-white/[0.04]"
                               )}
                             >
                               {isHoverTarget && (
-                                <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-30 border border-cyan-400 rounded-xl">
+                                <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-30 border border-orange-500 rounded-xl">
                                   {dragHoverFileType === 'image' || acct?.plataforma === 'youtube' ? (
                                     <>
                                       <ImageIcon size={18} className="text-pink-400 mb-1 animate-bounce" />
@@ -967,40 +998,40 @@ export function CalendarView() {
                                     </>
                                   ) : (
                                     <>
-                                      <FileVideo size={18} className="text-cyan-400 mb-1 animate-bounce" />
+                                      <FileVideo size={18} className="text-orange-400 mb-1 animate-bounce" />
                                       <span className="text-xs font-bold text-white">Soltar para reemplazar video</span>
                                     </>
                                   )}
                                 </div>
                               )}
                               <div className="flex items-center justify-between gap-1 mb-1.5">
-                                <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                                <span className="text-[10px] font-mono font-bold text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded border border-orange-500/20">
                                   {format(new Date(video.programado_para), 'HH:mm')}
                                 </span>
                                 <div className="flex items-center gap-1">
                                   {getPlatformIcon(acct?.plataforma)}
-                                  <span className="text-[10px] text-[var(--text-secondary)] font-medium truncate max-w-[65px]">
+                                  <span className="text-[10px] text-zinc-400 font-medium truncate max-w-[65px]">
                                     @{acct?.username}
                                   </span>
                                 </div>
                               </div>
-                              <p className="text-xs font-semibold text-white truncate group-hover:text-emerald-300 mb-1.5">
+                              <p className="text-xs font-semibold text-white truncate group-hover:text-orange-300 mb-1.5">
                                 {video.nombre_archivo || video.titulo}
                               </p>
 
                               {/* Si está subiendo a Google Drive: barra y porcentaje */}
                               {isDriveUploading && (
-                                <div className="mb-2 p-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 space-y-1">
+                                <div className="mb-2 p-1.5 rounded-lg bg-orange-950/40 border border-orange-500/30 space-y-1">
                                   <div className="flex items-center justify-between text-[10px]">
-                                    <span className="text-cyan-300 font-semibold flex items-center gap-1">
-                                      <Loader2 size={10} className="animate-spin text-cyan-400" />
+                                    <span className="text-orange-300 font-semibold flex items-center gap-1">
+                                      <Loader2 size={10} className="animate-spin text-orange-400" />
                                       Subiendo a Drive
                                     </span>
-                                    <span className="text-cyan-200 font-mono font-bold">{uploadInfo.progress}%</span>
+                                    <span className="text-orange-200 font-mono font-bold">{uploadInfo.progress}%</span>
                                   </div>
                                   <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                                     <div
-                                      className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300 rounded-full"
+                                      className="h-full bg-gradient-to-r from-orange-500 to-amber-500 transition-all duration-300 rounded-full"
                                       style={{ width: `${uploadInfo.progress}%` }}
                                     />
                                   </div>
@@ -1015,8 +1046,8 @@ export function CalendarView() {
 
                               <div className="flex items-center justify-between">
                                 {isDriveUploading ? (
-                                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-orange-500/15 border border-orange-500/30 text-orange-300 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
                                     Drive {uploadInfo.progress}%
                                   </span>
                                 ) : isYtUploading ? (
@@ -1030,7 +1061,7 @@ export function CalendarView() {
                                   </span>
                                 )}
                                 {(video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
-                                  <span className="text-[9px] font-mono text-emerald-400 font-semibold flex items-center gap-0.5">
+                                  <span className="text-[9px] font-mono text-orange-400 font-semibold flex items-center gap-0.5">
                                     <Eye size={9} /> {formatViews(video.vistas_obtenidas || 0)}
                                   </span>
                                 )}
@@ -1055,7 +1086,7 @@ export function CalendarView() {
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   Cronograma por Horas
                   {isDayToday(currentDate) && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">
                       Hoy
                     </span>
                   )}
@@ -1065,7 +1096,7 @@ export function CalendarView() {
                 </p>
               </div>
               <button onClick={() => openScheduleModal(currentDate)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl btn-gradient text-xs font-semibold"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl btn-gradient text-xs font-semibold cursor-pointer"
               >
                 <Plus size={13} /> Programar Video
               </button>
@@ -1088,14 +1119,14 @@ export function CalendarView() {
                     className={cn(
                       'flex items-start gap-3 p-2 rounded-xl border transition-all duration-150 group',
                       isHourTargeted
-                        ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/50'
+                        ? 'bg-orange-500/20 border-orange-400 ring-1 ring-orange-400/50'
                         : 'hover:bg-white/[0.02] border-transparent hover:border-[var(--border)]'
                     )}
                   >
                     <div className="w-14 text-right pt-1 shrink-0">
                       <span className={cn(
                         'text-xs font-mono font-bold transition-colors',
-                        isHourTargeted ? 'text-emerald-400' : 'text-[var(--text-muted)] group-hover:text-cyan-400'
+                        isHourTargeted ? 'text-orange-400' : 'text-[var(--text-muted)] group-hover:text-orange-400'
                       )}>
                         {hour.toString().padStart(2, '0')}:00
                       </span>
@@ -1104,23 +1135,23 @@ export function CalendarView() {
                       {/* Contenedor Drop Zone: SOLO visible en la hora específica donde el archivo está ubicado encima */}
                       {isHourTargeted ? (
                         <div
-                          className="rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-950/95 text-white shadow-lg py-2 px-3 flex items-center justify-between pointer-events-none"
+                          className="rounded-xl border-2 border-dashed border-orange-400 bg-orange-950/95 text-white shadow-lg py-2 px-3 flex items-center justify-between pointer-events-none"
                         >
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-lg bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
+                            <div className="w-6 h-6 rounded-lg bg-orange-500/25 border border-orange-400/40 flex items-center justify-center text-orange-300">
                               <Upload size={13} />
                             </div>
                             <span className="text-xs font-bold text-white">
                               Soltar para programar a las {hour.toString().padStart(2, '0')}:00 hs
                             </span>
                           </div>
-                          <span className="text-[10px] font-mono text-emerald-300 font-bold px-2 py-0.5 rounded bg-emerald-500/30 border border-emerald-500/40">
+                          <span className="text-[10px] font-mono text-orange-400 font-bold px-2 py-0.5 rounded bg-orange-500/20 border border-orange-500/30">
                             {hour.toString().padStart(2, '0')}:00 hs
                           </span>
                         </div>
                       ) : hourVideos.length === 0 ? (
                         <div onClick={() => openScheduleModal(hourDate)}
-                          className="hidden group-hover:flex items-center gap-2 text-xs text-[var(--text-muted)] hover:text-emerald-400 cursor-pointer py-1 transition-colors"
+                          className="hidden group-hover:flex items-center gap-2 text-xs text-zinc-400 hover:text-orange-400 cursor-pointer py-1 transition-colors"
                         >
                           <Plus size={12} />
                           <span>Añadir a las {hour}:00</span>
@@ -1148,21 +1179,21 @@ export function CalendarView() {
                                   isHoverTarget
                                     ? (dragHoverFileType === 'image' || acct?.plataforma === 'youtube'
                                         ? "ring-2 ring-pink-400 bg-pink-950/60 border-pink-400 shadow-lg shadow-pink-500/20"
-                                        : "ring-2 ring-cyan-400 bg-cyan-950/60 border-cyan-400 shadow-lg shadow-cyan-500/20")
+                                        : "ring-2 ring-orange-500 bg-orange-950/60 border-orange-500 shadow-lg shadow-orange-500/20")
                                     : isDriveUploading
-                                    ? "bg-cyan-950/25 border-cyan-500/40 hover:border-cyan-400"
-                                    : "glass-strong border-[var(--border)] hover:border-emerald-500/40"
+                                    ? "bg-orange-950/25 border-orange-500/40 hover:border-orange-400"
+                                    : "glass-strong border-white/10 hover:border-orange-500/40"
                                 )}
                               >
                                 {isHoverTarget && (
-                                  <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-30 border border-cyan-400 rounded-xl">
+                                  <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-30 border border-orange-500 rounded-xl">
                                     {dragHoverFileType === 'image' || acct?.plataforma === 'youtube' ? (
                                       <div className="flex items-center gap-2 text-pink-300 font-bold text-xs">
                                         <ImageIcon size={16} className="animate-bounce" />
                                         <span>Soltar imagen para asignar portada / miniatura al Short</span>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center gap-2 text-cyan-300 font-bold text-xs">
+                                      <div className="flex items-center gap-2 text-orange-300 font-bold text-xs">
                                         <FileVideo size={16} className="animate-bounce" />
                                         <span>Soltar video para reemplazar este contenido</span>
                                       </div>
@@ -1175,18 +1206,18 @@ export function CalendarView() {
                                   >
                                     {getPlatformIcon(acct?.plataforma)}
                                     {isDriveUploading && (
-                                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyan-400 rounded-full animate-ping" />
+                                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-orange-400 rounded-full animate-ping" />
                                     )}
                                   </div>
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                                      <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                                      <span className="text-[10px] font-mono font-bold text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded border border-orange-500/20">
                                         {format(new Date(video.programado_para), 'HH:mm')}
                                       </span>
                                       <span className="text-xs font-bold text-white truncate">{video.nombre_archivo || video.titulo}</span>
-                                      <span className="text-[10px] text-[var(--text-muted)]">@{acct?.username}</span>
+                                      <span className="text-[10px] text-zinc-400">@{acct?.username}</span>
                                     </div>
-                                    <p className="text-[11px] text-[var(--text-secondary)] line-clamp-1 max-w-lg">
+                                    <p className="text-[11px] text-zinc-300 line-clamp-1 max-w-lg">
                                       {video.descripcion_aprobada_ia}
                                     </p>
                                   </div>
@@ -1194,13 +1225,13 @@ export function CalendarView() {
                                 <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
                                   {isDriveUploading ? (
                                     <div className="flex flex-col items-end gap-1 min-w-[140px]">
-                                      <span className="text-xs px-2.5 py-0.5 rounded-lg font-bold bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5">
-                                        <Loader2 size={11} className="animate-spin text-cyan-400" />
+                                      <span className="text-xs px-2.5 py-0.5 rounded-lg font-bold bg-orange-500/15 border border-orange-500/30 text-orange-300 flex items-center gap-1.5">
+                                        <Loader2 size={11} className="animate-spin text-orange-400" />
                                         Drive: {uploadInfo.progress}%
                                       </span>
                                       <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                                         <div
-                                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300 rounded-full"
+                                          className="h-full bg-gradient-to-r from-orange-500 to-amber-500 transition-all duration-300 rounded-full"
                                           style={{ width: `${uploadInfo.progress}%` }}
                                         />
                                       </div>
@@ -1220,7 +1251,7 @@ export function CalendarView() {
                                     </span>
                                   )}
                                   {(video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
-                                    <span className="text-xs font-mono text-emerald-400 font-bold flex items-center gap-1">
+                                    <span className="text-xs font-mono text-orange-400 font-bold flex items-center gap-1">
                                       <Eye size={12} /> {formatViews(video.vistas_obtenidas || 0)}
                                     </span>
                                   )}
@@ -1238,6 +1269,16 @@ export function CalendarView() {
           </div>
         )}
       </div>
+
+      {/* Floating Action Button (FAB) como en la imagen de referencia */}
+      <button
+        type="button"
+        onClick={() => openScheduleModal(currentDate)}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 text-white shadow-2xl shadow-orange-500/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-40 cursor-pointer"
+        title="Programar nueva publicación"
+      >
+        <Plus size={28} strokeWidth={2.5} />
+      </button>
     </div>
   );
 }

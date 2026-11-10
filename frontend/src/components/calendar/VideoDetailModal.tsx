@@ -33,13 +33,14 @@ import { useDropzone } from 'react-dropzone';
 import { useAppStore } from '@/store/useAppStore';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { AutoResizeTextarea } from '@/components/ui/AutoResizeTextarea';
-import { formatDateTime, formatViews, calcGanancias, getPlatformColor, cn } from '@/lib/utils';
+import { formatDateTime, formatViews, calcGanancias, getEffectiveRpm, getPlatformColor, cn } from '@/lib/utils';
 import { AppConfig, getCachedConfig, loadAppConfig } from '@/lib/services/appConfigService';
 import { sendPublicationAlert, stripDescriptionTags } from '@/lib/services/telegramService';
 import {
   getGoogleDriveToken,
   getStoredDriveConfig,
   uploadVideoToGoogleDrive,
+  startBackgroundDriveUpload,
   deleteGoogleDriveFile,
   requestGoogleDriveOAuthToken,
   getPendingDriveUpload,
@@ -491,8 +492,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
   const campaign = campaigns.find(c => c.id === (isEditing ? editCampanaId : video?.campana_id));
 
   const platformColor = account ? getPlatformColor(account.plataforma) : '#10b981';
+  const effectiveRpm = getEffectiveRpm(campaign, account?.plataforma);
   const earnings = video && campaign
-    ? calcGanancias(video.vistas_obtenidas, campaign.tasa_pago_por_mil_vistas)
+    ? calcGanancias(video.vistas_obtenidas, effectiveRpm)
     : '0.00';
 
   // Cuentas filtradas según la campaña en edición
@@ -835,7 +837,6 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     setEditFeedback(null);
 
     let finalDriveUrl = editDriveUrl.trim();
-    let oldDriveUrlToDelete: string | null = null;
     let driveUploadDone = false;
 
     const finalFileName = editFileName.trim() || video.nombre_archivo || video.titulo;
@@ -887,64 +888,18 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         return;
       }
 
-      useAppStore.getState().setDriveUploadProgress(video.id, 1);
-      setUploadProgress(1);
-
-      const uploadRes = await uploadVideoToGoogleDrive(
-        replacementFile,
+      // Lanzar compresión y subida a Google Drive 100% en segundo plano sin bloquear el guardado
+      driveUploadDone = true;
+      startBackgroundDriveUpload({
+        videoId: video.id,
+        videoTitle: finalFileName,
+        customFileName: finalFileName,
+        file: replacementFile,
         folderId,
         token,
-        (pct) => {
-          setUploadProgress(pct);
-          useAppStore.getState().setDriveUploadProgress(video.id, pct);
-        },
-        3,
-        finalFileName
-      );
-
-      if (uploadRes.success && uploadRes.fileUrl) {
-        const prevUrl = video.drive_file_url;
-        finalDriveUrl = uploadRes.fileUrl;
-        driveUploadDone = true;
-        unregisterPendingDriveUpload(video.id);
-        useAppStore.getState().setDriveUploadComplete(video.id);
-
-        // Si existía un video anterior en Drive y es diferente al nuevo, marcar para eliminar
-        if (prevUrl && prevUrl !== '#' && prevUrl !== uploadRes.fileUrl) {
-          oldDriveUrlToDelete = prevUrl;
-        }
-      } else {
-        setSavingEdit(false);
-        useAppStore.getState().setDriveUploadError(video.id, uploadRes.error || 'Error de subida');
-        setEditFeedback({
-          success: false,
-          msg: `❌ Error al subir el nuevo video a Drive: ${uploadRes.error || 'Error de conexión'}.`,
-        });
-        createNotification({
-          tipo: 'error',
-          titulo: 'Fallo al actualizar video en Drive',
-          mensaje: `El video "${finalFileName}" no se pudo subir a Drive: ${uploadRes.error}.`,
-          cuenta_id: editCuentaId,
-          video_id: video.id,
-          origen: 'drive',
-        });
-        return;
-      }
-    }
-
-    // Si se subió un nuevo video a Drive, eliminar de inmediato el video anterior en Google Drive
-    if (oldDriveUrlToDelete) {
-      console.log(`[VideoDetailModal] Eliminando video anterior en Google Drive: ${oldDriveUrlToDelete}`);
-      try {
-        const delRes = await deleteGoogleDriveFile(oldDriveUrlToDelete);
-        if (delRes.success) {
-          console.log('[VideoDetailModal] ✅ Video anterior eliminado de Google Drive con éxito.');
-        } else {
-          console.warn('[VideoDetailModal] Aviso al eliminar video anterior de Drive:', delRes.error);
-        }
-      } catch (delErr) {
-        console.warn('[VideoDetailModal] Error eliminando archivo viejo en Drive:', delErr);
-      }
+        cuentaId: editCuentaId,
+        oldDriveUrl: video.drive_file_url,
+      });
     }
 
     const newProgDate = new Date(`${editFecha}T${editHora}`);
@@ -1499,7 +1454,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         onDragOver={handleModalDragOver}
         onDragLeave={handleModalDragLeave}
         onDrop={handleModalDrop}
-        className="relative z-10 w-full max-w-md bg-[#0b0f19] rounded-2xl border border-white/10 shadow-2xl overflow-y-auto max-h-[92vh] pointer-events-auto flex flex-col will-change-transform"
+        className="relative z-10 w-full max-w-md bg-[#161414] rounded-2xl border border-white/10 shadow-2xl overflow-y-auto max-h-[92vh] pointer-events-auto flex flex-col will-change-transform"
       >
         {/* Overlay visual cuando se arrastra un archivo sobre el modal */}
         <AnimatePresence>
@@ -1510,7 +1465,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center border-2 border-dashed rounded-2xl m-2 pointer-events-none"
               style={{
-                borderColor: modalDragHover === 'image' ? '#f472b6' : '#22d3ee',
+                borderColor: modalDragHover === 'image' ? '#f472b6' : '#f97316',
               }}
             >
               {modalDragHover === 'image' ? (
@@ -1527,13 +1482,13 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                 </>
               ) : (
                 <>
-                  <div className="w-14 h-14 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center mb-2.5 text-cyan-300">
+                  <div className="w-14 h-14 rounded-2xl bg-orange-500/20 border border-orange-400/40 flex items-center justify-center mb-2.5 text-orange-400">
                     <FileVideo size={28} className="animate-bounce" />
                   </div>
                   <h4 className="text-sm font-bold text-white mb-1">
                     ¡Soltar video para reemplazar esta publicación!
                   </h4>
-                  <p className="text-[11px] text-cyan-200/80 max-w-xs">
+                  <p className="text-[11px] text-orange-200/80 max-w-xs">
                     El video anterior en Google Drive será reemplazado automáticamente por este nuevo archivo.
                   </p>
                 </>
@@ -1545,14 +1500,14 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
         {/* Header */}
         <div
           className="p-5 border-b border-white/[0.08]"
-          style={{ background: `linear-gradient(135deg, ${platformColor === '#000000' ? '#06b6d4' : platformColor}25, transparent)` }}
+          style={{ background: `linear-gradient(135deg, ${platformColor === '#000000' ? '#f97316' : platformColor}25, transparent)` }}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <StatusBadge status={video.estado} />
                 {isEditing && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30 font-bold">
                     Modo Edición
                   </span>
                 )}
@@ -1577,7 +1532,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           ? 'Re-enviar a Telegram Ahora'
                           : 'Enviar a Telegram Ahora (Marcar ENVIADO)'
                       }
-                      className="w-7 h-7 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 flex items-center justify-center text-blue-400 hover:text-blue-300 transition-colors cursor-pointer disabled:opacity-50"
+                      className="w-7 h-7 rounded-lg bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/30 flex items-center justify-center text-orange-400 hover:text-orange-300 transition-colors cursor-pointer disabled:opacity-50"
                     >
                       {sendingTelegram ? (
                         <Loader2 size={13} className="animate-spin" />
@@ -1585,7 +1540,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         <Send size={13} />
                       )}
                     </button>
-                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#0d1422] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#161414] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
                       {video.estado === 'ERROR_DE_RED'
                         ? 'Reintentar Enviar a Telegram Ahora (Resolver Error)'
                         : video.estado === 'ENVIADO'
@@ -1600,11 +1555,11 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       type="button"
                       onClick={() => setIsEditing(true)}
                       title="Editar"
-                      className="w-7 h-7 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 flex items-center justify-center text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+                      className="w-7 h-7 rounded-lg bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/30 flex items-center justify-center text-orange-400 hover:text-orange-300 transition-colors cursor-pointer"
                     >
                       <Edit3 size={13} />
                     </button>
-                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#0d1422] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#161414] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
                       Editar
                     </span>
                   </div>
@@ -1619,7 +1574,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     >
                       <Trash2 size={13} />
                     </button>
-                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#0d1422] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 whitespace-nowrap rounded-md bg-[#161414] border border-white/15 px-2 py-1 text-[10px] font-semibold text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
                       Borrar publicación
                     </span>
                   </div>
@@ -1644,11 +1599,11 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                 <div
                   className={`p-2.5 rounded-xl border text-xs leading-relaxed flex items-center gap-2 ${
                     editFeedback.success
-                      ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                      ? 'bg-orange-500/10 border-orange-500/25 text-orange-300'
                       : 'bg-red-500/10 border-red-500/25 text-red-300'
                   }`}
                 >
-                  {editFeedback.success ? <CheckCircle2 size={13} className="shrink-0 text-emerald-400" /> : <AlertCircle size={13} className="shrink-0 text-red-400" />}
+                  {editFeedback.success ? <CheckCircle2 size={13} className="shrink-0 text-orange-400" /> : <AlertCircle size={13} className="shrink-0 text-red-400" />}
                   <span>{editFeedback.msg}</span>
                 </div>
               )}
@@ -1659,9 +1614,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                   {/* Account & Campaign info */}
                   <div className="space-y-2">
                     {account && (
-                      <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-[var(--border)]">
-                        <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center shrink-0">
-                          <Send size={12} className="text-cyan-400" />
+                      <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-[#1e1b1b] border border-white/10">
+                        <div className="w-7 h-7 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center shrink-0">
+                          <Send size={12} className="text-orange-400" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">Cuenta Destino</p>
@@ -1670,9 +1625,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       </div>
                     )}
                     {campaign && (
-                      <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] border border-[var(--border)]">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                          <RefreshCw size={12} className="text-emerald-400" />
+                      <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-[#1e1b1b] border border-white/10">
+                        <div className="w-7 h-7 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center shrink-0">
+                          <RefreshCw size={12} className="text-orange-400" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">Campaña Activa</p>
@@ -1683,7 +1638,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                   </div>
 
                   {/* Google Drive Link (o progreso de subida en segundo plano / reintento) */}
-                  <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 space-y-2">
+                  <div className="p-3 rounded-xl bg-[#1e1b1b] border border-white/10 space-y-2">
                     <input
                       ref={driveFileInputRef}
                       type="file"
@@ -1698,11 +1653,11 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
                     <div className="flex items-center justify-between text-xs font-semibold text-white">
                       <div className="flex items-center gap-2">
-                        <HardDrive size={13} className="text-cyan-400" />
+                        <HardDrive size={13} className="text-orange-400" />
                         <span>Google Drive</span>
                       </div>
                       {driveUploads?.[video.id]?.status === 'uploading' && (
-                        <span className="text-[11px] font-mono text-cyan-300 font-bold">
+                        <span className="text-[11px] font-mono text-orange-300 font-bold">
                           {driveUploads[video.id].progress}%
                         </span>
                       )}
@@ -1710,13 +1665,13 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
                     {driveUploads?.[video.id]?.status === 'uploading' ? (
                       <div className="space-y-1.5 py-1">
-                        <div className="flex items-center gap-1.5 text-xs text-cyan-300 font-medium">
-                          <Loader2 size={12} className="animate-spin text-cyan-400" />
+                        <div className="flex items-center gap-1.5 text-xs text-orange-300 font-medium">
+                          <Loader2 size={12} className="animate-spin text-orange-400" />
                           <span>Subiendo archivo a Google Drive en segundo plano...</span>
                         </div>
                         <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                           <div
-                            className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300 rounded-full"
+                            className="h-full bg-gradient-to-r from-orange-500 to-amber-500 transition-all duration-300 rounded-full"
                             style={{ width: `${driveUploads[video.id].progress}%` }}
                           />
                         </div>
@@ -1751,15 +1706,15 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                             href={video.drive_file_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium break-all"
+                            className="inline-flex items-center gap-1.5 text-xs text-orange-400 hover:text-orange-300 underline font-medium break-all"
                           >
                             <span>Abrir archivo en Google Drive</span>
                             <ExternalLink size={12} className="shrink-0" />
                           </a>
                         </div>
                         {video.estado === 'PUBLICADO' && Boolean(video.monetizado_en) && getCachedConfig().drive_auto_delete_after_verify && getCachedConfig().drive_retention_hours >= 0 && (
-                          <p className="text-[10px] text-cyan-200/70 flex items-center gap-1">
-                            <Clock size={10} className="shrink-0 text-cyan-400" />
+                          <p className="text-[10px] text-orange-200/70 flex items-center gap-1">
+                            <Clock size={10} className="shrink-0 text-orange-400" />
                             <span>
                               Se eliminará automáticamente de Drive {Math.max(1, Math.round((getCachedConfig().drive_retention_hours || 120) / 24))} día(s) después de confirmada y monetizada para liberar espacio.
                             </span>
@@ -1767,8 +1722,8 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         )}
                       </div>
                     ) : video.estado === 'PUBLICADO' ? (
-                      <div className="flex items-center gap-1.5 text-xs text-emerald-300/90 font-medium py-0.5">
-                        <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
+                      <div className="flex items-center gap-1.5 text-xs text-orange-300/90 font-medium py-0.5">
+                        <CheckCircle2 size={13} className="shrink-0 text-orange-400" />
                         <span>
                           {Boolean(video.monetizado_en)
                             ? 'Archivo eliminado automáticamente de Google Drive tras confirmarse y monetizarse (espacio liberado).'
@@ -1785,7 +1740,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           type="button"
                           onClick={() => handleRetryDriveUpload()}
                           disabled={retryingDrive}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
                         >
                           {retryingDrive ? (
                             <Loader2 size={12} className="animate-spin" />
@@ -1896,7 +1851,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
                         {/* Indicador de estado actual */}
                         {video.estado === 'PUBLICADO' ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30 font-bold flex items-center gap-1">
                             <CheckCircle2 size={10} /> Publicado en YouTube
                           </span>
                         ) : video.estado === 'ENVIADO' || publishingToYouTube ? (
@@ -1904,7 +1859,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                             <Loader2 size={10} className="animate-spin" /> Subiendo a YouTube...
                           </span>
                         ) : (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 font-bold">
                             Programado para subir
                           </span>
                         )}
@@ -1982,9 +1937,9 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                                 className={cn(
                                   "p-2 rounded text-[10px] border leading-relaxed",
                                   log.nivel === 'ERROR' ? "bg-red-500/10 border-red-500/30 text-red-200" :
-                                  log.nivel === 'SUCCESS' ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-200" :
+                                  log.nivel === 'SUCCESS' ? "bg-orange-500/15 border-orange-500/30 text-orange-200" :
                                   log.nivel === 'WARN' ? "bg-amber-500/10 border-amber-500/30 text-amber-200" :
-                                  "bg-white/[0.03] border-white/10 text-slate-300"
+                                  "bg-white/[0.03] border-white/10 text-zinc-300"
                                 )}
                               >
                                 <div className="flex items-center justify-between font-mono font-bold text-[9px] opacity-75 mb-0.5">
@@ -2006,27 +1961,27 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                   )}
 
                   {/* Dates & Timeline */}
-                  <div className="p-3 rounded-xl bg-white/[0.02] border border-[var(--border)] space-y-2 text-xs">
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 space-y-2 text-xs">
                     <div className="flex justify-between items-center">
-                      <span className="text-[var(--text-muted)] flex items-center gap-1.5">
+                      <span className="text-zinc-400 flex items-center gap-1.5">
                         <Calendar size={12} /> Programado
                       </span>
                       <span className="text-white font-medium">{formatDateTime(video.programado_para)}</span>
                     </div>
                     {video.enviado_en && (
                       <div className="flex justify-between items-center">
-                        <span className="text-[var(--text-muted)] flex items-center gap-1.5">
-                          <Send size={12} className="text-blue-400" /> Enviado a Telegram
+                        <span className="text-zinc-400 flex items-center gap-1.5">
+                          <Send size={12} className="text-orange-400" /> Enviado a Telegram
                         </span>
-                        <span className="text-blue-400 font-medium">{formatDateTime(video.enviado_en)}</span>
+                        <span className="text-orange-400 font-medium">{formatDateTime(video.enviado_en)}</span>
                       </div>
                     )}
                     {video.publicado_en && (
                       <div className="flex justify-between items-center">
-                        <span className="text-[var(--text-muted)] flex items-center gap-1.5">
-                          <ExternalLink size={12} className="text-emerald-400" /> Publicado
+                        <span className="text-zinc-400 flex items-center gap-1.5">
+                          <ExternalLink size={12} className="text-orange-400" /> Publicado
                         </span>
-                        <span className="text-emerald-400 font-medium">{formatDateTime(video.publicado_en)}</span>
+                        <span className="text-orange-400 font-medium">{formatDateTime(video.publicado_en)}</span>
                       </div>
                     )}
                   </div>
@@ -2035,8 +1990,8 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                   {video.estado === 'PUBLICADO' && (
                     <div className="space-y-2">
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center relative group">
-                          <div className="flex items-center justify-center gap-1 text-emerald-400 mb-0.5">
+                        <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-center relative group">
+                          <div className="flex items-center justify-center gap-1 text-orange-400 mb-0.5">
                             <Eye size={13} />
                             <span className="text-base font-bold font-mono">{formatViews(video.vistas_obtenidas || 0)}</span>
                           </div>
@@ -2046,13 +2001,13 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                             onClick={() => handleRefreshPublishedViews(false)}
                             disabled={verifyingScraper}
                             title="Actualizar vistas ahora"
-                            className="absolute top-2 right-2 p-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 transition-all disabled:opacity-50 cursor-pointer"
+                            className="absolute top-2 right-2 p-1 rounded-lg bg-orange-500/15 hover:bg-orange-500/30 border border-orange-500/30 text-orange-300 transition-all disabled:opacity-50 cursor-pointer"
                           >
                             <RefreshCw size={10} className={verifyingScraper ? 'animate-spin' : ''} />
                           </button>
                         </div>
-                        <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-center">
-                          <div className="flex items-center justify-center gap-1 text-cyan-400 mb-0.5">
+                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+                          <div className="flex items-center justify-center gap-1 text-amber-400 mb-0.5">
                             <DollarSign size={13} />
                             <span className="text-base font-bold font-mono">${earnings}</span>
                           </div>
@@ -2064,7 +2019,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           href={video.post_url_publica}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-semibold hover:bg-emerald-500/20 transition-all"
+                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-300 text-xs font-semibold hover:bg-orange-500/20 transition-all"
                         >
                           <div className="flex items-center gap-2 truncate">
                             <ExternalLink size={12} className="shrink-0" />
@@ -2081,7 +2036,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     <p className="text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
                       Descripción (Reglas de Campaña)
                     </p>
-                    <p className="text-xs text-[var(--text-primary)] leading-relaxed bg-[#0d1422] rounded-xl p-3 border border-white/10 max-h-72 overflow-y-auto whitespace-pre-wrap [scrollbar-gutter:stable]">
+                    <p className="text-xs text-[var(--text-primary)] leading-relaxed bg-[#121111] rounded-xl p-3 border border-white/10 max-h-72 overflow-y-auto whitespace-pre-wrap [scrollbar-gutter:stable]">
                       {video.descripcion_aprobada_ia}
                     </p>
                   </div>
@@ -2098,22 +2053,22 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     );
 
                     return (
-                      <div className="p-3.5 rounded-xl bg-gradient-to-br from-rose-950/30 via-amber-950/20 to-[#0d1422] border border-rose-500/30 space-y-2.5">
+                      <div className="p-3.5 rounded-xl bg-[#1e1b1b] border border-white/10 space-y-2.5">
                         <p className="text-xs font-bold text-white">Monetizar Clip (Clipearte)</p>
                         <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center shrink-0 text-rose-400">
+                          <div className="w-7 h-7 rounded-lg bg-orange-500/15 border border-orange-500/30 flex items-center justify-center shrink-0 text-orange-400">
                             <Coins size={14} />
                           </div>
 
                           {video.monetizado_en ? (
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40 flex items-center gap-1 shrink-0">
                               <CheckCircle2 size={11} /> Monetizado
                             </span>
                           ) : (
                             <button
                               type="button"
                               onClick={() => setShowMonetizarForm((v) => !v)}
-                              className="px-3.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold shadow-md shadow-rose-500/20 transition-all active:scale-95 shrink-0 cursor-pointer"
+                              className="px-3.5 py-1.5 rounded-lg btn-gradient text-white text-xs font-bold shadow-md shadow-orange-500/20 transition-all active:scale-95 shrink-0 cursor-pointer"
                             >
                               Monetizar clip
                             </button>
@@ -2121,12 +2076,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         </div>
 
                         {video.monetizado_en && (
-                          <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-300 flex items-center justify-between">
+                          <div className="p-2 rounded-lg bg-orange-500/10 border border-orange-500/25 text-[11px] text-orange-300 flex items-center justify-between">
                             <span>✅ Este clip ya fue enviado a Clipearte para revisión/monetización.</span>
                             <button
                               type="button"
                               onClick={() => setShowMonetizarForm((v) => !v)}
-                              className="text-[10px] underline ml-2 shrink-0 text-emerald-200 hover:text-white cursor-pointer"
+                              className="text-[10px] underline ml-2 shrink-0 text-orange-200 hover:text-white cursor-pointer"
                             >
                               {showMonetizarForm ? 'Ocultar' : 'Ver datos'}
                             </button>
@@ -2137,14 +2092,14 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         {showMonetizarForm && (
                           <div className="pt-2 border-t border-white/10 space-y-2.5 animate-in fade-in duration-150">
                             <div className="flex items-center justify-between">
-                              <span className="text-[10px] uppercase tracking-wider font-bold text-rose-300">
+                              <span className="text-[10px] uppercase tracking-wider font-bold text-orange-400">
                                 Formulario Subir Clip (clipearte.com)
                               </span>
                               <a
                                 href="https://clipearte.com/clipper/subir-clip"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[10px] text-rose-300 hover:text-white underline"
+                                className="inline-flex items-center gap-1 text-[10px] text-orange-400 hover:text-white underline"
                               >
                                 <span>Abrir clipearte.com</span>
                                 <ExternalLink size={10} />
@@ -2162,7 +2117,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                                     className={cn(
                                       'text-[9px] font-bold px-1.5 py-0.5 rounded',
                                       campaignMatchesApp
-                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                        ? 'bg-orange-500/15 text-orange-300 border border-orange-500/30'
                                         : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                                     )}
                                   >
@@ -2173,11 +2128,11 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                               <select
                                 value={monetizarCampanaId}
                                 onChange={(e) => setMonetizarCampanaId(e.target.value)}
-                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/15 focus:border-rose-500/60 outline-none"
+                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#121111] border border-white/15 focus:border-orange-500/60 outline-none"
                               >
-                                <option value="" className="bg-[#0d0d1a]">Seleccionar campaña...</option>
+                                <option value="" className="bg-[#161414]">Seleccionar campaña...</option>
                                 {campaigns.map((c) => (
-                                  <option key={c.id} value={c.id} className="bg-[#0d0d1a]">
+                                  <option key={c.id} value={c.id} className="bg-[#161414]">
                                     {c.nombre}
                                   </option>
                                 ))}
@@ -2200,8 +2155,8 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                                       className={cn(
                                         'py-1.5 px-2 rounded-lg text-xs font-bold border transition-all capitalize cursor-pointer',
                                         isSelected
-                                          ? 'bg-rose-500/20 border-rose-500 text-white shadow-sm'
-                                          : 'bg-[#0d1422] border-white/10 text-[var(--text-muted)] hover:text-white'
+                                          ? 'bg-orange-500/20 border-orange-500 text-white shadow-sm'
+                                          : 'bg-[#121111] border-white/10 text-[var(--text-muted)] hover:text-white'
                                       )}
                                     >
                                       {plat === 'tiktok' ? 'TikTok' : plat === 'instagram' ? 'Instagram' : 'YouTube'}
@@ -2222,7 +2177,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                                     className={cn(
                                       'text-[9px] font-bold px-1.5 py-0.5 rounded',
                                       accountMatchesApp
-                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                        ? 'bg-orange-500/15 text-orange-300 border border-orange-500/30'
                                         : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                                     )}
                                   >
@@ -2238,11 +2193,11 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                                   const foundAcc = accounts.find((a) => a.id === newAccId);
                                   if (foundAcc) setMonetizarPlatform(foundAcc.plataforma);
                                 }}
-                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/15 focus:border-rose-500/60 outline-none"
+                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#121111] border border-white/15 focus:border-orange-500/60 outline-none"
                               >
-                                <option value="" className="bg-[#0d0d1a]">Seleccionar cuenta...</option>
+                                <option value="" className="bg-[#161414]">Seleccionar cuenta...</option>
                                 {accounts.map((a) => (
-                                  <option key={a.id} value={a.id} className="bg-[#0d0d1a]">
+                                  <option key={a.id} value={a.id} className="bg-[#161414]">
                                     @{a.username} ({a.plataforma})
                                   </option>
                                 ))}
@@ -2259,7 +2214,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                                 value={monetizarClipUrl}
                                 onChange={(e) => setMonetizarClipUrl(e.target.value)}
                                 placeholder="https://tiktok.com/@tucuenta/video/... o YouTube / Instagram"
-                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/15 focus:border-rose-500/60 outline-none font-mono placeholder:text-[var(--text-muted)]"
+                                className="w-full rounded-lg px-2.5 py-1.5 text-xs text-white bg-[#121111] border border-white/15 focus:border-orange-500/60 outline-none font-mono placeholder:text-[var(--text-muted)]"
                               />
                             </div>
 
@@ -2268,12 +2223,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                                 className={cn(
                                   'p-2 rounded-lg border text-[11px] flex items-start gap-1.5',
                                   monetizarFeedback.success
-                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                    ? 'bg-orange-500/10 border-orange-500/30 text-orange-300'
                                     : 'bg-red-500/10 border-red-500/30 text-red-300'
                                 )}
                               >
                                 {monetizarFeedback.success ? (
-                                  <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-emerald-400" />
+                                  <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-orange-400" />
                                 ) : (
                                   <AlertCircle size={12} className="shrink-0 mt-0.5 text-red-400" />
                                 )}
@@ -2285,7 +2240,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                               type="button"
                               onClick={handleMonetizarClip}
                               disabled={monetizandoClip}
-                              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-400 hover:to-orange-400 text-white text-xs font-bold shadow-lg shadow-rose-500/20 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
+                              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg btn-gradient text-white text-xs font-bold shadow-lg shadow-orange-500/20 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
                             >
                               {monetizandoClip ? (
                                 <>
@@ -2310,12 +2265,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     <div
                       className={`p-2.5 rounded-xl border text-xs leading-relaxed flex items-center gap-2 ${
                         telegramFeedback.success
-                          ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                          ? 'bg-orange-500/10 border-orange-500/25 text-orange-300'
                           : 'bg-red-500/10 border-red-500/25 text-red-300'
                       }`}
                     >
                       {telegramFeedback.success ? (
-                        <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
+                        <CheckCircle2 size={13} className="shrink-0 text-orange-400" />
                       ) : (
                         <AlertCircle size={13} className="shrink-0 text-red-400" />
                       )}
@@ -2328,12 +2283,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                     <div
                       className={`p-2.5 rounded-xl border text-xs leading-relaxed flex items-center gap-2 ${
                         scraperFeedback.success
-                          ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                          ? 'bg-orange-500/10 border-orange-500/25 text-orange-300'
                           : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
                       }`}
                     >
                       {scraperFeedback.success ? (
-                        <CheckCircle2 size={13} className="shrink-0 text-emerald-400" />
+                        <CheckCircle2 size={13} className="shrink-0 text-orange-400" />
                       ) : (
                         <AlertCircle size={13} className="shrink-0 text-amber-400" />
                       )}
@@ -2343,8 +2298,8 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
                   {/* Confirmar publicación manualmente — visible para ENVIADO y VERIFICACION_PENDIENTE */}
                   {(video.estado === 'ENVIADO' || video.estado === 'VERIFICACION_PENDIENTE') && (
-                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 space-y-3">
-                      <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold">
+                    <div className="p-3 rounded-xl bg-orange-950/20 border border-orange-500/30 space-y-3">
+                      <div className="flex items-center gap-1.5 text-orange-400 text-xs font-semibold">
                         <CheckCircle2 size={13} />
                         <span>Confirmar publicación manual</span>
                       </div>
@@ -2356,7 +2311,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           value={confirmPostUrl}
                           onChange={(e) => setConfirmPostUrl(e.target.value)}
                           placeholder="URL del post en la red (opcional)"
-                          className="w-full px-3 py-1.5 rounded-lg bg-white/[0.05] border border-[var(--border)] text-xs text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:border-emerald-500/50"
+                          className="w-full px-3 py-1.5 rounded-lg bg-[#121111] border border-white/10 text-xs text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:border-orange-500/50"
                         />
                         <input
                           type="number"
@@ -2364,7 +2319,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           value={confirmVistas}
                           onChange={(e) => setConfirmVistas(e.target.value)}
                           placeholder="Vistas obtenidas (ej: 2500)"
-                          className="w-full px-3 py-1.5 rounded-lg bg-white/[0.05] border border-[var(--border)] text-xs text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:border-emerald-500/50"
+                          className="w-full px-3 py-1.5 rounded-lg bg-[#121111] border border-white/10 text-xs text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:border-orange-500/50"
                         />
                       </div>
 
@@ -2373,12 +2328,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         <div
                           className={`p-2 rounded-lg border text-[11px] flex items-start gap-1.5 ${
                             confirmFeedback.success
-                              ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                              ? 'bg-orange-500/10 border-orange-500/25 text-orange-300'
                               : 'bg-red-500/10 border-red-500/25 text-red-300'
                           }`}
                         >
                           {confirmFeedback.success
-                            ? <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-emerald-400" />
+                            ? <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-orange-400" />
                             : <AlertCircle size={12} className="shrink-0 mt-0.5 text-red-400" />}
                           <span>{confirmFeedback.msg}</span>
                         </div>
@@ -2388,7 +2343,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         type="button"
                         onClick={handleConfirmarPublicado}
                         disabled={confirmando}
-                        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs font-bold hover:bg-emerald-500/35 transition-all active:scale-98 disabled:opacity-50"
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-orange-500/25 border border-orange-500/40 text-orange-300 text-xs font-bold hover:bg-orange-500/35 transition-all active:scale-98 disabled:opacity-50"
                       >
                         {confirmando ? (
                           <><Loader2 size={12} className="animate-spin" /><span>Confirmando...</span></>
@@ -2409,7 +2364,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         Reemplazar Video (.mp4)
                       </label>
                       {driveToken ? (
-                        <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-md">
+                        <span className="flex items-center gap-1 text-[10px] text-orange-400 font-semibold bg-orange-500/10 border border-orange-500/25 px-2 py-0.5 rounded-md">
                           <CheckCircle2 size={10} /> Drive Conectado
                         </span>
                       ) : (
@@ -2417,7 +2372,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           type="button"
                           onClick={handleConnectDrive}
                           disabled={connectingDrive}
-                          className="flex items-center gap-1 text-[10px] font-bold text-cyan-300 hover:text-white bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 px-2 py-0.5 rounded-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                          className="flex items-center gap-1 text-[10px] font-bold text-orange-300 hover:text-white bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 px-2 py-0.5 rounded-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                         >
                           {connectingDrive ? <Loader2 size={10} className="animate-spin" /> : <HardDrive size={10} />}
                           <span>Conectar Google Drive</span>
@@ -2429,20 +2384,20 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       className={cn(
                         'rounded-xl border-2 border-dashed p-3 text-center cursor-pointer transition-all duration-200 relative',
                         isDragActive
-                          ? 'border-emerald-400 bg-emerald-500/15'
+                          ? 'border-orange-400 bg-orange-500/15'
                           : replacementFile
-                          ? 'border-emerald-500/50 bg-emerald-500/10'
-                          : 'border-[var(--border-strong)] hover:border-emerald-500/40 hover:bg-white/[0.02]'
+                          ? 'border-orange-500/50 bg-orange-500/10'
+                          : 'border-white/10 hover:border-orange-500/40 hover:bg-white/[0.02]'
                       )}
                     >
                       <input {...getInputProps()} />
                       {replacementFile ? (
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-center gap-2">
-                            <FileVideo size={18} className="text-emerald-400 shrink-0" />
+                            <FileVideo size={18} className="text-orange-400 shrink-0" />
                             <div className="text-left min-w-0 flex-1">
                               <p className="text-xs font-bold text-white truncate">{replacementFile.name}</p>
-                              <p className="text-[10px] text-emerald-400 font-mono">
+                              <p className="text-[10px] text-orange-400 font-mono">
                                 {(replacementFile.size / (1024 * 1024)).toFixed(2)} MB • Calidad original HD
                               </p>
                             </div>
@@ -2450,15 +2405,15 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           </div>
 
                           {/* Badge de estado de audio para IA */}
-                          <div className="p-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-between text-[10px]">
+                          <div className="p-1.5 rounded-lg bg-black/40 border border-orange-500/20 flex items-center justify-between text-[10px]">
                             {extractingReplacementAudio ? (
                               <span className="text-amber-300 flex items-center gap-1 font-medium">
                                 <Loader2 size={10} className="animate-spin text-amber-400" />
                                 Extrayendo audio para IA...
                               </span>
                             ) : extractedReplacementAudio ? (
-                              <span className="text-emerald-300 flex items-center gap-1 font-semibold">
-                                <Sparkles size={10} className="text-cyan-400" />
+                              <span className="text-orange-300 flex items-center gap-1 font-semibold">
+                                <Sparkles size={10} className="text-orange-400" />
                                 Audio listo: {extractedReplacementAudio.durationSeconds}s — IA usará subtítulos
                               </span>
                             ) : (
@@ -2469,7 +2424,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         </div>
                       ) : (
                         <div className="py-1">
-                          <Upload size={18} className="mx-auto text-emerald-400 mb-1" />
+                          <Upload size={18} className="mx-auto text-orange-400 mb-1" />
                           <p className="text-xs text-white font-medium">Arrastra un nuevo video o haz clic para reemplazar</p>
                           <p className="text-[10px] text-[var(--text-muted)]">Conserva el anterior si no seleccionas ninguno</p>
                         </div>
@@ -2486,7 +2441,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           type="button"
                           onClick={handleConnectDrive}
                           disabled={connectingDrive}
-                          className="shrink-0 px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-[11px] font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+                          className="shrink-0 px-2.5 py-1 rounded-lg btn-gradient text-white text-[11px] font-bold transition-all shadow-md active:scale-95 cursor-pointer"
                         >
                           {connectingDrive ? 'Conectando...' : 'Conectar Ahora'}
                         </button>
@@ -2495,12 +2450,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
                     {uploadProgress > 0 && uploadProgress < 100 && (
                       <div className="mt-2 space-y-1">
-                        <div className="flex justify-between text-[10px] text-cyan-300">
+                        <div className="flex justify-between text-[10px] text-orange-300">
                           <span>Subiendo nuevo video a Drive...</span>
                           <span>{uploadProgress}%</span>
                         </div>
-                        <div className="w-full h-1 bg-cyan-950 rounded-full overflow-hidden">
-                          <div className="h-full bg-cyan-400" style={{ width: `${uploadProgress}%` }} />
+                        <div className="w-full h-1 bg-[#121111] rounded-full overflow-hidden border border-orange-500/20">
+                          <div className="h-full bg-gradient-to-r from-orange-500 to-amber-500" style={{ width: `${uploadProgress}%` }} />
                         </div>
                       </div>
                     )}
@@ -2515,7 +2470,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       type="text"
                       value={editFileName}
                       onChange={(e) => setEditFileName(e.target.value)}
-                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-cyan-500/50 outline-none bg-[#0d1422] transition-colors"
+                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] transition-colors"
                     />
                     <p className="text-[10px] text-[var(--text-muted)] mt-1">
                       Nombre del archivo del video. Se usa exclusivamente para identificar la publicación en el calendario y las tarjetas de la app.
@@ -2544,7 +2499,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                             value={editShortTitle}
                             onChange={(e) => setEditShortTitle(e.target.value.slice(0, 100))}
                             placeholder="Escribe el título específico para este Short en YouTube..."
-                            className="w-full rounded-xl px-3 py-2 text-xs text-white border border-red-500/40 focus:border-red-400 outline-none bg-[#0d1422] transition-colors pr-20"
+                            className="w-full rounded-xl px-3 py-2 text-xs text-white border border-red-500/40 focus:border-red-400 outline-none bg-[#121111] transition-colors pr-20"
                           />
                           <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-semibold">
                             #Shorts
@@ -2631,7 +2586,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         type="text"
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
-                        className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-cyan-500/50 outline-none bg-[#0d1422] transition-colors"
+                        className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] transition-colors"
                       />
                     </div>
                   )}
@@ -2639,7 +2594,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                   {/* Enlace de Google Drive */}
                   <div>
                     <label className="text-xs font-semibold text-[var(--text-secondary)] block mb-1 flex items-center gap-1.5">
-                      <HardDrive size={11} className="text-cyan-400" />
+                      <HardDrive size={11} className="text-orange-400" />
                       <span>Enlace de Google Drive</span>
                     </label>
                     <input
@@ -2647,7 +2602,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       value={editDriveUrl}
                       onChange={(e) => setEditDriveUrl(e.target.value)}
                       placeholder="https://drive.google.com/file/d/.../view"
-                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-cyan-500/50 outline-none bg-[#0d1422] font-mono transition-colors"
+                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] font-mono transition-colors"
                     />
                     <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                       Puedes pegar directamente el link compartido de Drive si no usas OAuth.
@@ -2655,14 +2610,14 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                   </div>
 
                   {/* Enlace del Reel y Botón de Confirmar Publicación */}
-                  <div className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-cyan-500/10 border border-emerald-500/30 space-y-2.5">
+                  <div className="p-3.5 rounded-xl bg-[#1e1b1b] border border-orange-500/30 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <Link2 size={13} className="text-emerald-400" />
+                        <Link2 size={13} className="text-orange-400" />
                         <span>Enlace del Reel o Post Publicado (Instagram / TikTok)</span>
                       </label>
                       {video.estado === 'PUBLICADO' && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30 flex items-center gap-1">
                           <CheckCircle2 size={10} /> PUBLICADO
                         </span>
                       )}
@@ -2672,7 +2627,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       value={editReelUrl}
                       onChange={(e) => setEditReelUrl(e.target.value)}
                       placeholder="https://www.instagram.com/reel/Cxxxxxx/ o TikTok..."
-                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-emerald-500/60 outline-none bg-[#0d1422] font-mono placeholder:text-[var(--text-muted)] transition-colors"
+                      className="w-full rounded-xl px-3 py-2 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] font-mono placeholder:text-[var(--text-muted)] transition-colors"
                     />
                     <div className="flex items-center justify-between gap-2 pt-1">
                       <p className="text-[10px] text-[var(--text-muted)] leading-tight flex-1">
@@ -2682,7 +2637,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         type="button"
                         onClick={handleConfirmarFromEdit}
                         disabled={confirmandoEdit || savingEdit}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/25 hover:bg-orange-500/35 border border-orange-500/40 text-orange-300 text-xs font-bold transition-all shrink-0 active:scale-95 disabled:opacity-50 cursor-pointer"
                       >
                         {confirmandoEdit ? (
                           <>
@@ -2691,7 +2646,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                           </>
                         ) : (
                           <>
-                            <CheckCircle2 size={12} className="text-emerald-400" />
+                            <CheckCircle2 size={12} className="text-orange-400" />
                             <span>Confirmar Publicado</span>
                           </>
                         )}
@@ -2716,11 +2671,11 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                             setEditCuentaId('');
                           }
                         }}
-                        className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/10 focus:border-purple-500/50 outline-none transition-colors"
+                        className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#121111] border border-white/10 focus:border-orange-500/60 outline-none transition-colors"
                       >
-                        <option value="" className="bg-[#0d0d1a]">Seleccionar campaña...</option>
+                        <option value="" className="bg-[#161414]">Seleccionar campaña...</option>
                         {campaigns.map(c => (
-                          <option key={c.id} value={c.id}>{c.nombre}</option>
+                          <option key={c.id} value={c.id} className="bg-[#161414]">{c.nombre}</option>
                         ))}
                       </select>
                     </div>
@@ -2733,16 +2688,16 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         value={editCuentaId}
                         onChange={(e) => setEditCuentaId(e.target.value)}
                         disabled={!editCampanaId}
-                        className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#0d1422] border border-white/10 focus:border-emerald-500/50 outline-none disabled:opacity-50 transition-colors"
+                        className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#121111] border border-white/10 focus:border-orange-500/60 outline-none disabled:opacity-50 transition-colors"
                       >
-                        <option value="" className="bg-[#0d0d1a]">
+                        <option value="" className="bg-[#161414]">
                           {editCampanaId ? 'Seleccionar cuenta...' : 'Primero selecciona campaña'}
                         </option>
                         {filteredEditAccounts.map(a => (
-                          <option key={a.id} value={a.id}>@{a.username} ({a.plataforma})</option>
+                          <option key={a.id} value={a.id} className="bg-[#161414]">@{a.username} ({a.plataforma})</option>
                         ))}
                         {editCampanaId && filteredEditAccounts.length === 0 && (
-                          <option value="" disabled className="bg-[#0d0d1a] text-red-400">
+                          <option value="" disabled className="bg-[#161414] text-red-400">
                             Sin cuentas enlazadas a esta campaña
                           </option>
                         )}
@@ -2769,8 +2724,8 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       const d = new Date(`${editFecha}T${editHora}`);
                       const isFuture = !isNaN(d.getTime()) && d.getTime() > Date.now();
                       return isFuture ? (
-                        <div className="col-span-2 flex items-center gap-1.5 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] text-emerald-300">
-                          <Sparkles size={12} className="shrink-0 text-emerald-400" />
+                        <div className="col-span-2 flex items-center gap-1.5 p-2 rounded-lg bg-orange-500/10 border border-orange-500/30 text-[11px] text-orange-300">
+                          <Sparkles size={12} className="shrink-0 text-orange-400" />
                           <span>
                             Fecha futura detectada: el estado pasará a <b>PROGRAMADO</b> y se enviará automáticamente a Telegram en esa fecha y hora.
                           </span>
@@ -2793,7 +2748,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         type="button"
                         onClick={handleRegenerateAICopy}
                         disabled={generatingAI || extractingReplacementAudio}
-                        className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition-all disabled:opacity-50"
+                        className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg bg-orange-500/20 text-orange-300 border border-orange-500/30 hover:bg-orange-500/30 transition-all disabled:opacity-50"
                       >
                         {generatingAI || extractingReplacementAudio ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
                         <span>
@@ -2812,29 +2767,29 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       onChange={(e) => setEditDescripcion(e.target.value)}
                       minHeight={80}
                       maxHeight={320}
-                      className="rounded-xl p-3 text-xs text-white border border-white/10 focus:border-emerald-500/50 outline-none bg-[#0d1422] leading-relaxed transition-colors"
+                      className="rounded-xl p-3 text-xs text-white border border-white/10 focus:border-orange-500/60 outline-none bg-[#121111] leading-relaxed transition-colors"
                     />
 
                     {/* Subtítulos y Diálogo extraídos en JSON */}
                     {extractedSubtitles && (
-                      <div className="mt-2.5 p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 text-xs space-y-2">
+                      <div className="mt-2.5 p-3 rounded-xl bg-orange-950/20 border border-orange-500/30 text-xs space-y-2">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 text-purple-300 font-bold text-[11px]">
-                            <FileText size={13} className="text-cyan-400" />
+                          <div className="flex items-center gap-1.5 text-orange-300 font-bold text-[11px]">
+                            <FileText size={13} className="text-orange-400" />
                             <span>Subtítulos y Diálogo Extraídos en JSON</span>
                           </div>
                           <button
                             type="button"
                             onClick={() => setShowSubtitlesJson(!showSubtitlesJson)}
-                            className="text-[10px] font-semibold text-cyan-300 hover:text-white underline"
+                            className="text-[10px] font-semibold text-orange-400 hover:text-white underline"
                           >
                             {showSubtitlesJson ? 'Ocultar JSON' : 'Ver JSON'}
                           </button>
                         </div>
 
                         {extractedSubtitles.gancho_inicial && (
-                          <div className="p-2 rounded-lg bg-black/40 border border-purple-500/20 text-[11px]">
-                            <span className="text-[9px] text-purple-400 font-bold uppercase tracking-wider block">
+                          <div className="p-2 rounded-lg bg-black/40 border border-orange-500/20 text-[11px]">
+                            <span className="text-[9px] text-orange-400 font-bold uppercase tracking-wider block">
                               Gancho Inicial:
                             </span>
                             <p className="text-white italic mt-0.5">"{extractedSubtitles.gancho_inicial}"</p>
@@ -2843,12 +2798,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
                         {extractedSubtitles.tema_principal && (
                           <p className="text-[11px] text-[var(--text-secondary)]">
-                            <b className="text-purple-300">Tema:</b> {extractedSubtitles.tema_principal}
+                            <b className="text-orange-300">Tema:</b> {extractedSubtitles.tema_principal}
                           </p>
                         )}
 
                         {showSubtitlesJson && (
-                          <pre className="text-[10px] font-mono text-purple-200 bg-black/70 p-2.5 rounded-lg overflow-x-auto max-h-36 overflow-y-auto border border-purple-500/20">
+                          <pre className="text-[10px] font-mono text-orange-200 bg-black/70 p-2.5 rounded-lg overflow-x-auto max-h-36 overflow-y-auto border border-orange-500/20">
                             {JSON.stringify(extractedSubtitles, null, 2)}
                           </pre>
                         )}
@@ -2862,12 +2817,12 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       className={cn(
                         'p-3 rounded-xl border text-xs flex items-start gap-2 animate-in fade-in duration-200',
                         editFeedback.success
-                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                          ? 'bg-orange-950/40 border-orange-500/40 text-orange-300'
                           : 'bg-red-950/40 border-red-500/40 text-red-300'
                       )}
                     >
                       {editFeedback.success ? (
-                        <CheckCircle2 size={15} className="shrink-0 text-emerald-400 mt-0.5" />
+                        <CheckCircle2 size={15} className="shrink-0 text-orange-400 mt-0.5" />
                       ) : (
                         <AlertCircle size={15} className="shrink-0 text-red-400 mt-0.5" />
                       )}
@@ -2899,7 +2854,7 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       type="button"
                       onClick={handleConfirmarFromEdit}
                       disabled={savingEdit || confirmandoEdit}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold shadow-lg shadow-emerald-500/25 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold shadow-lg shadow-orange-500/25 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                     >
                       {confirmandoEdit ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
                       <span>Confirmar Publicado con Reel</span>

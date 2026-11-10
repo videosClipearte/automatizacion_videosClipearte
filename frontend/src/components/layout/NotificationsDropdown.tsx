@@ -86,9 +86,9 @@ export function NotificationsDropdown() {
       case 'warning':
         return <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />;
       case 'success':
-        return <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />;
+        return <CheckCircle2 className="w-4 h-4 text-orange-400 shrink-0" />;
       default:
-        return <Info className="w-4 h-4 text-blue-400 shrink-0" />;
+        return <Info className="w-4 h-4 text-zinc-400 shrink-0" />;
     }
   };
 
@@ -102,7 +102,7 @@ export function NotificationsDropdown() {
         );
       case 'scraper':
         return (
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">
             Scraper Silencioso
           </span>
         );
@@ -145,13 +145,13 @@ export function NotificationsDropdown() {
         }}
         title="Centro de Avisos y Notificaciones"
         className={cn(
-          'relative w-9 h-9 rounded-xl glass hover:bg-white/5 flex items-center justify-center transition-all duration-200',
+          'relative w-8 h-8 rounded-full bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] flex items-center justify-center transition-all duration-200 cursor-pointer',
           isOpen
-            ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10'
+            ? 'text-orange-400 border-orange-500/40 bg-orange-500/10'
             : 'text-[var(--text-secondary)] hover:text-white'
         )}
       >
-        <Bell size={16} />
+        <Bell size={15} />
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 flex h-4 w-4">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
@@ -170,17 +170,17 @@ export function NotificationsDropdown() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="absolute right-0 mt-3 w-96 max-w-[calc(100vw-2rem)] glass-strong border border-[var(--border-strong)] rounded-2xl shadow-2xl overflow-hidden z-50 backdrop-blur-xl"
+            className="absolute right-0 mt-3 w-96 max-w-[calc(100vw-2rem)] glass-strong border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 backdrop-blur-xl bg-[#161414]/95"
           >
             {/* Header del Centro de Avisos */}
-            <div className="p-4 border-b border-[var(--border)] flex items-center justify-between bg-white/[0.02]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <div className="w-8 h-8 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
                   <Bell size={15} />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">Centro de Avisos</h3>
-                  <p className="text-[10px] text-[var(--text-muted)]">
+                  <p className="text-[10px] text-zinc-400">
                     {unreadCount > 0 ? `${unreadCount} aviso(s) no leído(s)` : 'Todos los avisos al día'}
                   </p>
                 </div>
@@ -190,7 +190,7 @@ export function NotificationsDropdown() {
                   <button
                     onClick={handleMarkAllRead}
                     title="Marcar todos como leídos"
-                    className="text-[10px] px-2 py-1 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center gap-1"
+                    className="text-[10px] px-2 py-1 rounded-lg text-orange-400 hover:bg-orange-500/10 transition-colors flex items-center gap-1"
                   >
                     <Check size={11} /> Leído todo
                   </button>
@@ -237,12 +237,12 @@ export function NotificationsDropdown() {
             </div>
 
             {/* Lista de Notificaciones */}
-            <div className="max-h-80 overflow-y-auto divide-y divide-[var(--border)]">
+            <div className="max-h-80 overflow-y-auto divide-y divide-white/5">
               {filteredNotifications.length === 0 ? (
                 <div className="p-8 text-center">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-400/50 mx-auto mb-2" />
+                  <CheckCircle2 className="w-8 h-8 text-orange-400/50 mx-auto mb-2" />
                   <p className="text-xs text-white font-medium">No hay avisos en esta sección</p>
-                  <p className="text-[10px] text-[var(--text-muted)] mt-1">El sistema está operando con normalidad.</p>
+                  <p className="text-[10px] text-zinc-400 mt-1">El sistema está operando con normalidad.</p>
                 </div>
               ) : (
                 filteredNotifications.map((notif) => (
@@ -266,24 +266,24 @@ export function NotificationsDropdown() {
                         <span className="text-xs font-semibold text-white truncate">
                           {notif.titulo}
                         </span>
-                        <span className="text-[9px] text-[var(--text-muted)] whitespace-nowrap">
+                        <span className="text-[9px] text-zinc-400 whitespace-nowrap">
                           {formatTimestamp(notif.created_at)}
                         </span>
                       </div>
-                      <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed mb-2 line-clamp-2">
+                      <p className="text-[11px] text-zinc-300 leading-relaxed mb-2 line-clamp-2">
                         {notif.mensaje}
                       </p>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {getSourceBadge(notif.origen)}
                           {notif.video_id && (
-                            <span className="text-[9px] text-cyan-400 font-mono">
+                            <span className="text-[9px] text-orange-400 font-mono">
                               Ver video →
                             </span>
                           )}
                         </div>
                         {!notif.leido && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
                         )}
                       </div>
                     </div>
@@ -293,7 +293,7 @@ export function NotificationsDropdown() {
                       type="button"
                       onClick={(e) => handleDeleteItem(notif.id, e)}
                       title="Eliminar este aviso"
-                      className="absolute right-2.5 top-3 p-1 rounded-md text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 opacity-70 group-hover:opacity-100 transition-all"
+                      className="absolute right-2.5 top-3 p-1 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 opacity-70 group-hover:opacity-100 transition-all"
                     >
                       <Trash2 size={12} />
                     </button>
@@ -303,9 +303,9 @@ export function NotificationsDropdown() {
             </div>
 
             {/* Footer */}
-            <div className="p-2.5 bg-black/40 border-t border-[var(--border)] flex items-center justify-between text-[11px]">
-              <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-                <Radio size={12} className="text-emerald-400 animate-pulse" />
+            <div className="p-2.5 bg-black/40 border-t border-white/10 flex items-center justify-between text-[11px]">
+              <div className="flex items-center gap-1.5 text-zinc-400">
+                <Radio size={12} className="text-orange-400 animate-pulse" />
                 <span>Monitoreo automático y alertas en tiempo real</span>
               </div>
             </div>

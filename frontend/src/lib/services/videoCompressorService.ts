@@ -143,3 +143,198 @@ function seekToTime(video: HTMLVideoElement, time: number): Promise<void> {
     video.currentTime = time;
   });
 }
+
+export interface VideoCompressionResult {
+  file: File;
+  originalBytes: number;
+  compressedBytes: number;
+  savedBytes: number;
+  savedPercent: number;
+  method: 'api-ffmpeg-crf18' | 'wasm-ffmpeg-crf18' | 'mp4-trim' | 'original';
+}
+
+/**
+ * Elimina de forma 100% lossless (bit-exact) bloques de relleno ('free', 'skip', 'wide', 'uuid')
+ * ubicados DESPUÉS de 'mdat' y 'moov', sin alterar jamás los offsets de 'stco'/'co64'.
+ */
+export function stripTrailingMp4Padding(buffer: Uint8Array): Uint8Array {
+  try {
+    if (buffer.byteLength < 32) return buffer;
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    let offset = 0;
+    let lastEssentialEnd = buffer.byteLength;
+    let sawMoov = false;
+    let sawMdat = false;
+    const droppableAfterMedia = new Set(['free', 'skip', 'wide', 'uuid']);
+
+    const boxes: { type: string; start: number; end: number }[] = [];
+    while (offset + 8 <= buffer.byteLength) {
+      let size = view.getUint32(offset, false);
+      const type = String.fromCharCode(
+        buffer[offset + 4],
+        buffer[offset + 5],
+        buffer[offset + 6],
+        buffer[offset + 7]
+      );
+      let headerSize = 8;
+      if (size === 1) {
+        if (offset + 16 > buffer.byteLength) break;
+        const high = view.getUint32(offset + 8, false);
+        const low = view.getUint32(offset + 12, false);
+        size = high * 4294967296 + low;
+        headerSize = 16;
+      } else if (size === 0) {
+        size = buffer.byteLength - offset;
+      }
+      if (size < headerSize || offset + size > buffer.byteLength) break;
+      boxes.push({ type, start: offset, end: offset + size });
+      offset += size;
+    }
+
+    if (boxes.length === 0 || offset !== buffer.byteLength) return buffer;
+
+    for (const b of boxes) {
+      if (b.type === 'moov') sawMoov = true;
+      if (b.type === 'mdat') sawMdat = true;
+    }
+    if (!sawMoov || !sawMdat) return buffer;
+
+    // Recortar únicamente cajas de relleno al final del archivo (después de moov y mdat)
+    let trimEnd = buffer.byteLength;
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const b = boxes[i];
+      if (droppableAfterMedia.has(b.type)) {
+        trimEnd = b.start;
+      } else {
+        break;
+      }
+    }
+    lastEssentialEnd = trimEnd;
+
+    if (lastEssentialEnd > 0 && lastEssentialEnd < buffer.byteLength) {
+      return buffer.subarray(0, lastEssentialEnd);
+    }
+    return buffer;
+  } catch {
+    return buffer;
+  }
+}
+
+/**
+ * Comprime un archivo de video en segundo plano y en cuestión de segundos ANTES de subirlo a Google Drive,
+ * sin perder calidad visual:
+ * 1. Envía el video a la API `/api/video/compress` (FFmpeg `-preset ultrafast -crf 18 -c:a copy`, límite 15 s).
+ * 2. Si el entorno no dispone de binario FFmpeg o excede el tiempo rápido, aplica optimización lossless
+ *    instantánea de contenedor MP4/MOV (`stripTrailingMp4Padding`).
+ * 3. Si el resultado no es más liviano que el original, devuelve el archivo original intacto.
+ */
+export async function compressVideoForStorage(
+  file: File
+): Promise<VideoCompressionResult> {
+  const originalBytes = file.size;
+
+  if (!file.type.startsWith('video/') && !/\.(mp4|mov|webm|mkv|avi)$/i.test(file.name)) {
+    return {
+      file,
+      originalBytes,
+      compressedBytes: originalBytes,
+      savedBytes: 0,
+      savedPercent: 0,
+      method: 'original',
+    };
+  }
+
+  if (originalBytes < 512 * 1024) {
+    return {
+      file,
+      originalBytes,
+      compressedBytes: originalBytes,
+      savedBytes: 0,
+      savedPercent: 0,
+      method: 'original',
+    };
+  }
+
+  // 1. Compresión rápida en segundo plano vía API `/api/video/compress` (máx. 15 segundos)
+  if (typeof window !== 'undefined') {
+    const isLocalhost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+    const maxApiBytes = isLocalhost ? 500 * 1024 * 1024 : 4.2 * 1024 * 1024;
+
+    if (originalBytes <= maxApiBytes) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      try {
+        const form = new FormData();
+        form.append('file', file);
+
+        const res = await fetch('/api/video/compress', {
+          method: 'POST',
+          body: form,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const methodHeader = res.headers.get('X-Compression-Method') || 'original';
+          const blob = await res.blob();
+
+          if (blob.size > 1024 && blob.size < originalBytes) {
+            const compressedFile = new File([blob], file.name, {
+              type: blob.type || file.type || 'video/mp4',
+              lastModified: Date.now(),
+            });
+            const savedBytes = originalBytes - compressedFile.size;
+            const savedPercent = Math.round((savedBytes / originalBytes) * 100);
+            console.log(
+              `[videoCompressor] ✅ Video comprimido en segundo plano (${methodHeader}): ${(originalBytes / 1048576).toFixed(2)} MB → ${(compressedFile.size / 1048576).toFixed(2)} MB (-${savedPercent}%)`
+            );
+            return {
+              file: compressedFile,
+              originalBytes,
+              compressedBytes: compressedFile.size,
+              savedBytes,
+              savedPercent,
+              method: methodHeader === 'ffmpeg-crf18' ? 'api-ffmpeg-crf18' : 'mp4-trim',
+            };
+          }
+        }
+      } catch (apiErr) {
+        clearTimeout(timeoutId);
+        console.warn('[videoCompressor] Compresión API omitida o excedió tiempo rápido, usando optimización instantánea:', apiErr);
+      }
+    }
+  }
+
+  // 2. Respaldo lossless instantáneo (< 5 ms) de recorte de relleno MP4
+  try {
+    const raw = new Uint8Array(await file.arrayBuffer());
+    const trimmed = stripTrailingMp4Padding(raw);
+    if (trimmed.byteLength < originalBytes && trimmed.byteLength > 1024) {
+      const trimmedFile = new File([trimmed.slice()], file.name, {
+        type: file.type || 'video/mp4',
+        lastModified: Date.now(),
+      });
+      const savedBytes = originalBytes - trimmedFile.size;
+      const savedPercent = Math.round((savedBytes / originalBytes) * 100);
+      return {
+        file: trimmedFile,
+        originalBytes,
+        compressedBytes: trimmedFile.size,
+        savedBytes,
+        savedPercent,
+        method: 'mp4-trim',
+      };
+    }
+  } catch {}
+
+  return {
+    file,
+    originalBytes,
+    compressedBytes: originalBytes,
+    savedBytes: 0,
+    savedPercent: 0,
+    method: 'original',
+  };
+}

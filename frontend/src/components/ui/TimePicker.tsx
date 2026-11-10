@@ -161,13 +161,13 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
       {label && (
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
-            <Clock size={11} className="text-cyan-400" /> {label}
+            <Clock size={11} className="text-orange-400" /> {label}
           </label>
           {onSetNow && (
             <button
               type="button"
               onClick={() => { onSetNow(); setOpen(false); }}
-              className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 transition-colors hover:underline"
+              className="text-[10px] text-orange-400 hover:text-orange-300 font-bold flex items-center gap-1 transition-colors hover:underline"
             >
               <Clock size={9} /> Hora actual
             </button>
@@ -179,10 +179,10 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
       <div
         className={cn(
           'w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all',
-          'bg-[#0b0f1c] text-white',
+          'bg-[#121111] text-white',
           open || focused
-            ? 'border-cyan-500/70 shadow-[0_0_0_3px_rgba(6,182,212,0.1)]'
-            : 'border-[var(--border-strong)] hover:border-cyan-500/40',
+            ? 'border-orange-500/70 shadow-[0_0_0_3px_rgba(249,115,22,0.15)]'
+            : 'border-white/10 hover:border-orange-500/40',
           error && 'border-red-500/50'
         )}
       >
@@ -211,14 +211,14 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
           className="shrink-0"
           aria-label="Abrir selector de hora"
         >
-          <Clock size={13} className={cn('transition-colors', open ? 'text-cyan-400' : 'text-[var(--text-muted)] hover:text-cyan-400')} />
+          <Clock size={13} className={cn('transition-colors', open ? 'text-orange-400' : 'text-[var(--text-muted)] hover:text-orange-400')} />
         </button>
       </div>
       {error && <p className="text-red-400 text-[10px] mt-1">{error}</p>}
 
       {/* Popover reloj: mismo ancho que el input */}
       {open && (
-        <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full rounded-2xl border border-cyan-500/25 bg-[#0a0e1a] shadow-[0_16px_50px_rgba(0,0,0,0.9),0_0_30px_rgba(6,182,212,0.12)] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full rounded-2xl border border-white/10 bg-[#161414] shadow-[0_16px_50px_rgba(0,0,0,0.9),0_0_30px_rgba(249,115,22,0.12)] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
           <div className="px-2.5 pt-2">
             <p className="text-[9px] uppercase tracking-wider font-semibold text-[var(--text-muted)] mb-1.5">
               Seleccionar hora
@@ -232,7 +232,7 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
                 className={cn(
                   'flex-1 rounded-lg py-1.5 font-mono font-bold text-2xl leading-none transition-all',
                   mode === 'hours'
-                    ? 'bg-gradient-to-br from-cyan-500/30 to-emerald-500/20 text-cyan-300 border border-cyan-500/40'
+                    ? 'bg-gradient-to-br from-orange-500/30 to-amber-500/20 text-orange-400 border border-orange-500/40'
                     : 'bg-white/[0.03] text-white/80 border border-transparent hover:bg-white/[0.06]'
                 )}
               >
@@ -245,7 +245,7 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
                 className={cn(
                   'flex-1 rounded-lg py-1.5 font-mono font-bold text-2xl leading-none transition-all',
                   mode === 'minutes'
-                    ? 'bg-gradient-to-br from-cyan-500/30 to-emerald-500/20 text-cyan-300 border border-cyan-500/40'
+                    ? 'bg-gradient-to-br from-orange-500/30 to-amber-500/20 text-orange-400 border border-orange-500/40'
                     : 'bg-white/[0.03] text-white/80 border border-transparent hover:bg-white/[0.06]'
                 )}
               >
@@ -263,7 +263,7 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
                       'flex-1 text-[10px] font-bold transition-all',
                       i === 0 && 'border-b border-[var(--border-strong)]',
                       period === p
-                        ? 'bg-emerald-500/20 text-emerald-300'
+                        ? 'bg-orange-500/20 text-orange-400'
                         : 'text-[var(--text-muted)] hover:bg-white/[0.05] hover:text-white'
                     )}
                   >
@@ -287,27 +287,27 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
             >
               <defs>
                 <linearGradient id="tp-knob" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#06b6d4" />
-                  <stop offset="100%" stopColor="#10b981" />
+                  <stop offset="0%" stopColor="#f97316" />
+                  <stop offset="100%" stopColor="#ea580c" />
                 </linearGradient>
               </defs>
 
               {/* Fondo del dial */}
-              <circle cx={C} cy={C} r={C - 2} fill="rgba(255,255,255,0.03)" stroke="rgba(6,182,212,0.15)" />
+              <circle cx={C} cy={C} r={C - 2} fill="rgba(255,255,255,0.03)" stroke="rgba(249,115,22,0.15)" />
 
               {/* Manecilla */}
               <line
                 x1={C} y1={C} x2={knob.x} y2={knob.y}
-                stroke="#06b6d4" strokeWidth={2}
+                stroke="#f97316" strokeWidth={2}
                 style={{ transition: dragging.current ? 'none' : 'all 0.15s ease-out' }}
               />
-              <circle cx={C} cy={C} r={3.5} fill="#06b6d4" />
+              <circle cx={C} cy={C} r={3.5} fill="#f97316" />
               <circle
                 cx={knob.x} cy={knob.y} r={R_KNOB}
                 fill="url(#tp-knob)"
-                style={{ filter: 'drop-shadow(0 0 6px rgba(6,182,212,0.55))' }}
+                style={{ filter: 'drop-shadow(0 0 6px rgba(249,115,22,0.55))' }}
               />
-              {!selectedIsLabel && <circle cx={knob.x} cy={knob.y} r={2.5} fill="#0a0e1a" />}
+              {!selectedIsLabel && <circle cx={knob.x} cy={knob.y} r={2.5} fill="#161414" />}
 
               {/* Numeros */}
               {labels.map(({ val, text, deg }) => {
@@ -323,7 +323,7 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
                     className="pointer-events-none font-mono"
                     fontSize={13}
                     fontWeight={active ? 800 : 600}
-                    fill={active ? '#0a0e1a' : 'rgba(255,255,255,0.75)'}
+                    fill={active ? '#ffffff' : 'rgba(255,255,255,0.75)'}
                   >
                     {text}
                   </text>
@@ -337,7 +337,7 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
             <button
               type="button"
               onClick={() => inputRef.current?.focus()}
-              className="p-1 rounded-md text-[var(--text-muted)] hover:text-cyan-400 hover:bg-white/[0.05] transition-all"
+              className="p-1 rounded-md text-[var(--text-muted)] hover:text-orange-400 hover:bg-white/[0.05] transition-all"
               aria-label="Escribir hora"
               title="Escribir hora"
             >
@@ -357,7 +357,7 @@ export function TimePicker({ value, onChange, label, error, onSetNow, className 
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="text-[10px] font-bold text-cyan-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-cyan-500/20 transition-all"
+                className="text-[10px] font-bold text-orange-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-orange-500/20 transition-all"
               >
                 OK
               </button>

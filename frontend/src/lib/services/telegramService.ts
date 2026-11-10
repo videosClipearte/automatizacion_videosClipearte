@@ -247,14 +247,9 @@ export async function sendDailyQuotaAlert(
 ): Promise<{ success: boolean; message: string }> {
   const missing = Math.max(0, targetCount - currentPublished);
   const text = `
-📊 <b>REPORTE DE META DIARIA DE PUBLICACIONES</b>
-━━━━━━━━━━━━━━━━━━━━
-👤 <b>Cuenta:</b> @${escapeHtml(accountUsername)} (<i>${escapeHtml(platform.toUpperCase())}</i>)
-🎯 <b>Meta diaria programada:</b> ${targetCount} videos
-✅ <b>Videos subidos hoy:</b> ${currentPublished}
-⚠️ <b>Videos faltantes:</b> <b>${missing} video(s)</b>
-
-${missing > 0 ? '⏰ <i>Recordatorio: Sube o programa los videos restantes antes de que termine el día para cumplir con la cuota establecida.</i>' : '🎉 <i>¡Felicitaciones! Se ha alcanzado la meta diaria fijada para esta cuenta.</i>'}
+📊 <b>Meta diaria</b> · @${escapeHtml(accountUsername)} (${escapeHtml(platform.toUpperCase())})
+🎯 Meta: ${targetCount} · ✅ Subidos: ${currentPublished} · ${missing > 0 ? `⚠️ Faltan: <b>${missing}</b>` : '🎉 <b>Meta cumplida</b>'}
+${missing > 0 ? '⏰ <i>Sube o programa los restantes antes de que termine el día.</i>' : ''}
 `.trim();
 
   return await sendTelegramMessage(token, chatId, text);
@@ -272,14 +267,10 @@ export async function sendToleranceAlert(
   delayMinutes: number
 ): Promise<{ success: boolean; message: string }> {
   const text = `
-🚨 <b>ALERTA DE RETRASO EN PUBLICACIÓN</b>
-━━━━━━━━━━━━━━━━━━━━
-🎬 <b>Video:</b> ${escapeHtml(videoTitle)}
-👤 <b>Cuenta:</b> @${escapeHtml(accountUsername)}
-🕒 <b>Hora programada:</b> ${escapeHtml(scheduledTime)}
-⏱️ <b>Retraso detectado:</b> ${delayMinutes} minutos
-
-⚠️ <i>El scraper silencioso en segundo plano no ha confirmado la publicación del video tras vencer el margen de tolerancia.</i>
+🚨 <b>Retraso en publicación</b> · ${delayMinutes} min
+🎬 ${escapeHtml(videoTitle)}
+👤 @${escapeHtml(accountUsername)} · 🕒 ${escapeHtml(scheduledTime)}
+⚠️ <i>Sin confirmar tras vencer el margen de tolerancia.</i>
 `.trim();
 
   return await sendTelegramMessage(token, chatId, text);
@@ -310,11 +301,11 @@ export async function sendPublicationAlert(
       : '<i>(Enlace no registrado)</i>';
 
   const campaignSection = data.campaignName
-    ? `🎯 <b>Campaña:</b> ${escapeHtml(data.campaignName)}\n`
+    ? ` · 🎯 ${escapeHtml(data.campaignName)}`
     : '';
 
   const horaSection = data.programadoPara
-    ? `🕒 <b>Hora programada:</b> ${escapeHtml(data.programadoPara)}\n`
+    ? `🕒 ${escapeHtml(data.programadoPara)}\n`
     : '';
 
   const safeUsername = escapeHtml(data.accountUsername);
@@ -325,19 +316,14 @@ export async function sendPublicationAlert(
   const hasDescription = safeDesc.trim().length > 0;
 
   const descNotice = hasDescription
-    ? '📝 <i>A continuación se envía el copy aprobado listo para copiar y pegar.</i>'
-    : '📝 <i>(Sin descripción o copy registrado previamente)</i>';
+    ? '📝 <i>Copy en el siguiente mensaje.</i>'
+    : '📝 <i>(Sin copy registrado)</i>';
 
-  // Mensaje 1: Ficha técnica y archivo en Drive
+  // Mensaje 1: Ficha compacta y archivo en Drive
   const msg1 = `
-🚀 <b>PUBLICACIÓN PROGRAMADA EJECUTADA</b>
-━━━━━━━━━━━━━━━━━━━━
-👤 <b>Cuenta:</b> @${safeUsername} (<b>${safePlatform}</b>)
-${campaignSection}${horaSection}🎬 <b>Título:</b> ${safeTitle}
-
-📁 <b>Video en Google Drive:</b>
-${driveUrlText}
-
+🚀 <b>${safeTitle}</b>
+👤 @${safeUsername} (${safePlatform})${campaignSection}
+${horaSection}📁 ${driveUrlText}
 ${descNotice}
 `.trim();
 
@@ -401,14 +387,11 @@ export async function sendConfirmationPoll(
     return { success: false, message: 'Token y ChatId son obligatorios.' };
   }
 
-  const hora = data.programadoPara ? ` (${escapeHtml(data.programadoPara)})` : '';
+  const hora = data.programadoPara ? ` · ⏰ ${escapeHtml(data.programadoPara)}` : '';
   const text = [
-    `✅ <b>CONFIRMACIÓN DE PUBLICACIÓN</b>`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `🎬 <b>Título:</b> ${escapeHtml(data.videoTitle)}`,
-    `👤 <b>Cuenta:</b> @${escapeHtml(data.accountUsername)} (<b>${escapeHtml(data.platform.toUpperCase())}</b>)${hora}`,
-    ``,
-    `❓ <i>¿Confirmás que este video fue publicado correctamente en la red social?</i>`,
+    `✅ <b>¿Fue publicado?</b>`,
+    `🎬 <b>${escapeHtml(data.videoTitle)}</b>`,
+    `👤 @${escapeHtml(data.accountUsername)} (${escapeHtml(data.platform.toUpperCase())})${hora}`,
   ].join('\n');
 
   const payload = {

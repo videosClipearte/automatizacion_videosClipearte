@@ -69,17 +69,17 @@ export function Sidebar() {
                   className={cn(
                     'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative',
                     active
-                      ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-white'
+                      ? 'bg-gradient-to-r from-orange-500/18 to-orange-500/5 border border-orange-500/30 text-white font-medium'
                       : 'text-[var(--text-secondary)] hover:text-white hover:bg-white/5'
                   )}
                 >
                   {active && (
                     <motion.span
                       layoutId="sidebar-indicator"
-                      className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full bg-gradient-to-b from-emerald-400 to-cyan-400"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full bg-gradient-to-b from-orange-400 to-orange-600"
                     />
                   )}
-                  <Icon className={cn('w-4.5 h-4.5 shrink-0', active ? 'text-emerald-400' : '')} size={18} />
+                  <Icon className={cn('w-4.5 h-4.5 shrink-0', active ? 'text-orange-400' : '')} size={18} />
                   <AnimatePresence>
                     {!isSidebarCollapsed && (
                       <motion.span
@@ -191,11 +191,11 @@ export function Sidebar() {
                         className={cn(
                           'flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all duration-200',
                           active
-                            ? 'bg-gradient-to-r from-emerald-500/25 to-cyan-500/25 border border-emerald-500/35 text-white font-semibold shadow-sm'
+                            ? 'bg-gradient-to-r from-orange-500/20 to-orange-600/10 border border-orange-500/30 text-white font-semibold shadow-sm'
                             : 'text-[var(--text-secondary)] hover:text-white hover:bg-white/5'
                         )}
                       >
-                        <Icon className={cn('w-5 h-5 shrink-0', active ? 'text-emerald-400' : '')} size={19} />
+                        <Icon className={cn('w-5 h-5 shrink-0', active ? 'text-orange-400' : '')} size={19} />
                         <span className="text-sm">{label}</span>
                       </div>
                     </Link>

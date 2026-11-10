@@ -84,21 +84,18 @@ export async function GET(request: Request) {
 
       if (missing > 0) {
         anyMissing = true;
-        reportLines += `\n👤 <b>@${username}</b> (${platform}):\n• Publicados: <b>${published}/${target}</b>\n• ⚠️ Faltan: <b>${missing} video(s)</b>\n`;
+        reportLines += `\n⚠️ @${username} (${platform}): <b>${published}/${target}</b> · faltan <b>${missing}</b>`;
       } else {
-        reportLines += `\n👤 <b>@${username}</b> (${platform}):\n• ✅ Meta cumplida: <b>${published}/${target}</b>\n`;
+        reportLines += `\n✅ @${username} (${platform}): <b>${published}/${target}</b>`;
       }
     }
 
     const conclusionLine = anyMissing
-      ? '\n⏰ <i>Por favor sube o programa el contenido restante antes de que finalice el día.</i>'
-      : '\n🎉 <i>¡Todas las cuentas han alcanzado su cuota estimada de hoy!</i>';
+      ? '\n\n⏰ <i>Sube o programa lo restante antes de que acabe el día.</i>'
+      : '\n\n🎉 <i>¡Todas las cuentas alcanzaron su cuota de hoy!</i>';
 
     const reportMsg = `
-📊 <b>REPORTE DIARIO DE METAS Y PUBLICACIONES</b>
-━━━━━━━━━━━━━━━━━━━━
-📅 <b>Fecha:</b> ${format(now, 'yyyy-MM-dd')}
-${reportLines}${conclusionLine}
+📊 <b>Reporte diario · ${format(now, 'yyyy-MM-dd')}</b>${reportLines}${conclusionLine}
 `.trim();
 
     // 4. Enviar el reporte a Telegram

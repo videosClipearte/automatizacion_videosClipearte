@@ -45,7 +45,7 @@ export default function SettingsLayout({
       {/* Settings Navigation Header */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
             Panel de Control
           </span>
           <span className="text-xs text-[var(--text-muted)] hidden sm:inline">• Configuración Global del Sistema</span>
@@ -68,7 +68,7 @@ export default function SettingsLayout({
                 className={cn(
                   'relative flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 text-sm font-medium',
                   isActive
-                    ? 'text-white shadow-lg bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30'
+                    ? 'text-white shadow-lg bg-gradient-to-r from-orange-500/20 to-orange-600/10 border border-orange-500/30'
                     : 'text-[var(--text-secondary)] hover:text-white hover:bg-white/[0.04]'
                 )}
               >
@@ -76,7 +76,7 @@ export default function SettingsLayout({
                   size={16}
                   className={cn(
                     'transition-colors shrink-0',
-                    isActive ? 'text-emerald-400' : 'text-[var(--text-muted)]'
+                    isActive ? 'text-orange-400' : 'text-[var(--text-muted)]'
                   )}
                 />
                 <div className="flex flex-col text-left">

@@ -31,7 +31,13 @@ export interface Campaign {
   nombre: string;
   tasa_pago_por_mil_vistas: number;
   prompt_reglas_ia: string;
-  reglas_por_red: { tiktok: string; instagram: string; facebook: string; youtube: string };
+  reglas_por_red: {
+    tiktok: string;
+    instagram: string;
+    facebook: string;
+    youtube: string;
+    rpm_por_red?: Record<string, number>;
+  };
   hashtags_base: string;
   activo: boolean;
   cuentas_ids: string[];
@@ -196,6 +202,7 @@ interface AppState {
 
   calendarView: CalendarView;
   selectedAccountId: string | null;
+  selectedPlatform: string | null;
   statusFilter: VideoStatus | 'ALL' | null;
   isScheduleModalOpen: boolean;
   scheduleModalDate: Date | null;
@@ -209,6 +216,7 @@ interface AppState {
 
   setCalendarView: (view: CalendarView) => void;
   setSelectedAccountId: (id: string | null) => void;
+  setSelectedPlatform: (platform: string | null) => void;
   setStatusFilter: (status: VideoStatus | 'ALL' | null) => void;
   openScheduleModal: (date?: Date, file?: File | null) => void;
   closeScheduleModal: () => void;
@@ -312,6 +320,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
   calendarView: 'month',
   selectedAccountId: null,
+  selectedPlatform: null,
   statusFilter: null,
   isScheduleModalOpen: false,
   scheduleModalDate: null,
@@ -752,6 +761,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
 
   setCalendarView: (view) => set({ calendarView: view }),
   setSelectedAccountId: (id) => set({ selectedAccountId: id }),
+  setSelectedPlatform: (platform) => set({ selectedPlatform: platform }),
   setStatusFilter: (status) => set({ statusFilter: status }),
   openScheduleModal: (date, file) =>
     set({ isScheduleModalOpen: true, scheduleModalDate: date ?? new Date(), scheduleModalFile: file ?? null }),

@@ -23,11 +23,11 @@ export function MetricPill({ scheduled, sent, published, position = 'top' }: Met
         posClass
       )}
     >
-      <span className="text-purple-400">{scheduled} Prog</span>
-      <span className="text-[var(--border-strong)]">|</span>
-      <span className="text-blue-400">{sent} Env</span>
-      <span className="text-[var(--border-strong)]">|</span>
-      <span className="text-emerald-400">{published} Pub</span>
+      <span className="text-orange-400">{scheduled} Prog</span>
+      <span className="text-white/20">|</span>
+      <span className="text-orange-300">{sent} Env</span>
+      <span className="text-white/20">|</span>
+      <span className="text-orange-400">{published} Pub</span>
     </div>
   );
 }

@@ -19,7 +19,7 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
   const isDriveUploading = uploadInfo?.status === 'uploading';
 
   const done = isDone(video.estado) && !isDriveUploading;
-  const platformColor = account ? getPlatformColor(account.plataforma) : '#10b981';
+  const platformColor = account ? getPlatformColor(account.plataforma) : '#f97316';
 
   return (
     <div
@@ -33,14 +33,14 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
           'w-9 h-9 rounded-full border-2 flex items-center justify-center overflow-hidden transition-all duration-300',
           'hover:scale-110 hover:z-10 relative',
           isDriveUploading
-            ? 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-transparent animate-pulse'
+            ? 'ring-2 ring-orange-400 ring-offset-1 ring-offset-transparent animate-pulse'
             : done
             ? 'grayscale brightness-50'
             : 'hover:ring-2 hover:ring-offset-1 hover:ring-offset-transparent'
         )}
         style={{
           backgroundColor: `${video.thumbnail_color}33`,
-          borderColor: isDriveUploading ? '#06b6d4' : done ? '#374151' : platformColor,
+          borderColor: isDriveUploading ? '#f97316' : done ? '#374151' : platformColor,
           boxShadow: done ? 'none' : `0 0 8px ${video.thumbnail_color}44`,
         }}
       >
@@ -70,15 +70,15 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
         className={cn(
           "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-[var(--bg-base)]",
           (isDriveUploading || (video.estado === 'ENVIADO' && account?.plataforma === 'youtube')) &&
-            "animate-pulse ring-2 ring-cyan-400/50"
+            "animate-pulse ring-2 ring-orange-400/50"
         )}
         style={{
           backgroundColor:
-            isDriveUploading ? '#06b6d4'
-            : video.estado === 'PUBLICADO' ? '#10b981'
+            isDriveUploading ? '#f97316'
+            : video.estado === 'PUBLICADO' ? '#f97316'
             : video.estado === 'ENVIADO' && account?.plataforma === 'youtube' ? '#ef4444'
-            : video.estado === 'ENVIADO' ? '#60a5fa'
-            : video.estado === 'PROGRAMADO' ? '#a78bfa'
+            : video.estado === 'ENVIADO' ? '#ea580c'
+            : video.estado === 'PROGRAMADO' ? '#fb923c'
             : video.estado === 'ERROR_DE_RED' ? '#f87171'
             : '#fbbf24',
         }}

@@ -42,17 +42,17 @@ const PASO_ICONS: Record<string, React.ReactNode> = {
 };
 
 const NIVEL_STYLES: Record<string, string> = {
-  INFO: 'text-blue-300 bg-blue-500/10 border-blue-500/20',
+  INFO: 'text-orange-300 bg-orange-500/10 border-orange-500/20',
   WARN: 'text-amber-300 bg-amber-500/10 border-amber-500/20',
   ERROR: 'text-red-300 bg-red-500/10 border-red-500/20',
-  SUCCESS: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20',
+  SUCCESS: 'text-orange-400 bg-orange-500/15 border-orange-500/25',
 };
 
 const NIVEL_ICON: Record<string, React.ReactNode> = {
-  INFO: <Info size={11} className="text-blue-400 shrink-0" />,
+  INFO: <Info size={11} className="text-orange-400 shrink-0" />,
   WARN: <AlertTriangle size={11} className="text-amber-400 shrink-0" />,
   ERROR: <XCircle size={11} className="text-red-400 shrink-0" />,
-  SUCCESS: <CheckCircle size={11} className="text-emerald-400 shrink-0" />,
+  SUCCESS: <CheckCircle size={11} className="text-orange-400 shrink-0" />,
 };
 
 function formatTime(iso: string): string {
@@ -166,7 +166,7 @@ export function PublishMonitor({ publicacion_id, pollIntervalMs = 25000 }: Publi
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${
             hasError ? 'bg-red-400' :
-            hasSuccess ? 'bg-emerald-400' :
+            hasSuccess ? 'bg-orange-400' :
             isRunning ? 'bg-amber-400 animate-pulse' :
             'bg-slate-500'
           }`} />
@@ -184,7 +184,7 @@ export function PublishMonitor({ publicacion_id, pollIntervalMs = 25000 }: Publi
             title={autoRefresh ? 'Pausar actualización automática' : 'Activar actualización automática'}
             className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
               autoRefresh
-                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                ? 'bg-orange-500/15 border-orange-500/30 text-orange-300'
                 : 'bg-white/5 border-white/10 text-slate-400'
             }`}
           >

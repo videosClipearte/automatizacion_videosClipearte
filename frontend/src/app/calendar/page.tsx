@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Users, ChevronDown, Check, Globe, Send, Play, FilterX
+  Users, ChevronDown, Check, Globe, Send, Play, FilterX
 } from 'lucide-react';
 import { CalendarView } from '@/components/calendar/CalendarView';
 import { useAppStore } from '@/store/useAppStore';
@@ -16,10 +16,11 @@ export default function CalendarPage() {
     accounts,
     selectedAccountId,
     setSelectedAccountId,
+    selectedPlatform,
+    setSelectedPlatform,
     statusFilter,
     setStatusFilter,
     setCalendarView,
-    openScheduleModal
   } = useAppStore();
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -56,15 +57,17 @@ export default function CalendarPage() {
     }
   };
 
-  const hasActiveFilters = Boolean(selectedAccountId || statusFilter);
+  const hasActiveFilters = Boolean(selectedAccountId || selectedPlatform || statusFilter);
+
+  const PLATFORMS = [
+    { id: 'tiktok', label: 'TikTok', icon: <Send size={13} className="text-cyan-400 shrink-0" /> },
+    { id: 'instagram', label: 'Instagram', icon: <Globe size={13} className="text-pink-400 shrink-0" /> },
+    { id: 'youtube', label: 'YouTube', icon: <Play size={13} className="text-red-400 shrink-0" /> },
+    { id: 'facebook', label: 'Facebook', icon: <Globe size={13} className="text-blue-400 shrink-0" /> },
+  ];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className="relative h-full flex flex-col min-h-0"
-    >
+    <div className="relative h-full flex flex-col min-h-0">
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3 shrink-0">
         <div>
@@ -74,16 +77,17 @@ export default function CalendarPage() {
           </p>
         </div>
 
-        {/* Extremo opuesto: Selector interactivo de cuenta para filtrar */}
+        {/* Extremo opuesto: Selector interactivo para filtrar */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
           {hasActiveFilters && (
             <button
               onClick={() => {
                 setSelectedAccountId(null);
+                setSelectedPlatform(null);
                 setStatusFilter(null);
               }}
               title="Quitar todos los filtros"
-              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white glass hover:bg-white/10 border border-white/10 transition-all active:scale-95"
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white glass hover:bg-white/10 border border-white/10 transition-all active:scale-95 cursor-pointer"
             >
               <FilterX size={14} className="text-red-400" />
               <span className="hidden sm:inline">Limpiar filtros</span>
@@ -95,17 +99,17 @@ export default function CalendarPage() {
               type="button"
               onClick={() => setIsDropdownOpen((prev) => !prev)}
               className={cn(
-                'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 border',
-                selectedAccount
-                  ? 'bg-gradient-to-r from-emerald-500/15 to-cyan-500/15 border-emerald-500/40 text-white shadow-[0_0_15px_rgba(16,185,129,0.15)]'
-                  : 'glass text-slate-300 border-[var(--border)] hover:border-slate-500/40 hover:text-white'
+                'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 border cursor-pointer',
+                selectedAccount || selectedPlatform
+                  ? 'bg-orange-500/15 border-orange-500/40 text-white shadow-[0_0_15px_rgba(249,115,22,0.15)]'
+                  : 'bg-[#161414] text-zinc-300 border-white/10 hover:border-orange-500/40 hover:text-white'
               )}
             >
               {selectedAccount ? (
                 <>
                   <div
                     className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold text-white"
-                    style={{ backgroundColor: selectedAccount.avatar_color || '#10b981' }}
+                    style={{ backgroundColor: selectedAccount.avatar_color || '#f97316' }}
                   >
                     {selectedAccount.username.slice(0, 1).toUpperCase()}
                   </div>
@@ -114,17 +118,24 @@ export default function CalendarPage() {
                     <span className="truncate font-semibold text-white">@{selectedAccount.username}</span>
                   </div>
                 </>
+              ) : selectedPlatform ? (
+                <>
+                  <div className="w-5 h-5 rounded-md bg-orange-500/20 border border-orange-500/30 flex items-center justify-center">
+                    {getPlatformIcon(selectedPlatform)}
+                  </div>
+                  <span className="truncate font-semibold text-white capitalize">Red: {selectedPlatform}</span>
+                </>
               ) : (
                 <>
-                  <div className="w-5 h-5 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <div className="w-5 h-5 rounded-md bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-orange-400">
                     <Users size={12} />
                   </div>
-                  <span className="font-medium text-slate-200">Todas las cuentas</span>
+                  <span className="font-medium text-zinc-200">Todas las publicaciones</span>
                 </>
               )}
               <ChevronDown
                 size={14}
-                className={cn('text-slate-400 transition-transform duration-200', isDropdownOpen && 'rotate-180')}
+                className={cn('text-zinc-400 transition-transform duration-200', isDropdownOpen && 'rotate-180')}
               />
             </button>
 
@@ -136,45 +147,76 @@ export default function CalendarPage() {
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: -6 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-1.5 w-64 p-1.5 rounded-2xl glass-strong border border-emerald-500/20 shadow-2xl z-50 overflow-hidden backdrop-blur-xl bg-[#0b0f19]/95"
+                  className="absolute right-0 mt-1.5 w-64 p-1.5 rounded-2xl glass-strong border border-white/10 shadow-2xl z-50 overflow-hidden backdrop-blur-xl bg-[#161414]/95"
                 >
-                  <div className="px-2.5 py-1.5 mb-1 border-b border-white/5">
-                    <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                      Filtrar por Red Social
-                    </p>
-                  </div>
-
-                  {/* Opción: Todas las cuentas */}
+                  {/* Opción: Todas las publicaciones */}
                   <button
                     onClick={() => {
                       setSelectedAccountId(null);
+                      setSelectedPlatform(null);
                       setIsDropdownOpen(false);
                     }}
                     className={cn(
-                      'w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors',
-                      !selectedAccountId
-                        ? 'bg-emerald-500/20 text-white font-semibold border border-emerald-500/30'
-                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                      'w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors cursor-pointer',
+                      !selectedAccountId && !selectedPlatform
+                        ? 'bg-orange-500/20 text-white font-semibold border border-orange-500/30'
+                        : 'text-zinc-300 hover:bg-white/5 hover:text-white'
                     )}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                      <div className="w-6 h-6 rounded-lg bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-orange-400">
                         <Users size={13} />
                       </div>
                       <div className="text-left">
-                        <p className="leading-tight">Todas las cuentas</p>
-                        <p className="text-[10px] text-slate-400">Ver todas las publicaciones</p>
+                        <p className="leading-tight">Todas las publicaciones</p>
+                        <p className="text-[10px] text-zinc-400">Sin filtro de red o cuenta</p>
                       </div>
                     </div>
-                    {!selectedAccountId && <Check size={14} className="text-emerald-400" />}
+                    {!selectedAccountId && !selectedPlatform && <Check size={14} className="text-orange-400" />}
                   </button>
 
-                  <div className="my-1 border-t border-white/5" />
+                  {/* Sección: Filtrar por Red Social */}
+                  <div className="my-1.5 border-t border-white/5" />
+                  <div className="px-2.5 py-1">
+                    <p className="text-[10px] uppercase font-bold tracking-wider text-orange-400/90">
+                      Filtrar por Red Social
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 px-1 mb-1">
+                    {PLATFORMS.map((plat) => {
+                      const isSelected = selectedPlatform === plat.id && !selectedAccountId;
+                      return (
+                        <button
+                          key={plat.id}
+                          onClick={() => {
+                            setSelectedPlatform(plat.id);
+                            setSelectedAccountId(null);
+                            setIsDropdownOpen(false);
+                          }}
+                          className={cn(
+                            'flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs transition-all cursor-pointer border',
+                            isSelected
+                              ? 'bg-orange-500/25 text-white font-semibold border-orange-500/40 shadow-sm'
+                              : 'bg-white/[0.03] text-zinc-300 hover:bg-white/10 hover:text-white border-white/5'
+                          )}
+                        >
+                          {plat.icon}
+                          <span className="truncate">{plat.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                  {/* Cuentas individuales */}
-                  <div className="max-h-56 overflow-y-auto space-y-0.5">
+                  {/* Sección: Cuentas individuales */}
+                  <div className="my-1.5 border-t border-white/5" />
+                  <div className="px-2.5 py-1">
+                    <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-400">
+                      Filtrar por Cuenta Específica
+                    </p>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-0.5">
                     {accounts.length === 0 ? (
-                      <div className="p-3 text-center text-xs text-slate-400">
+                      <div className="p-3 text-center text-xs text-zinc-400">
                         No hay cuentas registradas
                       </div>
                     ) : (
@@ -185,19 +227,20 @@ export default function CalendarPage() {
                             key={acc.id}
                             onClick={() => {
                               setSelectedAccountId(acc.id);
+                              setSelectedPlatform(null);
                               setIsDropdownOpen(false);
                             }}
                             className={cn(
-                              'w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors',
+                              'w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors cursor-pointer',
                               isSelected
-                                ? 'bg-emerald-500/20 text-white font-semibold border border-emerald-500/30'
-                                : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                                ? 'bg-orange-500/20 text-white font-semibold border border-orange-500/30'
+                                : 'text-zinc-300 hover:bg-white/5 hover:text-white'
                             )}
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <div
                                 className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shrink-0 shadow-sm"
-                                style={{ backgroundColor: acc.avatar_color || '#10b981' }}
+                                style={{ backgroundColor: acc.avatar_color || '#f97316' }}
                               >
                                 {acc.username.slice(0, 1).toUpperCase()}
                               </div>
@@ -205,13 +248,13 @@ export default function CalendarPage() {
                                 <p className="leading-tight font-medium truncate text-white">
                                   @{acc.username}
                                 </p>
-                                <div className="flex items-center gap-1 text-[10px] text-slate-400 capitalize">
+                                <div className="flex items-center gap-1 text-[10px] text-zinc-400 capitalize">
                                   {getPlatformIcon(acc.plataforma)}
                                   <span>{acc.plataforma}</span>
                                 </div>
                               </div>
                             </div>
-                            {isSelected && <Check size={14} className="text-emerald-400 shrink-0 ml-1" />}
+                            {isSelected && <Check size={14} className="text-orange-400 shrink-0 ml-1" />}
                           </button>
                         );
                       })
@@ -228,18 +271,6 @@ export default function CalendarPage() {
       <div className="flex-1 min-h-0 flex flex-col">
         <CalendarView />
       </div>
-
-      {/* Floating action button */}
-      <motion.button
-        whileHover={{ scale: 1.08 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => openScheduleModal()}
-        className="fixed bottom-5 right-5 sm:bottom-8 sm:right-8 w-13 h-13 sm:w-14 sm:h-14 rounded-2xl btn-gradient flex items-center justify-center shadow-2xl z-40"
-        style={{ boxShadow: '0 8px 32px rgba(16,185,129,0.4)' }}
-        title="Programar nueva publicación"
-      >
-        <Plus size={22} strokeWidth={2.5} />
-      </motion.button>
-    </motion.div>
+    </div>
   );
 }

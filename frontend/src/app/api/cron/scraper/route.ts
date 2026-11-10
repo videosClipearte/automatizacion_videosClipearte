@@ -152,26 +152,16 @@ export async function GET(request: Request) {
         if (botToken && adminChatId) {
           const criticalMsg = isYoutube
             ? `
-🚨 <b>ALERTA CRÍTICA — FALLO EN YOUTUBE</b>
-━━━━━━━━━━━━━━━━━━━━
-🎬 <b>Video:</b> ${video.titulo}
-👤 <b>Canal:</b> @${username} (<b>YOUTUBE</b>)
-⏱️ <b>Tiempo transcurrido:</b> ${delayMinutes} minutos
-🔔 <b>Avisos enviados:</b> ${nuevoReintentos}
-
-⛔ <i>Se agotó el límite de reintentos (${maxReintentos}) para la publicación automática de este video en YouTube.</i>
-⚠️ <b>Acción requerida:</b> Verifica la conexión de YouTube en Configuración → Cuentas o sube el video manualmente.
+🚨 <b>Fallo en YouTube</b> · ${delayMinutes} min · ${nuevoReintentos} avisos
+🎬 ${video.titulo}
+👤 @${username} (YOUTUBE)
+⛔ <i>Se agotaron los reintentos (${maxReintentos}).</i> ⚠️ Revisa YouTube en Configuración → Cuentas o sube el video manualmente.
 `.trim()
             : `
-🚨 <b>ALERTA CRÍTICA — VIDEO SIN CONFIRMAR</b>
-━━━━━━━━━━━━━━━━━━━━
-🎬 <b>Video:</b> ${video.titulo}
-👤 <b>Cuenta:</b> @${username} (<b>${platform}</b>)
-⏱️ <b>Tiempo sin confirmar:</b> ${delayMinutes} minutos
-🔔 <b>Avisos enviados:</b> ${nuevoReintentos}
-
-❗ <i>Este video lleva demasiado tiempo sin confirmación de publicación.</i>
-⚠️ <b>Acción requerida:</b> Verifica manualmente en ${platform} si fue publicado y confírmalo en la app, o márcalo como error.
+🚨 <b>Video sin confirmar</b> · ${delayMinutes} min · ${nuevoReintentos} avisos
+🎬 ${video.titulo}
+👤 @${username} (${platform})
+⚠️ Verifica en ${platform} si fue publicado y confírmalo en la app, o márcalo como error.
 `.trim();
           await sendTelegramMessage(botToken, adminChatId, criticalMsg);
         }
@@ -191,27 +181,16 @@ export async function GET(request: Request) {
         if (botToken && groupChatId) {
           const reminderMsg = isYoutube
             ? `
-⏰ <b>RECORDATORIO: PUBLICACIÓN AUTOMÁTICA EN YOUTUBE</b>
-━━━━━━━━━━━━━━━━━━━━
-🎬 <b>Video:</b> ${video.titulo}
-👤 <b>Canal:</b> @${username} (<b>YOUTUBE</b>)
-🕒 <b>Programado para:</b> ${format(programadoPara, 'HH:mm')} — hace ${delayMinutes} min
-📢 <b>Aviso #${nuevoReintentos} de ${maxReintentos}</b>
-
-⚠️ <i>La publicación automática en YouTube no ha finalizado tras superar el margen de tolerancia (${toleranciaMinutos} min).</i>
-⚙️ Verifica el estado en la app o revisa las credenciales de YouTube en Configuración → Cuentas.
+⏰ <b>YouTube pendiente</b> · aviso ${nuevoReintentos}/${maxReintentos}
+🎬 ${video.titulo}
+👤 @${username} · 🕒 ${format(programadoPara, 'HH:mm')} (hace ${delayMinutes} min)
+⚠️ <i>La publicación automática no finalizó (margen ${toleranciaMinutos} min).</i> Revisa la app o las credenciales de YouTube.
 `.trim()
             : `
-⏰ <b>RECORDATORIO DE PUBLICACIÓN PENDIENTE</b>
-━━━━━━━━━━━━━━━━━━━━
-🎬 <b>Video:</b> ${video.titulo}
-👤 <b>Cuenta:</b> @${username} (<b>${platform}</b>)
-🕒 <b>Programado para:</b> ${format(programadoPara, 'HH:mm')} — hace ${delayMinutes} min
-📢 <b>Aviso #${nuevoReintentos} de ${maxReintentos}</b>
-
-👉 <i>¿Ya lo publicaste en ${platform}?</i>
-✅ Confírmalo en la app para cerrar el seguimiento.
-❌ Si hubo un error, márcalo manualmente en la app.
+⏰ <b>Publicación pendiente</b> · aviso ${nuevoReintentos}/${maxReintentos}
+🎬 ${video.titulo}
+👤 @${username} (${platform}) · 🕒 ${format(programadoPara, 'HH:mm')} (hace ${delayMinutes} min)
+👉 <i>¿Ya lo publicaste en ${platform}?</i> Confírmalo en la app, o márcalo como error.
 `.trim();
           await sendTelegramMessage(botToken, groupChatId, reminderMsg);
         }

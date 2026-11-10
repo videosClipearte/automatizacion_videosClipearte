@@ -703,6 +703,15 @@ export async function scrapePostUrl(
   return result;
 }
 
+function resolveCampRate(camp: any, platform?: string | null): number {
+  if (!camp) return 0;
+  if (platform && camp.reglas_por_red?.rpm_por_red) {
+    const custom = camp.reglas_por_red.rpm_por_red[platform.toLowerCase()];
+    if (typeof custom === 'number' && custom > 0) return custom;
+  }
+  return Number(camp.tasa_pago_por_mil_vistas) || 0;
+}
+
 /**
  * Calcula las ganancias estimadas según las vistas y la tasa por cada 1,000 vistas de la campaña.
  */
@@ -714,23 +723,31 @@ async function computeEstimatedEarnings(
 ): Promise<number> {
   if (!views || views <= 0) return 0;
   try {
+    let platform: string | null = null;
+    if (cuentaId) {
+      const { data: acc } = await db.from('cuentas').select('plataforma').eq('id', cuentaId).maybeSingle();
+      platform = acc?.plataforma || null;
+    }
+
     if (campanaId) {
       const { data: camp } = await db
         .from('campanas')
-        .select('tasa_pago_por_mil_vistas')
+        .select('tasa_pago_por_mil_vistas, reglas_por_red')
         .eq('id', campanaId)
         .maybeSingle();
-      if (camp && Number(camp.tasa_pago_por_mil_vistas) > 0) {
-        return Number(((views / 1000) * Number(camp.tasa_pago_por_mil_vistas)).toFixed(2));
+      const rate = resolveCampRate(camp, platform);
+      if (rate > 0) {
+        return Number(((views / 1000) * rate).toFixed(2));
       }
     }
     if (cuentaId) {
-      const { data: camps } = await db.from('campanas').select('tasa_pago_por_mil_vistas, cuentas_ids');
+      const { data: camps } = await db.from('campanas').select('tasa_pago_por_mil_vistas, reglas_por_red, cuentas_ids');
       const matched = (camps || []).find(
         (c: any) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(cuentaId)
       );
-      if (matched && Number(matched.tasa_pago_por_mil_vistas) > 0) {
-        return Number(((views / 1000) * Number(matched.tasa_pago_por_mil_vistas)).toFixed(2));
+      const rate = resolveCampRate(matched, platform);
+      if (rate > 0) {
+        return Number(((views / 1000) * rate).toFixed(2));
       }
     }
   } catch {}
@@ -1087,7 +1104,7 @@ export async function syncPublishedVideosViews(options?: {
       // Si en publicaciones las vistas o estado estaban desfasados respecto a metricas/reels_rastreados, sincronizar de inmediato
       if (bestKnownViews > (Number(pub.vistas_obtenidas) || 0) || pub.estado !== 'PUBLICADO' || !pub.post_url_publica) {
         const camp = campaignMap.get(pub.campana_id);
-        const rate = Number(camp?.tasa_pago_por_mil_vistas) || 0;
+        const rate = resolveCampRate(camp, platform);
         const earnings = rate > 0 ? Number(((bestKnownViews / 1000) * rate).toFixed(2)) : Number(pub.ganancias_estimadas) || 0;
         await db
           .from('publicaciones')
@@ -1144,7 +1161,7 @@ export async function syncPublishedVideosViews(options?: {
         Array.from(campaignMap.values()).find(
           (c: any) => Array.isArray(c.cuentas_ids) && c.cuentas_ids.includes(cand.pub.cuenta_id)
         );
-      const rate = Number(camp?.tasa_pago_por_mil_vistas) || 0;
+      const rate = resolveCampRate(camp, cand.platform);
       const earnings = rate > 0 ? Number(((newViews / 1000) * rate).toFixed(2)) : Number(cand.pub.ganancias_estimadas) || 0;
 
       const finalUrl = extracted.resolvedUrl && extracted.resolvedUrl.startsWith('http') ? extracted.resolvedUrl : cand.url;

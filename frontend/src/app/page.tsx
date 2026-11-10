@@ -1,6 +1,6 @@
 // src/app/page.tsx
-import { redirect } from 'next/navigation';
+import CalendarPage from './calendar/page';
 
 export default function Home() {
-  redirect('/calendar');
+  return <CalendarPage />;
 }

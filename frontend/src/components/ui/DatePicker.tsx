@@ -68,7 +68,7 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
     <div ref={ref} className={cn('relative', className)}>
       {label && (
         <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5 mb-1.5">
-          <Calendar size={11} className="text-emerald-400" /> {label}
+          <Calendar size={11} className="text-orange-400" /> {label}
         </label>
       )}
       <button
@@ -76,26 +76,26 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
         onClick={() => setOpen(o => !o)}
         className={cn(
           'w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-medium border transition-all cursor-pointer',
-          'bg-[#0b0f1c] text-white',
-          open ? 'border-emerald-500/70 shadow-[0_0_0_3px_rgba(16,185,129,0.1)]' : 'border-[var(--border-strong)] hover:border-emerald-500/40',
+          'bg-[#121111] text-white',
+          open ? 'border-orange-500/70 shadow-[0_0_0_3px_rgba(249,115,22,0.15)]' : 'border-white/10 hover:border-orange-500/40',
           error && 'border-red-500/50'
         )}
       >
         <span className={value ? 'text-white font-semibold' : 'text-[var(--text-muted)]'}>{displayValue}</span>
-        <Calendar size={13} className={cn('shrink-0 transition-colors', open ? 'text-emerald-400' : 'text-[var(--text-muted)]')} />
+        <Calendar size={13} className={cn('shrink-0 transition-colors', open ? 'text-orange-400' : 'text-[var(--text-muted)]')} />
       </button>
       {error && <p className="text-red-400 text-[10px] mt-1">{error}</p>}
 
       {/* Popover: ancho y altura exactos al ancho del input (aspect-square) */}
       {open && (
-        <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full aspect-square rounded-2xl border border-emerald-500/25 bg-[#0a0e1a] shadow-[0_12px_36px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col justify-between">
+        <div className="absolute z-[200] top-full mt-1.5 left-0 right-0 w-full aspect-square rounded-2xl border border-white/10 bg-[#161414] shadow-[0_12px_36px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col justify-between">
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.05] bg-white/[0.02] shrink-0">
-            <button type="button" onClick={prevMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors duration-150">
+            <button type="button" onClick={prevMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-orange-400 hover:bg-orange-500/10 transition-colors duration-150">
               <ChevronLeft size={14} />
             </button>
             <span className="text-xs font-bold text-white tracking-wide">{MONTHS_ES[viewMonth]} {viewYear}</span>
-            <button type="button" onClick={nextMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors duration-150">
+            <button type="button" onClick={nextMonth} className="w-6 h-6 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-orange-400 hover:bg-orange-500/10 transition-colors duration-150">
               <ChevronRight size={14} />
             </button>
           </div>
@@ -119,9 +119,9 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
                   className={cn(
                     'w-full h-full max-h-7 aspect-square mx-auto rounded-lg text-[11px] flex items-center justify-center transition-colors duration-150 font-medium',
                     !current && 'text-white/20 pointer-events-none',
-                    current && !isSel && !isTod && 'text-[var(--text-secondary)] hover:bg-emerald-500/20 hover:text-emerald-300',
-                    isTod && !isSel && 'text-emerald-400 font-bold ring-1 ring-emerald-500/50 ring-offset-1 ring-offset-[#0a0e1a]',
-                    isSel && 'bg-gradient-to-br from-emerald-500 to-cyan-400 text-white font-bold shadow-[0_0_10px_rgba(16,185,129,0.4)]',
+                    current && !isSel && !isTod && 'text-[var(--text-secondary)] hover:bg-orange-500/20 hover:text-orange-300',
+                    isTod && !isSel && 'text-orange-400 font-bold ring-1 ring-orange-500/50 ring-offset-1 ring-offset-[#161414]',
+                    isSel && 'bg-gradient-to-br from-orange-500 to-orange-600 text-white font-bold shadow-[0_0_10px_rgba(249,115,22,0.4)]',
                   )}
                 >
                   {date.getDate()}
@@ -132,7 +132,7 @@ export function DatePicker({ value, onChange, label, error, className }: DatePic
           {/* Footer */}
           <div className="flex items-center justify-between px-3 py-1.5 border-t border-white/[0.05] bg-white/[0.01] shrink-0">
             <button type="button" onClick={() => { onChange(''); setOpen(false); }} className="text-[10px] text-[var(--text-muted)] hover:text-red-400 transition-colors duration-150 font-medium">Limpiar</button>
-            <button type="button" onClick={() => { onChange(today); setOpen(false); }} className="text-[10px] text-emerald-400 hover:text-white font-bold transition-colors duration-150 px-2 py-0.5 rounded-lg hover:bg-emerald-500/20">Hoy</button>
+            <button type="button" onClick={() => { onChange(today); setOpen(false); }} className="text-[10px] text-orange-400 hover:text-white font-bold transition-colors duration-150 px-2 py-0.5 rounded-lg hover:bg-orange-500/20">Hoy</button>
           </div>
         </div>
       )}
