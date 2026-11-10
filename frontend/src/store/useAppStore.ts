@@ -931,7 +931,17 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     }
 
     const currentVideo = get().videos.find((v) => v.id === id);
-    const targetCuentaId = finalUpdates.cuenta_id || currentVideo?.cuenta_id;
+    let targetCuentaId = finalUpdates.cuenta_id !== undefined ? finalUpdates.cuenta_id : currentVideo?.cuenta_id;
+    if (targetCuentaId) {
+      const cleanTarget = targetCuentaId.trim().replace(/^@/, '').toLowerCase();
+      const acc = get().accounts.find(
+        (a) => a.id === targetCuentaId || a.username.trim().replace(/^@/, '').toLowerCase() === cleanTarget
+      );
+      if (acc) {
+        targetCuentaId = acc.id;
+        finalUpdates.cuenta_id = acc.id;
+      }
+    }
     const account = get().accounts.find((a) => a.id === targetCuentaId);
     const isYouTube = account?.plataforma?.toLowerCase() === 'youtube';
 
@@ -945,6 +955,8 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     );
 
     const dbUpdates: any = {};
+    if (finalUpdates.cuenta_id !== undefined) dbUpdates.cuenta_id = targetCuentaId || null;
+    if (finalUpdates.campana_id !== undefined) dbUpdates.campana_id = finalUpdates.campana_id || null;
     if (finalUpdates.titulo !== undefined) dbUpdates.titulo = finalUpdates.titulo;
     if (isYouTube && finalUpdates.nombre_archivo !== undefined) dbUpdates.nombre_archivo = finalUpdates.nombre_archivo;
     if (isYouTube && finalUpdates.titulo_youtube !== undefined) dbUpdates.titulo_youtube = finalUpdates.titulo_youtube;

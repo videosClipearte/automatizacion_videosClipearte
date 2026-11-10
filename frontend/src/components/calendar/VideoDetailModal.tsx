@@ -988,6 +988,14 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
 
     await updateVideo(video.id, updates);
 
+    // Si la campaña aún no tenía vinculada esta cuenta, vincularla automáticamente
+    if (editCampanaId && editCuentaId) {
+      const camp = campaigns.find((c) => c.id === editCampanaId);
+      if (camp && Array.isArray(camp.cuentas_ids) && !camp.cuentas_ids.includes(editCuentaId)) {
+        useAppStore.getState().updateCampaign(camp.id, { cuentas_ids: [...camp.cuentas_ids, editCuentaId] }).catch(() => {});
+      }
+    }
+
     if (hasEditVistas) {
       try {
         const { getSupabase } = await import('@/lib/supabase');
