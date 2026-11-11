@@ -42,10 +42,17 @@ export default function CalendarPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
+  const selectedAccount =
+    accounts.find((a) => a.id === selectedAccountId) ||
+    accounts.find(
+      (a) =>
+        Boolean(selectedAccountId) &&
+        a.username.toLowerCase().trim() ===
+          (selectedAccountId || '').toLowerCase().trim().replace(/^@/, '')
+    );
 
   // Red social activa para filtrar la lista de cuentas en el selector
-  const activePlatformForAccounts = selectedPlatform || (selectedAccount ? selectedAccount.plataforma : null);
+  const activePlatformForAccounts = selectedPlatform;
   const displayedAccounts = activePlatformForAccounts
     ? accounts.filter((a) => a.plataforma?.toLowerCase() === activePlatformForAccounts.toLowerCase())
     : accounts;

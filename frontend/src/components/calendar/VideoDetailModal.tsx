@@ -1,6 +1,6 @@
 'use client';
 // src/components/calendar/VideoDetailModal.tsx
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -510,8 +510,47 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
     ? calcGanancias(video.vistas_obtenidas, effectiveRpm)
     : '0.00';
 
-  // Cuentas disponibles en edición
-  const filteredEditAccounts = accounts.filter(a => a.activo);
+  // Campaña seleccionada para filtrar cuentas disponibles en edición
+  const selectedCampaignForEdit = useMemo(() => {
+    return campaigns.find((c) => c.id === editCampanaId);
+  }, [campaigns, editCampanaId]);
+
+  // Si hay campaña seleccionada, solo mostrar cuentas enlazadas a esa campaña; si no, mostrar todas las activas
+  const filteredEditAccounts = useMemo(() => {
+    if (!editCampanaId || !selectedCampaignForEdit) {
+      return accounts.filter((a) => a.activo);
+    }
+    const campAccountIds = Array.isArray(selectedCampaignForEdit.cuentas_ids)
+      ? selectedCampaignForEdit.cuentas_ids
+      : [];
+    return accounts.filter(
+      (a) =>
+        a.activo &&
+        (campAccountIds.includes(a.id) ||
+         campAccountIds.includes(a.username) ||
+         campAccountIds.includes(`@${a.username}`))
+    );
+  }, [accounts, editCampanaId, selectedCampaignForEdit]);
+
+  // Si cambia la campaña en modo edición y la cuenta seleccionada no pertenece a la nueva campaña, resetear editCuentaId
+  useEffect(() => {
+    if (!editCampanaId || !selectedCampaignForEdit) return;
+    const campAccountIds = Array.isArray(selectedCampaignForEdit.cuentas_ids)
+      ? selectedCampaignForEdit.cuentas_ids
+      : [];
+    if (editCuentaId) {
+      const isAccountInCamp = accounts.some(
+        (a) =>
+          a.id === editCuentaId &&
+          (campAccountIds.includes(a.id) ||
+           campAccountIds.includes(a.username) ||
+           campAccountIds.includes(`@${a.username}`))
+      );
+      if (!isAccountInCamp) {
+        setEditCuentaId('');
+      }
+    }
+  }, [editCampanaId, selectedCampaignForEdit, accounts, editCuentaId]);
 
   const handleCancelEdit = () => {
     if (video) {
@@ -2919,7 +2958,28 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                       </label>
                       <select
                         value={editCampanaId}
-                        onChange={(e) => setEditCampanaId(e.target.value)}
+                        onChange={(e) => {
+                          const newCampId = e.target.value;
+                          setEditCampanaId(newCampId);
+                          if (newCampId) {
+                            const targetCamp = campaigns.find((c) => c.id === newCampId);
+                            const campAccountIds = Array.isArray(targetCamp?.cuentas_ids)
+                              ? targetCamp.cuentas_ids
+                              : [];
+                            if (editCuentaId) {
+                              const belongs = accounts.some(
+                                (a) =>
+                                  a.id === editCuentaId &&
+                                  (campAccountIds.includes(a.id) ||
+                                   campAccountIds.includes(a.username) ||
+                                   campAccountIds.includes(`@${a.username}`))
+                              );
+                              if (!belongs) {
+                                setEditCuentaId('');
+                              }
+                            }
+                          }
+                        }}
                         className="w-full rounded-xl px-2.5 py-1.5 text-xs text-white bg-[#121111] border border-white/10 focus:border-orange-500/60 outline-none transition-colors"
                       >
                         <option value="" className="bg-[#161414]">Seleccionar campaña...</option>

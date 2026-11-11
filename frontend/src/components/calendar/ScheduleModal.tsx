@@ -279,8 +279,47 @@ function ScheduleModalDialog() {
 
   const isYouTube = selectedAccount?.plataforma?.toLowerCase() === 'youtube';
 
-  // Todas las cuentas activas están siempre disponibles para programar (incluso cuentas nuevas)
-  const filteredAccounts = accounts.filter((a) => a.activo);
+  // Campaña seleccionada para filtrar cuentas disponibles
+  const selectedCampaignForFilter = useMemo(() => {
+    return campaigns.find((c) => c.id === selectedCampanaId);
+  }, [campaigns, selectedCampanaId]);
+
+  // Si hay campaña seleccionada, solo mostrar cuentas enlazadas a esa campaña; si no, mostrar todas las activas
+  const filteredAccounts = useMemo(() => {
+    if (!selectedCampanaId || !selectedCampaignForFilter) {
+      return accounts.filter((a) => a.activo);
+    }
+    const campAccountIds = Array.isArray(selectedCampaignForFilter.cuentas_ids)
+      ? selectedCampaignForFilter.cuentas_ids
+      : [];
+    return accounts.filter(
+      (a) =>
+        a.activo &&
+        (campAccountIds.includes(a.id) ||
+         campAccountIds.includes(a.username) ||
+         campAccountIds.includes(`@${a.username}`))
+    );
+  }, [accounts, selectedCampanaId, selectedCampaignForFilter]);
+
+  // Si cambia la campaña y la cuenta seleccionada no pertenece a la nueva campaña, resetear cuenta_id
+  useEffect(() => {
+    if (!selectedCampanaId || !selectedCampaignForFilter) return;
+    const campAccountIds = Array.isArray(selectedCampaignForFilter.cuentas_ids)
+      ? selectedCampaignForFilter.cuentas_ids
+      : [];
+    if (selectedCuentaId) {
+      const isAccountInCamp = accounts.some(
+        (a) =>
+          a.id === selectedCuentaId &&
+          (campAccountIds.includes(a.id) ||
+           campAccountIds.includes(a.username) ||
+           campAccountIds.includes(`@${a.username}`))
+      );
+      if (!isAccountInCamp) {
+        setValue('cuenta_id', '');
+      }
+    }
+  }, [selectedCampanaId, selectedCampaignForFilter, accounts, selectedCuentaId, setValue]);
 
   // Cargar token existente de Google Drive y preseleccionar cuenta/campaña/hora al abrir modal (solo se ejecuta 1 vez al montar)
   useEffect(() => {
@@ -1687,7 +1726,27 @@ function ScheduleModalDialog() {
                     Campaña / Reglas
                   </label>
                   <select
-                    {...register('campana_id')}
+                    {...register('campana_id', {
+                      onChange: (e) => {
+                        const newCampId = e.target.value;
+                        if (newCampId) {
+                          const targetCamp = campaigns.find((c) => c.id === newCampId);
+                          const campAccountIds = Array.isArray(targetCamp?.cuentas_ids) ? targetCamp.cuentas_ids : [];
+                          if (selectedCuentaId) {
+                            const isAccountInCamp = accounts.some(
+                              (a) =>
+                                a.id === selectedCuentaId &&
+                                (campAccountIds.includes(a.id) ||
+                                 campAccountIds.includes(a.username) ||
+                                 campAccountIds.includes(`@${a.username}`))
+                            );
+                            if (!isAccountInCamp) {
+                              setValue('cuenta_id', '');
+                            }
+                          }
+                        }
+                      },
+                    })}
                     className="w-full rounded-xl px-3 py-2 text-xs text-white bg-[#121111] border border-white/10 focus:border-orange-500/60 outline-none"
                   >
                     <option value="" className="bg-[#161414]">

@@ -340,7 +340,15 @@ export function CalendarView() {
 
       // 2. Filtrar por red social
       if (selectedPlatform && selectedPlatform !== 'ALL') {
-        const videoPlat = videoAcc?.plataforma?.toLowerCase();
+        const videoPlat =
+          videoAcc?.plataforma?.toLowerCase() ||
+          (selectedAccountId && selectedAccountId !== 'ALL'
+            ? accounts.find(
+                (a) =>
+                  a.id === selectedAccountId ||
+                  a.username.toLowerCase().trim() === selectedAccountId.toLowerCase().trim().replace(/^@/, '')
+              )?.plataforma?.toLowerCase()
+            : undefined);
         if (videoPlat !== selectedPlatform.toLowerCase()) {
           continue;
         }
