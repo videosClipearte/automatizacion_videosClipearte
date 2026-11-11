@@ -255,16 +255,21 @@ export async function compressVideoForStorage(
     };
   }
 
-  // 1. Compresión rápida en segundo plano vía API `/api/video/compress` (máx. 15 segundos)
+  // 1. Compresión rápida en segundo plano vía API `/api/video/compress` (máx. 120 segundos)
   if (typeof window !== 'undefined') {
-    const isLocalhost =
+    const isLocal =
       window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1';
-    const maxApiBytes = isLocalhost ? 500 * 1024 * 1024 : 4.2 * 1024 * 1024;
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.endsWith('.local') ||
+      window.location.hostname.startsWith('192.168.') ||
+      window.location.hostname.startsWith('10.') ||
+      Boolean(window.location.port);
+    const maxApiBytes = isLocal ? 500 * 1024 * 1024 : 4.2 * 1024 * 1024;
 
     if (originalBytes <= maxApiBytes) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutMs = Math.max(45000, Math.min(180000, Math.round((originalBytes / (1024 * 1024)) * 4000)));
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {
         const form = new FormData();
         form.append('file', file);
@@ -296,7 +301,7 @@ export async function compressVideoForStorage(
               compressedBytes: compressedFile.size,
               savedBytes,
               savedPercent,
-              method: methodHeader === 'ffmpeg-crf18' ? 'api-ffmpeg-crf18' : 'mp4-trim',
+              method: methodHeader.startsWith('ffmpeg') ? 'api-ffmpeg-crf18' : 'mp4-trim',
             };
           }
         }

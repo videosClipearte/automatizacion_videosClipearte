@@ -17,8 +17,9 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
   const { driveUploads } = useAppStore();
   const uploadInfo = driveUploads?.[video.id];
   const isDriveUploading = uploadInfo?.status === 'uploading';
+  const isDriveCompressing = uploadInfo?.status === 'compressing';
 
-  const done = isDone(video.estado) && !isDriveUploading;
+  const done = isDone(video.estado) && !isDriveUploading && !isDriveCompressing;
   const platformColor = account ? getPlatformColor(account.plataforma) : '#f97316';
 
   return (
@@ -32,7 +33,9 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
         className={cn(
           'w-9 h-9 rounded-full border-2 flex items-center justify-center overflow-hidden transition-all duration-300',
           'hover:scale-110 hover:z-10 relative',
-          isDriveUploading
+          isDriveCompressing
+            ? 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-transparent animate-pulse'
+            : isDriveUploading
             ? 'ring-2 ring-orange-400 ring-offset-1 ring-offset-transparent animate-pulse'
             : done
             ? 'grayscale brightness-50'
@@ -40,7 +43,7 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
         )}
         style={{
           backgroundColor: `${video.thumbnail_color}33`,
-          borderColor: isDriveUploading ? '#f97316' : done ? '#374151' : platformColor,
+          borderColor: isDriveCompressing ? '#22d3ee' : isDriveUploading ? '#f97316' : done ? '#374151' : platformColor,
           boxShadow: done ? 'none' : `0 0 8px ${video.thumbnail_color}44`,
         }}
       >
@@ -69,12 +72,13 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
       <span
         className={cn(
           "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-[var(--bg-base)]",
-          (isDriveUploading || (video.estado === 'ENVIADO' && account?.plataforma === 'youtube')) &&
+          (isDriveCompressing || isDriveUploading || (video.estado === 'ENVIADO' && account?.plataforma === 'youtube')) &&
             "animate-pulse ring-2 ring-orange-400/50"
         )}
         style={{
           backgroundColor:
-            isDriveUploading ? '#f97316'
+            isDriveCompressing ? '#22d3ee'
+            : isDriveUploading ? '#f97316'
             : video.estado === 'PUBLICADO' ? '#f97316'
             : video.estado === 'ENVIADO' && account?.plataforma === 'youtube' ? '#ef4444'
             : video.estado === 'ENVIADO' ? '#ea580c'
@@ -83,7 +87,9 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
             : '#fbbf24',
         }}
         title={
-          isDriveUploading
+          isDriveCompressing
+            ? '⚡ Comprimiendo video en segundo plano...'
+            : isDriveUploading
             ? `Subiendo a Google Drive (${uploadInfo.progress}%)...`
             : video.estado === 'ENVIADO' && account?.plataforma === 'youtube'
             ? 'Subiendo a YouTube...'

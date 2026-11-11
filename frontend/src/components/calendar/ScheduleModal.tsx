@@ -111,6 +111,7 @@ function ScheduleModalDialog() {
   const videos = useAppStore((s) => s.videos);
   const addVideo = useAppStore((s) => s.addVideo);
   const updateVideo = useAppStore((s) => s.updateVideo);
+  const setDriveUploadCompressing = useAppStore((s) => s.setDriveUploadCompressing);
   const setDriveUploadProgress = useAppStore((s) => s.setDriveUploadProgress);
   const setDriveUploadComplete = useAppStore((s) => s.setDriveUploadComplete);
   const setDriveUploadError = useAppStore((s) => s.setDriveUploadError);
@@ -759,9 +760,9 @@ function ScheduleModalDialog() {
         }
       }
 
-      // ── 2. Si requiere subida a Drive, registrar estado inicial 0% ──
+      // ── 2. Si requiere subida a Drive, registrar estado inicial (comprimiendo en segundo plano) ──
       if (needsDriveUpload) {
-        setDriveUploadProgress(newVideoId, 0);
+        setDriveUploadCompressing(newVideoId);
       }
 
       // ── 3. Notificación visible para el usuario ──
@@ -769,7 +770,7 @@ function ScheduleModalDialog() {
         tipo: 'info',
         titulo: isYouTube ? 'Nuevo YouTube Short programado' : 'Nuevo video programado',
         mensaje: needsDriveUpload
-          ? `"${finalFileName}" programado. Subiendo a Google Drive en segundo plano...`
+          ? `"${finalFileName}" programado. Comprimiendo y subiendo a Google Drive en segundo plano...`
           : `"${finalFileName}" programado para el ${format(programadoPara, 'dd/MM/yyyy HH:mm')}.`,
         cuenta_id: data.cuenta_id,
         origen: isYouTube ? 'youtube' : 'sistema',

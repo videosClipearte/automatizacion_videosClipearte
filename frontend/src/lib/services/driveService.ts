@@ -276,18 +276,26 @@ export async function uploadVideoToGoogleDrive(
   accessToken: string,
   onProgress?: (progressPercent: number) => void,
   maxAttempts = 3,
-  customFileName?: string
+  customFileName?: string,
+  videoId?: string
 ): Promise<{ success: boolean; fileId?: string; fileUrl?: string; error?: string; savedBytes?: number; savedPercent?: number }> {
   let fileToUpload = file;
   let savedBytes = 0;
   let savedPercent = 0;
 
   if (isVideoFile(file)) {
+    if (videoId) {
+      useAppStore.getState().setDriveUploadCompressing(videoId);
+    }
     try {
+      console.log(`[DriveService] ⚡ Comprimiendo video "${file.name}" (${(file.size / 1048576).toFixed(2)} MB) en segundo plano antes de subir a Drive...`);
       const compRes = await compressVideoForStorage(file);
       fileToUpload = compRes.file;
       savedBytes = compRes.savedBytes;
       savedPercent = compRes.savedPercent;
+      if (savedBytes > 0) {
+        console.log(`[DriveService] ✅ Video comprimido: -${savedPercent}% (-${(savedBytes / 1048576).toFixed(2)} MB). Procediendo a subir a Google Drive...`);
+      }
     } catch (compErr) {
       console.warn('[DriveService] No se pudo comprimir video antes de subir, usando original:', compErr);
     }
@@ -491,7 +499,7 @@ export async function startBackgroundDriveUpload(params: StartBackgroundUploadPa
     videoTitle,
   });
 
-  useAppStore.getState().setDriveUploadProgress(videoId, 0);
+  useAppStore.getState().setDriveUploadCompressing(videoId);
 
   try {
     const uploadRes = await uploadVideoToGoogleDrive(
@@ -502,7 +510,8 @@ export async function startBackgroundDriveUpload(params: StartBackgroundUploadPa
         useAppStore.getState().setDriveUploadProgress(videoId, pct);
       },
       3,
-      customFileName
+      customFileName,
+      videoId
     );
 
     let finalThumbnailUrl: string | undefined = undefined;

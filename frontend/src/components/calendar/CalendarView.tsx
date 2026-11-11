@@ -805,6 +805,7 @@ export function CalendarView() {
                           const isYtUploading = acct?.plataforma?.toLowerCase() === 'youtube' && video.estado === 'ENVIADO';
                           const uploadInfo = driveUploads[video.id];
                           const isDriveUploading = uploadInfo?.status === 'uploading';
+                          const isDriveCompressing = uploadInfo?.status === 'compressing';
                           const isDriveError = uploadInfo?.status === 'error';
 
                           const isHoverTarget = dragTargetVideoId === video.id;
@@ -837,7 +838,7 @@ export function CalendarView() {
                                   : "bg-white/[0.04] hover:bg-white/[0.08] border-white/10 hover:border-orange-500/40 text-white"
                               )}
                               title={`${video.nombre_archivo || video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${
-                                isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado === 'PUBLICADO' ? `PUBLICADO (${formatViews(video.vistas_obtenidas || 0)} vistas)` : video.estado
+                                isDriveCompressing ? '⚡ Comprimiendo video en segundo plano...' : isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado === 'PUBLICADO' ? `PUBLICADO (${formatViews(video.vistas_obtenidas || 0)} vistas)` : video.estado
                               }`}
                             >
                               {isHoverTarget && (
@@ -847,6 +848,7 @@ export function CalendarView() {
                               )}
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full shrink-0",
+                                isDriveCompressing ? "bg-cyan-400 animate-ping" :
                                 isDriveUploading ? (isCurrentDay ? "bg-amber-300 ring-1 ring-black/40" : "bg-orange-400") :
                                 video.estado === 'PUBLICADO' ? (isCurrentDay ? "bg-emerald-400 ring-1 ring-emerald-300/60" : "bg-orange-500") :
                                 isYtUploading ? "bg-red-500" :
@@ -860,6 +862,8 @@ export function CalendarView() {
                                 "text-[9px] font-mono font-semibold shrink-0",
                                 isCurrentDay
                                   ? "text-amber-200 font-bold"
+                                  : isDriveCompressing
+                                  ? "text-cyan-300 animate-pulse font-bold"
                                   : isDriveUploading
                                   ? "text-orange-300"
                                   : isYtUploading
@@ -1045,6 +1049,7 @@ export function CalendarView() {
                           const isYtUploading = acct?.plataforma?.toLowerCase() === 'youtube' && video.estado === 'ENVIADO';
                           const uploadInfo = driveUploads[video.id];
                           const isDriveUploading = uploadInfo?.status === 'uploading';
+                          const isDriveCompressing = uploadInfo?.status === 'compressing';
                           const isDriveError = uploadInfo?.status === 'error';
 
                           const isHoverTarget = dragTargetVideoId === video.id;
@@ -1242,6 +1247,7 @@ export function CalendarView() {
                             const isYtUploading = acct?.plataforma?.toLowerCase() === 'youtube' && video.estado === 'ENVIADO';
                             const uploadInfo = driveUploads[video.id];
                             const isDriveUploading = uploadInfo?.status === 'uploading';
+                            const isDriveCompressing = uploadInfo?.status === 'compressing';
                             const isDriveError = uploadInfo?.status === 'error';
                             const isHoverTarget = dragTargetVideoId === video.id;
 
@@ -1302,7 +1308,12 @@ export function CalendarView() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                                  {isDriveUploading ? (
+                                  {isDriveCompressing ? (
+                                    <span className="text-xs px-2.5 py-1 rounded-lg font-bold bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5 animate-pulse">
+                                      <Loader2 size={11} className="animate-spin text-cyan-400" />
+                                      ⚡ Comprimiendo video...
+                                    </span>
+                                  ) : isDriveUploading ? (
                                     <div className="flex flex-col items-end gap-1 min-w-[140px]">
                                       <span className="text-xs px-2.5 py-0.5 rounded-lg font-bold bg-orange-500/15 border border-orange-500/30 text-orange-300 flex items-center gap-1.5">
                                         <Loader2 size={11} className="animate-spin text-orange-400" />
