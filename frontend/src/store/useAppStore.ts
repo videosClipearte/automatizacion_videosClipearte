@@ -243,7 +243,7 @@ interface AppState {
 
   // Background Drive uploads tracking
   driveUploads: Record<string, DriveUploadState>;
-  setDriveUploadCompressing: (videoId: string) => void;
+  setDriveUploadCompressing: (videoId: string, progress?: number) => void;
   setDriveUploadProgress: (videoId: string, progress: number) => void;
   setDriveUploadComplete: (videoId: string) => void;
   setDriveUploadError: (videoId: string, error: string) => void;
@@ -331,13 +331,20 @@ const useAppStoreBase = create<AppState>((set, get) => ({
   isMobileSidebarOpen: false,
 
   driveUploads: {},
-  setDriveUploadCompressing: (videoId) => {
-    set((s) => ({
-      driveUploads: {
-        ...s.driveUploads,
-        [videoId]: { progress: 0, status: 'compressing' },
-      },
-    }));
+  setDriveUploadCompressing: (videoId, progress = 0) => {
+    const p = Math.min(100, Math.max(0, Math.round(progress)));
+    set((s) => {
+      const current = s.driveUploads[videoId];
+      if (current && current.status === 'compressing' && current.progress === p) {
+        return s;
+      }
+      return {
+        driveUploads: {
+          ...s.driveUploads,
+          [videoId]: { progress: p, status: 'compressing' },
+        },
+      };
+    });
   },
   setDriveUploadProgress: (videoId, progress) => {
     set((s) => {

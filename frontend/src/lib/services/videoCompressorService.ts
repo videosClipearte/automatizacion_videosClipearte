@@ -150,7 +150,7 @@ export interface VideoCompressionResult {
   compressedBytes: number;
   savedBytes: number;
   savedPercent: number;
-  method: 'api-ffmpeg-crf18' | 'wasm-ffmpeg-crf18' | 'mp4-trim' | 'original';
+  method: 'client-webcodecs' | 'api-ffmpeg-crf18' | 'wasm-ffmpeg-crf18' | 'mp4-trim' | 'original';
 }
 
 /**
@@ -221,15 +221,147 @@ export function stripTrailingMp4Padding(buffer: Uint8Array): Uint8Array {
 }
 
 /**
+ * Comprime un video en el navegador usando W3C WebCodecs y la biblioteca mediabunny.
+ * Se ejecuta 100% en la GPU/CPU del cliente, por lo que:
+ * - No sufre de los límites de 4.5 MB de Vercel Serverless ni requiere backend FFmpeg.
+ * - Reduce considerablemente el peso del archivo (H.264 AVC + AAC) manteniendo nitidez visual.
+ * - Emite progreso granular (1% a 100%) a través del callback onProgress.
+ */
+export async function compressVideoClientSide(
+  file: File,
+  onProgress?: (progressPct: number) => void
+): Promise<VideoCompressionResult | null> {
+  if (typeof window === 'undefined') return null;
+
+  // Verificar soporte de WebCodecs en el navegador
+  if (typeof (window as any).VideoEncoder === 'undefined') {
+    console.warn('[videoCompressor] WebCodecs (VideoEncoder) no disponible en este navegador, usando fallback.');
+    return null;
+  }
+
+  const originalBytes = file.size;
+
+  try {
+    const {
+      Conversion,
+      Input,
+      Output,
+      BlobSource,
+      BufferTarget,
+      Mp4OutputFormat,
+      Quality,
+      ALL_FORMATS,
+    } = await import('mediabunny');
+
+    const source = new BlobSource(file);
+    const input = new Input({ source, formats: ALL_FORMATS });
+    const target = new BufferTarget();
+    const format = new Mp4OutputFormat({ fastStart: 'in-memory' });
+    const output = new Output({ target, format });
+
+    onProgress?.(1);
+
+    const conversion = await Conversion.init({
+      input,
+      output,
+      video: async (track: any) => {
+        let origW = 1080;
+        let origH = 1920;
+        try {
+          origW = (await track.getDisplayWidth()) || 1080;
+          origH = (await track.getDisplayHeight()) || 1920;
+        } catch {}
+
+        let width = origW;
+        let height = origH;
+        const maxDim = 1920;
+        if (Math.max(origW, origH) > maxDim) {
+          if (origW >= origH) {
+            width = maxDim;
+            height = Math.round((origH / origW) * maxDim);
+          } else {
+            height = maxDim;
+            width = Math.round((origW / origH) * maxDim);
+          }
+          width = width % 2 === 0 ? width : width - 1;
+          height = height % 2 === 0 ? height : height - 1;
+        }
+
+        return {
+          codec: 'avc' as const,
+          quality: new Quality(0.65),
+          forceTranscode: true,
+          ...(width !== origW || height !== origH ? { width, height } : {}),
+        };
+      },
+      audio: {
+        codec: 'aac' as const,
+        bitrate: 128000,
+      },
+      copy: { mode: 'preferred' },
+    });
+
+    conversion.onProgress = (pct: number) => {
+      if (onProgress) {
+        const displayPct = Math.min(99, Math.max(1, Math.round(pct * 100)));
+        onProgress(displayPct);
+      }
+    };
+
+    await conversion.execute();
+    onProgress?.(100);
+
+    const buf = target.buffer;
+    if (!buf || buf.byteLength < 1024) {
+      console.warn('[videoCompressor] mediabunny no generó un buffer válido.');
+      return null;
+    }
+
+    if (buf.byteLength < originalBytes) {
+      const outBlob = new Blob([buf], { type: 'video/mp4' });
+      const compName = file.name.replace(/\.[^/.]+$/, '') + '.mp4';
+      const compressedFile = new File([outBlob], compName, {
+        type: 'video/mp4',
+        lastModified: Date.now(),
+      });
+      const savedBytes = originalBytes - compressedFile.size;
+      const savedPercent = Math.round((savedBytes / originalBytes) * 100);
+
+      console.log(
+        `[videoCompressor] ✅ Video comprimido en cliente con WebCodecs: ${(originalBytes / 1048576).toFixed(2)} MB → ${(compressedFile.size / 1048576).toFixed(2)} MB (-${savedPercent}%)`
+      );
+
+      return {
+        file: compressedFile,
+        originalBytes,
+        compressedBytes: compressedFile.size,
+        savedBytes,
+        savedPercent,
+        method: 'client-webcodecs',
+      };
+    } else {
+      console.log(
+        `[videoCompressor] El video original ya está más comprimido que la salida (${(originalBytes / 1048576).toFixed(2)} MB vs ${(buf.byteLength / 1048576).toFixed(2)} MB). Manteniendo original.`
+      );
+      return null;
+    }
+  } catch (err) {
+    console.warn('[videoCompressor] Compresión WebCodecs en cliente no completó, pasando a fallbacks:', err);
+    return null;
+  }
+}
+
+/**
  * Comprime un archivo de video en segundo plano y en cuestión de segundos ANTES de subirlo a Google Drive,
  * sin perder calidad visual:
- * 1. Envía el video a la API `/api/video/compress` (FFmpeg `-preset ultrafast -crf 18 -c:a copy`, límite 15 s).
- * 2. Si el entorno no dispone de binario FFmpeg o excede el tiempo rápido, aplica optimización lossless
- *    instantánea de contenedor MP4/MOV (`stripTrailingMp4Padding`).
- * 3. Si el resultado no es más liviano que el original, devuelve el archivo original intacto.
+ * 1. Ejecuta compresión en el cliente vía W3C WebCodecs (`mediabunny` H.264 + AAC), reportando progreso en vivo.
+ * 2. Si no es soportado, recurre a la API `/api/video/compress` (FFmpeg `-preset ultrafast -crf 18 -c:a copy`).
+ * 3. Si no hay FFmpeg disponible, aplica optimización lossless de contenedor MP4/MOV (`stripTrailingMp4Padding`).
+ * 4. Si el resultado no es más liviano que el original, devuelve el archivo original intacto.
  */
 export async function compressVideoForStorage(
-  file: File
+  file: File,
+  onProgress?: (progressPct: number) => void
 ): Promise<VideoCompressionResult> {
   const originalBytes = file.size;
 
@@ -255,7 +387,17 @@ export async function compressVideoForStorage(
     };
   }
 
-  // 1. Compresión rápida en segundo plano vía API `/api/video/compress` (máx. 120 segundos)
+  // 1. Compresión directa en el cliente vía WebCodecs (mediabunny)
+  try {
+    const clientRes = await compressVideoClientSide(file, onProgress);
+    if (clientRes && clientRes.savedBytes > 0) {
+      return clientRes;
+    }
+  } catch (clientErr) {
+    console.warn('[videoCompressor] Fallback a API/trim tras error en cliente:', clientErr);
+  }
+
+  // 2. Compresión rápida en segundo plano vía API `/api/video/compress` (máx. 120 segundos)
   if (typeof window !== 'undefined') {
     const isLocal =
       window.location.hostname === 'localhost' ||
@@ -312,7 +454,7 @@ export async function compressVideoForStorage(
     }
   }
 
-  // 2. Respaldo lossless instantáneo (< 5 ms) de recorte de relleno MP4
+  // 3. Respaldo lossless instantáneo (< 5 ms) de recorte de relleno MP4
   try {
     const raw = new Uint8Array(await file.arrayBuffer());
     const trimmed = stripTrailingMp4Padding(raw);

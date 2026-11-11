@@ -1854,14 +1854,37 @@ function VideoDetailDialog({ videoId }: { videoId: string }) {
                         <HardDrive size={13} className="text-orange-400" />
                         <span>Google Drive</span>
                       </div>
+                      {driveUploads?.[video.id]?.status === 'compressing' && (
+                        <span className="text-[11px] font-mono text-cyan-300 font-bold flex items-center gap-1">
+                          <Loader2 size={11} className="animate-spin text-cyan-400" />
+                          ⚡ {driveUploads[video.id].progress}%
+                        </span>
+                      )}
                       {driveUploads?.[video.id]?.status === 'uploading' && (
-                        <span className="text-[11px] font-mono text-orange-300 font-bold">
-                          {driveUploads[video.id].progress}%
+                        <span className="text-[11px] font-mono text-orange-300 font-bold flex items-center gap-1">
+                          <Loader2 size={11} className="animate-spin text-orange-400" />
+                          ☁️ {driveUploads[video.id].progress}%
                         </span>
                       )}
                     </div>
 
-                    {driveUploads?.[video.id]?.status === 'uploading' ? (
+                    {driveUploads?.[video.id]?.status === 'compressing' ? (
+                      <div className="space-y-1.5 py-1">
+                        <div className="flex items-center gap-1.5 text-xs text-cyan-300 font-medium">
+                          <Loader2 size={12} className="animate-spin text-cyan-400" />
+                          <span>Comprimiendo video con WebCodecs en segundo plano ({driveUploads[video.id].progress}%)...</span>
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 transition-all duration-200 rounded-full"
+                            style={{ width: `${driveUploads[video.id].progress}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-[var(--text-muted)]">
+                          Optimizando tamaño y formato sin pérdida visual antes de transferir a Google Drive.
+                        </p>
+                      </div>
+                    ) : driveUploads?.[video.id]?.status === 'uploading' ? (
                       <div className="space-y-1.5 py-1">
                         <div className="flex items-center gap-1.5 text-xs text-orange-300 font-medium">
                           <Loader2 size={12} className="animate-spin text-orange-400" />

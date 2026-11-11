@@ -823,6 +823,8 @@ export function CalendarView() {
                                   ? (dragHoverFileType === 'image' || acct?.plataforma?.toLowerCase() === 'youtube'
                                       ? "ring-2 ring-pink-400 bg-pink-950/70 border-pink-400 text-pink-200 z-30 scale-[1.02]"
                                       : "ring-2 ring-orange-500 bg-orange-950/70 border-orange-500 text-orange-200 z-30 scale-[1.02]")
+                                  : isDriveCompressing
+                                  ? "bg-cyan-950/40 border-cyan-400/60 text-cyan-200 shadow-sm shadow-cyan-500/20"
                                   : isDriveUploading
                                   ? (isCurrentDay
                                       ? "bg-black/80 border-amber-300/70 text-amber-100 shadow-md"
@@ -838,7 +840,7 @@ export function CalendarView() {
                                   : "bg-white/[0.04] hover:bg-white/[0.08] border-white/10 hover:border-orange-500/40 text-white"
                               )}
                               title={`${video.nombre_archivo || video.titulo} · ${format(new Date(video.programado_para), 'HH:mm')} · ${
-                                isDriveCompressing ? '⚡ Comprimiendo video en segundo plano...' : isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado === 'PUBLICADO' ? `PUBLICADO (${formatViews(video.vistas_obtenidas || 0)} vistas)` : video.estado
+                                isDriveCompressing ? `⚡ Comprimiendo video: ${uploadInfo.progress}%` : isDriveUploading ? `Subiendo a Drive: ${uploadInfo.progress}%` : isYtUploading ? 'Subiendo a YouTube' : video.estado === 'PUBLICADO' ? `PUBLICADO (${formatViews(video.vistas_obtenidas || 0)} vistas)` : video.estado
                               }`}
                             >
                               {isHoverTarget && (
@@ -880,6 +882,12 @@ export function CalendarView() {
                               )}>
                                 {video.nombre_archivo || video.titulo}
                               </span>
+                              {isDriveCompressing && (
+                                <span className="text-[8px] px-1 py-0 rounded font-bold shrink-0 flex items-center gap-0.5 bg-cyan-500/25 text-cyan-200 border border-cyan-400/40">
+                                  <Loader2 size={8} className="animate-spin text-cyan-300" />
+                                  ⚡ {uploadInfo.progress}%
+                                </span>
+                              )}
                               {isDriveUploading && (
                                 <span className={cn(
                                   "text-[8px] px-1 py-0 rounded font-bold shrink-0 flex items-center gap-0.5",
@@ -888,7 +896,7 @@ export function CalendarView() {
                                     : "bg-orange-500/25 text-orange-200 border border-orange-400/40"
                                 )}>
                                   <Loader2 size={8} className={cn("animate-spin", isCurrentDay ? "text-amber-200" : "text-orange-300")} />
-                                  {uploadInfo.progress}%
+                                  ☁️ {uploadInfo.progress}%
                                 </span>
                               )}
                               {isDriveError && (
@@ -901,7 +909,7 @@ export function CalendarView() {
                                   Subiendo
                                 </span>
                               )}
-                              {!isDriveUploading && !isYtUploading && (video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
+                              {!isDriveCompressing && !isDriveUploading && !isYtUploading && (video.estado === 'PUBLICADO' || video.vistas_obtenidas > 0) && (
                                 <span className={cn(
                                   "text-[8px] font-mono font-bold shrink-0 flex items-center gap-0.5",
                                   isCurrentDay ? "text-emerald-300" : "text-orange-400"
@@ -911,6 +919,14 @@ export function CalendarView() {
                                 </span>
                               )}
                               {/* Mini barra de progreso en el borde inferior del chip */}
+                              {isDriveCompressing && (
+                                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-cyan-950/80">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-cyan-400 to-teal-400 transition-all duration-200"
+                                    style={{ width: `${uploadInfo.progress}%` }}
+                                  />
+                                </div>
+                              )}
                               {isDriveUploading && (
                                 <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-orange-950/80">
                                   <div
@@ -1066,6 +1082,8 @@ export function CalendarView() {
                                   ? (dragHoverFileType === 'image' || acct?.plataforma?.toLowerCase() === 'youtube'
                                       ? "ring-2 ring-pink-400 bg-pink-950/60 border-pink-400 shadow-lg shadow-pink-500/20"
                                       : "ring-2 ring-orange-500 bg-orange-950/60 border-orange-500 shadow-lg shadow-orange-500/20")
+                                  : isDriveCompressing
+                                  ? "bg-cyan-950/30 border-cyan-400/50 hover:border-cyan-300 shadow-sm shadow-cyan-500/20"
                                   : isDriveUploading
                                   ? "bg-orange-950/30 border-orange-500/40 hover:border-orange-400"
                                   : "glass border-white/10 hover:border-orange-500/40 hover:bg-white/[0.04]"
@@ -1101,6 +1119,25 @@ export function CalendarView() {
                                 {video.nombre_archivo || video.titulo}
                               </p>
 
+                              {/* Si está comprimiendo el video: barra cian y porcentaje */}
+                              {isDriveCompressing && (
+                                <div className="mb-2 p-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-cyan-300 font-semibold flex items-center gap-1">
+                                      <Loader2 size={10} className="animate-spin text-cyan-400" />
+                                      ⚡ Comprimiendo video
+                                    </span>
+                                    <span className="text-cyan-200 font-mono font-bold">{uploadInfo.progress}%</span>
+                                  </div>
+                                  <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 transition-all duration-200 rounded-full"
+                                      style={{ width: `${uploadInfo.progress}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Si está subiendo a Google Drive: barra y porcentaje */}
                               {isDriveUploading && (
                                 <div className="mb-2 p-1.5 rounded-lg bg-orange-950/40 border border-orange-500/30 space-y-1">
@@ -1127,7 +1164,12 @@ export function CalendarView() {
                               )}
 
                               <div className="flex items-center justify-between">
-                                {isDriveUploading ? (
+                                {isDriveCompressing ? (
+                                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 flex items-center gap-1 animate-pulse">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                    ⚡ {uploadInfo.progress}%
+                                  </span>
+                                ) : isDriveUploading ? (
                                   <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-orange-500/15 border border-orange-500/30 text-orange-300 flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
                                     Drive {uploadInfo.progress}%
@@ -1265,6 +1307,8 @@ export function CalendarView() {
                                     ? (dragHoverFileType === 'image' || acct?.plataforma?.toLowerCase() === 'youtube'
                                         ? "ring-2 ring-pink-400 bg-pink-950/60 border-pink-400 shadow-lg shadow-pink-500/20"
                                         : "ring-2 ring-orange-500 bg-orange-950/60 border-orange-500 shadow-lg shadow-orange-500/20")
+                                    : isDriveCompressing
+                                    ? "bg-cyan-950/25 border-cyan-400/50 hover:border-cyan-300 shadow-sm shadow-cyan-500/20"
                                     : isDriveUploading
                                     ? "bg-orange-950/25 border-orange-500/40 hover:border-orange-400"
                                     : "glass-strong border-white/10 hover:border-orange-500/40"
@@ -1290,6 +1334,9 @@ export function CalendarView() {
                                     style={{ backgroundColor: `${video.thumbnail_color}33`, border: `1px solid ${video.thumbnail_color}66` }}
                                   >
                                     {getPlatformIcon(acct?.plataforma)}
+                                    {isDriveCompressing && (
+                                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyan-400 rounded-full animate-ping" />
+                                    )}
                                     {isDriveUploading && (
                                       <span className="absolute -top-1 -right-1 w-3 h-3 bg-orange-400 rounded-full animate-ping" />
                                     )}
@@ -1309,10 +1356,18 @@ export function CalendarView() {
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
                                   {isDriveCompressing ? (
-                                    <span className="text-xs px-2.5 py-1 rounded-lg font-bold bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5 animate-pulse">
-                                      <Loader2 size={11} className="animate-spin text-cyan-400" />
-                                      ⚡ Comprimiendo video...
-                                    </span>
+                                    <div className="flex flex-col items-end gap-1 min-w-[140px]">
+                                      <span className="text-xs px-2.5 py-0.5 rounded-lg font-bold bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 flex items-center gap-1.5 animate-pulse">
+                                        <Loader2 size={11} className="animate-spin text-cyan-400" />
+                                        ⚡ Comprimiendo: {uploadInfo.progress}%
+                                      </span>
+                                      <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                        <div
+                                          className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 transition-all duration-200 rounded-full"
+                                          style={{ width: `${uploadInfo.progress}%` }}
+                                        />
+                                      </div>
+                                    </div>
                                   ) : isDriveUploading ? (
                                     <div className="flex flex-col items-end gap-1 min-w-[140px]">
                                       <span className="text-xs px-2.5 py-0.5 rounded-lg font-bold bg-orange-500/15 border border-orange-500/30 text-orange-300 flex items-center gap-1.5">

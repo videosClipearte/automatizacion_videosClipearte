@@ -88,7 +88,7 @@ export function VideoCard({ video, account, index = 0, onClick }: VideoCardProps
         }}
         title={
           isDriveCompressing
-            ? '⚡ Comprimiendo video en segundo plano...'
+            ? `⚡ Comprimiendo video (${uploadInfo.progress}%)...`
             : isDriveUploading
             ? `Subiendo a Google Drive (${uploadInfo.progress}%)...`
             : video.estado === 'ENVIADO' && account?.plataforma === 'youtube'
