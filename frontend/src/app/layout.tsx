@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { ScheduleModal } from '@/components/calendar/ScheduleModal';
 import { VideoDetailModal } from '@/components/calendar/VideoDetailModal';
+import { LocalFolderAnalyzerModal } from '@/components/calendar/LocalFolderAnalyzerModal';
 import { StoreInitializer } from '@/components/layout/StoreInitializer';
 import { SupabaseStatusBanner } from '@/components/layout/SupabaseStatusBanner';
 import { PublicationScheduler } from '@/components/layout/PublicationScheduler';
@@ -50,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </main>
           </div>
         </div>
+        <LocalFolderAnalyzerModal />
         <ScheduleModal />
         <VideoDetailModal />
       </body>

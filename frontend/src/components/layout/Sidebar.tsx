@@ -1,11 +1,11 @@
 'use client';
 // src/components/layout/Sidebar.tsx
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CalendarDays, BarChart3, Settings, ChevronLeft, ChevronRight,
-  Send, Zap, Globe, Play
+  Send, Zap, Globe, Play, FolderSearch
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
@@ -18,11 +18,24 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const isSidebarCollapsed = useAppStore((s) => s.isSidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const isMobileSidebarOpen = useAppStore((s) => s.isMobileSidebarOpen);
   const setMobileSidebarOpen = useAppStore((s) => s.setMobileSidebarOpen);
   const setCalendarView = useAppStore((s) => s.setCalendarView);
+  const isFolderAnalyzerOpen = useAppStore((s) => s.isFolderAnalyzerOpen);
+  const toggleFolderAnalyzer = useAppStore((s) => s.toggleFolderAnalyzer);
+  const openFolderAnalyzer = useAppStore((s) => s.openFolderAnalyzer);
+
+  const handleOpenAnalyzerTool = () => {
+    if (!pathname.startsWith('/calendar')) {
+      router.push('/calendar');
+      openFolderAnalyzer();
+    } else {
+      toggleFolderAnalyzer();
+    }
+  };
 
   return (
     <>
@@ -96,6 +109,43 @@ export function Sidebar() {
               </Link>
             );
           })}
+
+          {/* Herramienta: Analizador de Videos Locales del Dispositivo */}
+          <div className="pt-2 mt-2 border-t border-white/5">
+            {!isSidebarCollapsed && (
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                Herramientas
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleOpenAnalyzerTool}
+              title="Analizar carpeta del dispositivo (videos publicados vs faltantes)"
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative cursor-pointer text-left',
+                isFolderAnalyzerOpen
+                  ? 'bg-gradient-to-r from-orange-500/20 to-orange-500/5 border border-orange-500/35 text-white font-medium'
+                  : 'text-[var(--text-secondary)] hover:text-white hover:bg-white/5'
+              )}
+            >
+              <FolderSearch
+                className={cn('w-4.5 h-4.5 shrink-0', isFolderAnalyzerOpen ? 'text-orange-400' : '')}
+                size={18}
+              />
+              <AnimatePresence>
+                {!isSidebarCollapsed && (
+                  <motion.span
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="text-sm font-medium truncate"
+                  >
+                    Analizar Carpeta
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+          </div>
         </nav>
 
         {/* Platforms quick indicator */}
@@ -201,6 +251,29 @@ export function Sidebar() {
                     </Link>
                   );
                 })}
+
+                {/* Herramienta Móvil: Analizar Carpeta */}
+                <div className="pt-2 mt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileSidebarOpen(false);
+                      handleOpenAnalyzerTool();
+                    }}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all duration-200 cursor-pointer text-left',
+                      isFolderAnalyzerOpen
+                        ? 'bg-gradient-to-r from-orange-500/20 to-orange-600/10 border border-orange-500/30 text-white font-semibold shadow-sm'
+                        : 'text-[var(--text-secondary)] hover:text-white hover:bg-white/5'
+                    )}
+                  >
+                    <FolderSearch
+                      className={cn('w-5 h-5 shrink-0', isFolderAnalyzerOpen ? 'text-orange-400' : '')}
+                      size={19}
+                    />
+                    <span className="text-sm">Analizar Carpeta</span>
+                  </button>
+                </div>
               </nav>
 
               {/* Footer Indicator */}

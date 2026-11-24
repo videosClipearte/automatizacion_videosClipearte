@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Users, ChevronDown, Check, Globe, Send, Play, FilterX
+  Users, ChevronDown, Check, Globe, Send, Play, FilterX, FolderSearch
 } from 'lucide-react';
 import { CalendarView } from '@/components/calendar/CalendarView';
+import { useLocalFolderLoadedCount } from '@/components/calendar/LocalFolderAnalyzerModal';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 
@@ -21,7 +22,11 @@ export default function CalendarPage() {
     statusFilter,
     setStatusFilter,
     setCalendarView,
+    isFolderAnalyzerOpen,
+    toggleFolderAnalyzer,
   } = useAppStore();
+
+  const { totalLoaded } = useLocalFolderLoadedCount();
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -48,7 +53,7 @@ export default function CalendarPage() {
       (a) =>
         Boolean(selectedAccountId) &&
         a.username.toLowerCase().trim() ===
-          (selectedAccountId || '').toLowerCase().trim().replace(/^@/, '')
+        (selectedAccountId || '').toLowerCase().trim().replace(/^@/, '')
     );
 
   // Red social activa para filtrar la lista de cuentas en el selector
@@ -90,8 +95,28 @@ export default function CalendarPage() {
           </p>
         </div>
 
-        {/* Extremo opuesto: Selector interactivo para filtrar */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        {/* Extremo opuesto: Herramienta de Carpeta Local + Selector interactivo para filtrar */}
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={toggleFolderAnalyzer}
+            title="Seleccionar ubicación del dispositivo para analizar videos publicados y faltantes"
+            className={cn(
+              'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 border cursor-pointer active:scale-95',
+              isFolderAnalyzerOpen
+                ? 'bg-orange-500/20 border-orange-500/50 text-white shadow-[0_0_15px_rgba(249,115,22,0.2)]'
+                : 'bg-[#161414] text-zinc-200 border-white/10 hover:border-orange-500/40 hover:text-white'
+            )}
+          >
+            <FolderSearch size={14} className="text-orange-400 shrink-0" />
+            <span>Analizar carpeta</span>
+            {totalLoaded > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-orange-500/25 border border-orange-500/40 text-[10px] font-mono text-orange-200">
+                {totalLoaded}
+              </span>
+            )}
+          </button>
+
           {hasActiveFilters && (
             <button
               onClick={() => {

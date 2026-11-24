@@ -375,6 +375,19 @@ function ScheduleModalDialog() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Si se selecciona otro video desde el Analizador de Carpeta Local con el modal ya abierto, sincronizarlo al instante
+  useEffect(() => {
+    if (scheduleModalFile && scheduleModalFile !== videoFile) {
+      setVideoFile(scheduleModalFile);
+      setDriveSuccessUrl(null);
+      setDriveError(null);
+      const cleanName = scheduleModalFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
+      setVideoTitle(cleanName);
+      setShortTitle('');
+      setDebouncedVideoTitle(cleanName);
+    }
+  }, [scheduleModalFile]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Limpiar subtitulos y audio previo cuando cambia el video (extraccion bajo demanda al pulsar Generar IA)
   useEffect(() => {
     setExtractedSubtitles(null);

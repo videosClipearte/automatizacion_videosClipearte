@@ -207,6 +207,7 @@ interface AppState {
   isScheduleModalOpen: boolean;
   scheduleModalDate: Date | null;
   scheduleModalFile: File | null;
+  isFolderAnalyzerOpen: boolean;
   selectedVideoId: string | null;
   isSidebarCollapsed: boolean;
 
@@ -220,6 +221,9 @@ interface AppState {
   setStatusFilter: (status: VideoStatus | 'ALL' | null) => void;
   openScheduleModal: (date?: Date, file?: File | null) => void;
   closeScheduleModal: () => void;
+  openFolderAnalyzer: () => void;
+  closeFolderAnalyzer: () => void;
+  toggleFolderAnalyzer: () => void;
   setSelectedVideoId: (id: string | null) => void;
   toggleSidebar: () => void;
   isMobileSidebarOpen: boolean;
@@ -326,6 +330,7 @@ const useAppStoreBase = create<AppState>((set, get) => ({
   isScheduleModalOpen: false,
   scheduleModalDate: null,
   scheduleModalFile: null,
+  isFolderAnalyzerOpen: false,
   selectedVideoId: null,
   isSidebarCollapsed: false,
   isMobileSidebarOpen: false,
@@ -805,6 +810,9 @@ const useAppStoreBase = create<AppState>((set, get) => ({
     set({ isScheduleModalOpen: true, scheduleModalDate: date ?? new Date(), scheduleModalFile: file ?? null }),
   closeScheduleModal: () =>
     set({ isScheduleModalOpen: false, scheduleModalDate: null, scheduleModalFile: null }),
+  openFolderAnalyzer: () => set({ isFolderAnalyzerOpen: true }),
+  closeFolderAnalyzer: () => set({ isFolderAnalyzerOpen: false }),
+  toggleFolderAnalyzer: () => set((s) => ({ isFolderAnalyzerOpen: !s.isFolderAnalyzerOpen })),
   setSelectedVideoId: (id) => set({ selectedVideoId: id }),
   toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
   setMobileSidebarOpen: (open) => set({ isMobileSidebarOpen: open }),

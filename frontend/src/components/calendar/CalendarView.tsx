@@ -23,6 +23,7 @@ import {
   replacePublicationVideo,
   updatePublicationThumbnail,
 } from '@/lib/services/driveService';
+import { getInternalDraggedFile, setInternalDraggedFile } from '@/lib/dragBridge';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -35,8 +36,11 @@ const VIEW_OPTIONS: { key: ViewMode; label: string; Icon: React.ElementType }[] 
 const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i); // 00:00 → 23:00
 
-// Helper de extracción rápida y segura de archivos desde eventos de arrastre
+// Helper de extracción rápida y segura de archivos desde eventos de arrastre (SO o Analizador de Carpeta Local)
 function extractFileFromDrag(e: React.DragEvent | DragEvent): File | null {
+  const internalFile = getInternalDraggedFile();
+  if (internalFile) return internalFile;
+
   const dt = e.dataTransfer;
   if (!dt) return null;
   if (dt.files && dt.files.length > 0) {
@@ -146,6 +150,7 @@ export function CalendarView() {
   // Limpieza total y segura del estado de arrastre (evita bloqueos si no se suelta o se cancela)
   const clearDragState = useCallback(() => {
     currentDragKeyRef.current = null;
+    setInternalDraggedFile(null);
     setDragOverDay(null);
     setDragTargetVideoId(null);
     setDragHoverFileType(null);
@@ -157,6 +162,11 @@ export function CalendarView() {
   useEffect(() => {
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault();
+      if (getInternalDraggedFile()) {
+        setIsGlobalDragging(true);
+        setGlobalDragType('video');
+        return;
+      }
       if (e.dataTransfer?.types?.includes('Files')) {
         setIsGlobalDragging(true);
         const itemType = e.dataTransfer.items?.[0]?.type || '';
@@ -169,7 +179,7 @@ export function CalendarView() {
       e.preventDefault();
       if (e.dataTransfer) {
         e.dataTransfer.dropEffect = 'copy';
-        if (!isGlobalDragging && e.dataTransfer.types?.includes('Files')) {
+        if (!isGlobalDragging && (e.dataTransfer.types?.includes('Files') || Boolean(getInternalDraggedFile()))) {
           setIsGlobalDragging(true);
         }
       }
